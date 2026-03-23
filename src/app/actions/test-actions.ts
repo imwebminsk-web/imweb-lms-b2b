@@ -386,16 +386,14 @@ export async function deleteTest(
     const {
       data: deleted,
       error: deleteError,
-      count,
     } = await supabase
       .from("tests")
       .delete()
       .eq("id", tid)
       .eq("user_id", user.id)
-      .select("id", { count: "exact" });
+      .select("id");
 
-    const effectiveCount =
-      typeof count === "number" ? count : deleted?.length ?? 0;
+    const effectiveCount = deleted?.length ?? 0;
 
     if (deleteError) {
       throw new Error(deleteError.message);
