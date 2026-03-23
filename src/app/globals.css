@@ -128,3 +128,165 @@
     @apply font-sans;
   }
 }
+
+/**
+ * Супер-пазл: монолит при стыке, фигурный замок через псевдоэлементы, без лишних линий.
+ */
+@layer components {
+  :root {
+    --puzzle-tab-r: 14px;
+    --puzzle-lock-line: color-mix(in oklch, var(--foreground) 11%, transparent);
+  }
+
+  .dark {
+    --puzzle-lock-line: color-mix(in oklch, var(--foreground) 16%, transparent);
+  }
+
+  @keyframes puzzle-pair-snap {
+    0% {
+      transform: scale(0.96);
+      opacity: 0.88;
+    }
+    55% {
+      transform: scale(1.012);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+
+  /* Слот слева (не соединён): тёмно-серый монолит, только глубина */
+  .puzzle-tab-right {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    min-height: 3.25rem;
+    border-radius: 0.75rem 0 0 0.75rem;
+    background: var(--card);
+    padding: 0.65rem 0.85rem;
+    padding-right: calc(var(--puzzle-tab-r) + 10px);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%),
+      inset 0 -1px 0 rgb(0 0 0 / 6%);
+  }
+
+  .puzzle-tab-right::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 50%;
+    z-index: 2;
+    width: calc(var(--puzzle-tab-r) * 2);
+    height: calc(var(--puzzle-tab-r) * 2);
+    border-radius: 9999px;
+    background: var(--card);
+    transform: translate(50%, -50%);
+    pointer-events: none;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  }
+
+  .dark .puzzle-tab-right {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%),
+      inset 0 -1px 0 rgb(0 0 0 / 22%);
+  }
+
+  .dark .puzzle-tab-right::after {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+  }
+
+  /* Правая деталь в пуле: светло-серый блок, объём снаружи */
+  .puzzle-blank-left {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    min-height: 3.25rem;
+    border-radius: 0 0.75rem 0.75rem 0;
+    background: var(--muted);
+    padding: 0.65rem 0.85rem;
+    padding-left: calc(var(--puzzle-tab-r) + 12px);
+    margin-left: calc(-1 * var(--puzzle-tab-r));
+    box-shadow: 0 2px 10px rgb(0 0 0 / 7%),
+      0 1px 3px rgb(0 0 0 / 5%);
+  }
+
+  .dark .puzzle-blank-left {
+    box-shadow: 0 4px 18px rgb(0 0 0 / 28%),
+      0 1px 4px rgb(0 0 0 / 22%);
+  }
+
+  /* Впадина: как вырез в фоне страницы + тонкий контур замка */
+  .puzzle-blank-left::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    z-index: 0;
+    width: calc(var(--puzzle-tab-r) * 2);
+    height: calc(var(--puzzle-tab-r) * 2);
+    border-radius: 9999px;
+    background: var(--background);
+    border: 1px solid var(--puzzle-lock-line);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    box-shadow: inset 0 2px 5px rgb(0 0 0 / 7%);
+  }
+
+  .dark .puzzle-blank-left::before {
+    box-shadow: inset 0 2px 8px rgb(0 0 0 / 32%);
+  }
+
+  /* Зафиксированная пара: один тёмный блок, общая тень, замок читается по кругу */
+  .puzzle-connected-pair {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+    flex: 1;
+    border-radius: 0.75rem;
+    filter: drop-shadow(0 8px 24px rgb(0 0 0 / 11%))
+      drop-shadow(0 2px 6px rgb(0 0 0 / 6%));
+    animation: puzzle-pair-snap 0.45s cubic-bezier(0.34, 1.25, 0.64, 1);
+    transform-origin: center center;
+  }
+
+  .dark .puzzle-connected-pair {
+    filter: drop-shadow(0 10px 28px rgb(0 0 0 / 42%))
+      drop-shadow(0 2px 8px rgb(0 0 0 / 28%));
+  }
+
+  .puzzle-connected-pair .puzzle-tab-right,
+  .puzzle-connected-pair .puzzle-blank-left {
+    background: var(--card);
+    box-shadow: none;
+  }
+
+  .puzzle-connected-pair .puzzle-tab-right::after {
+    background: var(--card);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 7%);
+  }
+
+  .dark .puzzle-connected-pair .puzzle-tab-right::after {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+  }
+
+  .puzzle-connected-pair .puzzle-blank-left::before {
+    background: var(--card);
+    border: 1px solid var(--puzzle-lock-line);
+    box-shadow: inset 0 2px 6px rgb(0 0 0 / 12%);
+  }
+
+  .dark .puzzle-connected-pair .puzzle-blank-left::before {
+    box-shadow: inset 0 2px 10px rgb(0 0 0 / 38%);
+  }
+
+  .puzzle-connected-pair .puzzle-tab-right {
+    border-radius: 0.75rem 0 0 0.75rem;
+  }
+
+  .puzzle-connected-pair .puzzle-blank-left {
+    margin-left: -2px;
+    border-radius: 0 0.75rem 0.75rem 0;
+  }
+}
