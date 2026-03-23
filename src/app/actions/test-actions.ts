@@ -338,6 +338,9 @@ export async function getTests(): Promise<
 export async function deleteTest(
   testId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
+  const genericDeleteError =
+    "Не удалось удалить тест. Возможно, у вас недостаточно прав или возникла ошибка базы данных.";
+
   try {
     const idResult = testIdSchema.safeParse(testId);
     if (!idResult.success) {
@@ -360,29 +363,7 @@ export async function deleteTest(
 
     const tid = idResult.data;
 
-    // 1) Логируем текущую сессию (кто пытается удалить).
-    console.log("[deleteTest] session user", { userId: user.id, testId: tid });
-
-    // 2) ДО удаления пытаемся прочитать владельца теста из таблицы `tests`.
-    // Это нужно для диагностики рассинхронизации `id/user_id`.
-    const {
-      data: test,
-      error: testOwnerError,
-    } = await supabase
-      .from("tests")
-      .select("user_id")
-      .eq("id", tid)
-      .single();
-
-    console.log("[deleteTest] test owner from DB", {
-      testId: tid,
-      testUserId: test?.user_id ?? null,
-      testOwnerError: testOwnerError
-        ? { code: testOwnerError.code, message: testOwnerError.message }
-        : null,
-    });
-
-    // 3) Делаем удаление только своей записи по `user_id`.
+    // Удаляем только ту строку, которая принадлежит текущему пользователю.
     const {
       data: deleted,
       error: deleteError,
@@ -400,21 +381,9 @@ export async function deleteTest(
     }
 
     if (effectiveCount === 0) {
-      // Если удаление вернуло 0 строк, значит либо теста нет,
-      // либо `user_id` не совпадает (и RLS/условие `.eq('user_id', user.id)` не пропустило запись).
-      if (!test && testOwnerError) {
-        return {
-          success: false,
-          error:
-            "Тест не найден или не удалось прочитать владельца (user_id) для диагностики ID mismatch",
-        };
-      }
-
       return {
         success: false,
-        error: `ID mismatch: user is ${user.id}, but test owner is ${
-          test?.user_id ?? "unknown"
-        }`,
+        error: genericDeleteError,
       };
     }
 
@@ -425,9 +394,7 @@ export async function deleteTest(
     return { success: true };
   } catch (error: unknown) {
     console.error("deleteTest error:", error);
-    const message =
-      error instanceof Error ? error.message : "Не удалось удалить тест";
-    return { success: false, error: message };
+    return { success: false, error: genericDeleteError };
   }
 }
 
@@ -448,14 +415,11 @@ export async function getTestWithQuestions(
   const idResult = testIdSchema.safeParse(testId);
   if (!idResult.success) {
     const msg = idResult.error.issues[0]?.message ?? "Некорректный ID теста";
-    console.log("[getTestWithQuestions] невалидный id", { testId, msg });
     return { success: false, error: msg, kind: "validation" };
   }
 
   const supabase = await createClient();
   const uuid = idResult.data;
-
-  console.log("[getTestWithQuestions] запрос теста", { testId: uuid });
 
   const { data, error } = await supabase
     .from("tests")
@@ -480,13 +444,6 @@ export async function getTestWithQuestions(
     .single();
 
   if (error) {
-    console.log("[getTestWithQuestions] ответ Supabase", {
-      testId: uuid,
-      code: error.code,
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-    });
     if (error.code === "PGRST116") {
       return {
         success: false,
