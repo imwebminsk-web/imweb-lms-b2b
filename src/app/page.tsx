@@ -6,17 +6,29 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 
 export default function Home() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-10 p-6">
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Образовательные тесты
-        </h1>
-        <p className="text-muted-foreground max-w-md text-sm">
-          Создавайте задания или проходите готовые тесты по одному вопросу за раз.
-        </p>
+    <main className="flex flex-1 flex-col items-center gap-10 p-6 pt-10">
+      <div className="space-y-4 text-center">
+        <div className="mx-auto max-w-2xl space-y-2">
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Образовательные тесты
+          </h1>
+          <p className="text-muted-foreground max-w-md text-sm">
+            Создавайте задания или проходите готовые тесты по одному вопросу за раз.
+          </p>
+        </div>
+
+        <div className="flex justify-center">
+          <Link
+            href="/admin"
+            className={buttonVariants({ size: "lg" })}
+          >
+            Начать работу
+          </Link>
+        </div>
       </div>
 
       <div className="grid w-full max-w-3xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
