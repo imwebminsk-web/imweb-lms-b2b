@@ -360,22 +360,63 @@ export async function deleteTest(
 
     const tid = idResult.data;
 
-    const { data: deleted, error } = await supabase
+    // 1) Логируем текущую сессию (кто пытается удалить).
+    console.log("[deleteTest] session user", { userId: user.id, testId: tid });
+
+    // 2) ДО удаления пытаемся прочитать владельца теста из таблицы `tests`.
+    // Это нужно для диагностики рассинхронизации `id/user_id`.
+    const {
+      data: test,
+      error: testOwnerError,
+    } = await supabase
+      .from("tests")
+      .select("user_id")
+      .eq("id", tid)
+      .single();
+
+    console.log("[deleteTest] test owner from DB", {
+      testId: tid,
+      testUserId: test?.user_id ?? null,
+      testOwnerError: testOwnerError
+        ? { code: testOwnerError.code, message: testOwnerError.message }
+        : null,
+    });
+
+    // 3) Делаем удаление только своей записи по `user_id`.
+    const {
+      data: deleted,
+      error: deleteError,
+      count,
+    } = await supabase
       .from("tests")
       .delete()
       .eq("id", tid)
       .eq("user_id", user.id)
-      .select("id");
+      .select("id", { count: "exact" });
 
-    if (error) {
-      throw new Error(error.message);
+    const effectiveCount =
+      typeof count === "number" ? count : deleted?.length ?? 0;
+
+    if (deleteError) {
+      throw new Error(deleteError.message);
     }
 
-    if (!deleted?.length) {
+    if (effectiveCount === 0) {
+      // Если удаление вернуло 0 строк, значит либо теста нет,
+      // либо `user_id` не совпадает (и RLS/условие `.eq('user_id', user.id)` не пропустило запись).
+      if (!test && testOwnerError) {
+        return {
+          success: false,
+          error:
+            "Тест не найден или не удалось прочитать владельца (user_id) для диагностики ID mismatch",
+        };
+      }
+
       return {
         success: false,
-        error:
-          "Тест не найден, нет прав на удаление или у теста не указан владелец (user_id)",
+        error: `ID mismatch: user is ${user.id}, but test owner is ${
+          test?.user_id ?? "unknown"
+        }`,
       };
     }
 
