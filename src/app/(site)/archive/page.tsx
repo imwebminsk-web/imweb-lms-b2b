@@ -8,7 +8,8 @@ import {
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 
-export default function Home() {
+/** Прежняя главная страница (тесты / админка) — сохранена по запросу. */
+export default function ArchiveHomePage() {
   return (
     <main className="flex flex-1 flex-col items-center gap-10 p-6 pt-10">
       <div className="space-y-4 text-center">

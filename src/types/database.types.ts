@@ -14,6 +14,169 @@ export type Database = {
   }
   public: {
     Tables: {
+      courses: {
+        Row: {
+          description: string | null
+          id: string
+          images_gallery: Json
+          languages: string[]
+          level: Database["public"]["Enums"]["course_level"]
+          price: string
+          slug: string
+          start_date: string | null
+          start_date_type: Database["public"]["Enums"]["start_date_type"]
+          status: Database["public"]["Enums"]["course_status"]
+          target_audience: Database["public"]["Enums"]["target_audience"]
+          teacher_id: string
+          thumbnail_url: string | null
+          title: string
+        }
+        Insert: {
+          description?: string | null
+          id?: string
+          images_gallery?: Json
+          languages?: string[]
+          level?: Database["public"]["Enums"]["course_level"]
+          price?: string
+          slug: string
+          start_date?: string | null
+          start_date_type?: Database["public"]["Enums"]["start_date_type"]
+          status?: Database["public"]["Enums"]["course_status"]
+          target_audience?: Database["public"]["Enums"]["target_audience"]
+          teacher_id: string
+          thumbnail_url?: string | null
+          title: string
+        }
+        Update: {
+          description?: string | null
+          id?: string
+          images_gallery?: Json
+          languages?: string[]
+          level?: Database["public"]["Enums"]["course_level"]
+          price?: string
+          slug?: string
+          start_date?: string | null
+          start_date_type?: Database["public"]["Enums"]["start_date_type"]
+          status?: Database["public"]["Enums"]["course_status"]
+          target_audience?: Database["public"]["Enums"]["target_audience"]
+          teacher_id?: string
+          thumbnail_url?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courses_teacher_id_fkey"
+            columns: ["teacher_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lessons: {
+        Row: {
+          content: Json
+          id: string
+          module_id: string
+          order_index: number
+          test_id: string | null
+          title: string
+          type: Database["public"]["Enums"]["lesson_type"]
+        }
+        Insert: {
+          content?: Json
+          id?: string
+          module_id: string
+          order_index?: number
+          test_id?: string | null
+          title: string
+          type: Database["public"]["Enums"]["lesson_type"]
+        }
+        Update: {
+          content?: Json
+          id?: string
+          module_id?: string
+          order_index?: number
+          test_id?: string | null
+          title?: string
+          type?: Database["public"]["Enums"]["lesson_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lessons_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lessons_test_id_fkey"
+            columns: ["test_id"]
+            isOneToOne: false
+            referencedRelation: "tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modules: {
+        Row: {
+          course_id: string
+          id: string
+          order_index: number
+          title: string
+        }
+        Insert: {
+          course_id: string
+          id?: string
+          order_index?: number
+          title: string
+        }
+        Update: {
+          course_id?: string
+          id?: string
+          order_index?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modules_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          full_name: string | null
+          id: string
+          profession: string | null
+          role: Database["public"]["Enums"]["profile_role"]
+          specialization: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          full_name?: string | null
+          id: string
+          profession?: string | null
+          role?: Database["public"]["Enums"]["profile_role"]
+          specialization?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          full_name?: string | null
+          id?: string
+          profession?: string | null
+          role?: Database["public"]["Enums"]["profile_role"]
+          specialization?: string | null
+        }
+        Relationships: []
+      }
       attempt_answers: {
         Row: {
           answer_data: Json | null
@@ -204,6 +367,21 @@ export type Database = {
     }
     Enums: {
       attempt_status: "in_progress" | "completed"
+      course_level:
+        | "0"
+        | "A1"
+        | "A2"
+        | "B1"
+        | "B1+"
+        | "B2"
+        | "B2+"
+        | "C1"
+        | "C2"
+      course_status: "draft" | "published"
+      lesson_type: "video" | "text" | "test"
+      profile_role: "admin" | "teacher" | "student"
+      start_date_type: "fixed" | "on_demand"
+      target_audience: "kids" | "adults"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -332,6 +510,22 @@ export const Constants = {
   public: {
     Enums: {
       attempt_status: ["in_progress", "completed"],
+      course_level: [
+        "0",
+        "A1",
+        "A2",
+        "B1",
+        "B1+",
+        "B2",
+        "B2+",
+        "C1",
+        "C2",
+      ],
+      course_status: ["draft", "published"],
+      lesson_type: ["video", "text", "test"],
+      profile_role: ["admin", "teacher", "student"],
+      start_date_type: ["fixed", "on_demand"],
+      target_audience: ["kids", "adults"],
     },
   },
 } as const
