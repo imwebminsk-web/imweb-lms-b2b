@@ -1,14 +1,7 @@
-import { SiteHeader } from "@/components/site/header";
-
-export default async function SiteLayout({
+export default function SiteLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <>
-      <SiteHeader />
-      {children}
-    </>
-  );
+  return <>{children}</>;
 }

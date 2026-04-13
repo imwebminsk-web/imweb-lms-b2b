@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { getOrCreateAttempt, getTestWithQuestions } from "@/app/actions/test-actions";
 import { QuizPlayer } from "@/components/quiz/QuizPlayer";
+import { WithSiteHeader } from "@/components/site/with-site-header";
 
 type PageProps = { params: Promise<{ id: string }> };
 
@@ -83,11 +84,13 @@ export default async function TestViewPage({ params }: PageProps) {
       notFound();
     }
     return (
-      <TestLoadError
-        id={id}
-        message={res.error}
-        kind={res.kind}
-      />
+      <WithSiteHeader>
+        <TestLoadError
+          id={id}
+          message={res.error}
+          kind={res.kind}
+        />
+      </WithSiteHeader>
     );
   }
 
@@ -95,7 +98,8 @@ export default async function TestViewPage({ params }: PageProps) {
   const attempt = await getOrCreateAttempt(id);
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+    <WithSiteHeader>
+      <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/test"
@@ -132,5 +136,6 @@ export default async function TestViewPage({ params }: PageProps) {
         />
       )}
     </main>
+    </WithSiteHeader>
   );
 }

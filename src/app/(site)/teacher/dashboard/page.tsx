@@ -1,3 +1,9 @@
+import { WithSiteHeader } from "@/components/site/with-site-header";
+
 export default function TeacherDashboardPage() {
-  return <p>Hello World</p>;
+  return (
+    <WithSiteHeader>
+      <p>Hello World</p>
+    </WithSiteHeader>
+  );
 }

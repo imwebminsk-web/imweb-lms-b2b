@@ -56,10 +56,12 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               className="data-[slot=sidebar-menu-button]:!p-1.5"
-              render={<Link href="/dashboard" />}
+              asChild
             >
-              <ArrowUpCircleIcon className="h-5 w-5" />
-              <span className="text-base font-semibold">NewEdu</span>
+              <Link href="/dashboard">
+                <ArrowUpCircleIcon className="h-5 w-5" />
+                <span className="text-base font-semibold">NewEdu</span>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

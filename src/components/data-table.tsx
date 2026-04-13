@@ -143,7 +143,13 @@ const columns: ColumnDef<DashboardTableRow>[] = [
     header: ({ table }) => (
       <div className="flex items-center justify-center">
         <Checkbox
-          checked={table.getIsAllPageRowsSelected()}
+          checked={
+            table.getIsAllPageRowsSelected()
+              ? true
+              : table.getIsSomePageRowsSelected()
+                ? "indeterminate"
+                : false
+          }
           onCheckedChange={(value) =>
             table.toggleAllPageRowsSelected(value === true)
           }
@@ -286,7 +292,16 @@ const columns: ColumnDef<DashboardTableRow>[] = [
     id: "actions",
     cell: () => (
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" className="flex size-8 text-muted-foreground data-[state=open]:bg-muted" size="icon" />}><MoreVerticalIcon /><span className="sr-only">Open menu</span></DropdownMenuTrigger>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            className="flex size-8 text-muted-foreground data-[state=open]:bg-muted"
+            size="icon"
+          >
+            <MoreVerticalIcon />
+            <span className="sr-only">Open menu</span>
+          </Button>
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-32">
           <DropdownMenuItem>Edit</DropdownMenuItem>
           <DropdownMenuItem>Make a copy</DropdownMenuItem>
@@ -436,7 +451,14 @@ export function DataTable({
         </TabsList>
         <div className="flex items-center gap-2">
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}><ColumnsIcon /><span className="hidden lg:inline">Customize Columns</span><span className="lg:hidden">Columns</span><ChevronDownIcon /></DropdownMenuTrigger>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <ColumnsIcon />
+                <span className="hidden lg:inline">Customize Columns</span>
+                <span className="lg:hidden">Columns</span>
+                <ChevronDownIcon />
+              </Button>
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               {table
                 .getAllColumns()
@@ -644,7 +666,14 @@ function TableCellViewer({ item }: { item: DashboardTableRow }) {
 
   return (
     <Sheet>
-      <SheetTrigger render={<Button variant="link" className="w-fit px-0 text-left text-foreground" />}>{item.header}</SheetTrigger>
+      <SheetTrigger asChild>
+        <Button
+          variant="link"
+          className="w-fit px-0 text-left text-foreground"
+        >
+          {item.header}
+        </Button>
+      </SheetTrigger>
       <SheetContent side="right" className="flex flex-col">
         <SheetHeader className="gap-1">
           <SheetTitle>{item.header}</SheetTitle>
@@ -785,8 +814,11 @@ function TableCellViewer({ item }: { item: DashboardTableRow }) {
         </div>
         <SheetFooter className="mt-auto flex gap-2 sm:flex-col sm:space-x-0">
           <Button className="w-full">Submit</Button>
-          <SheetClose render={<Button variant="outline" className="w-full" />}>Done
-                              </SheetClose>
+          <SheetClose asChild>
+            <Button variant="outline" className="w-full">
+              Done
+            </Button>
+          </SheetClose>
         </SheetFooter>
       </SheetContent>
     </Sheet>

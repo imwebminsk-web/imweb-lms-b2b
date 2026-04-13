@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { PUZZLE_BASE_CSS } from "@/lib/puzzle-mask-css";
+import { WithSiteHeader } from "@/components/site/with-site-header";
 
 export const metadata: Metadata = {
   title: "Эталон: пазл (CSS mask)",
@@ -14,7 +15,8 @@ const pieceInner =
 
 export default function StylesPage() {
   return (
-    <main className="bg-muted/40 text-foreground min-h-screen">
+    <WithSiteHeader>
+      <main className="bg-muted/40 text-foreground min-h-screen">
       <style>{PUZZLE_BASE_CSS}</style>
       <div className="styles-puzzle-reference mx-auto max-w-3xl space-y-14 px-6 py-10 md:px-10">
         <style>{`
@@ -95,5 +97,6 @@ export default function StylesPage() {
         </section>
       </div>
     </main>
+    </WithSiteHeader>
   );
 }

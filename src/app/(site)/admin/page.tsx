@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { WithSiteHeader } from "@/components/site/with-site-header";
 
 export const metadata: Metadata = {
   title: "Админка — тесты",
@@ -23,7 +24,8 @@ export default async function AdminTestsPage() {
   const result = await getTests();
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 p-6">
+    <WithSiteHeader>
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -116,5 +118,6 @@ export default async function AdminTestsPage() {
         </ul>
       )}
     </main>
+    </WithSiteHeader>
   );
 }

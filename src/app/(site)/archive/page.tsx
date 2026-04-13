@@ -7,11 +7,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { WithSiteHeader } from "@/components/site/with-site-header";
 
 /** Прежняя главная страница (тесты / админка) — сохранена по запросу. */
 export default function ArchiveHomePage() {
   return (
-    <main className="flex flex-1 flex-col items-center gap-10 p-6 pt-10">
+    <WithSiteHeader>
+      <main className="flex flex-1 flex-col items-center gap-10 p-6 pt-10">
       <div className="space-y-4 text-center">
         <div className="mx-auto max-w-2xl space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight">
@@ -69,5 +71,6 @@ export default function ArchiveHomePage() {
         </Link>
       </div>
     </main>
+    </WithSiteHeader>
   );
 }

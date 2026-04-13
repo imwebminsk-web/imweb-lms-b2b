@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { CreateTestForm } from "@/components/admin/create-test-form";
+import { WithSiteHeader } from "@/components/site/with-site-header";
 
 export const metadata: Metadata = {
   title: "Создать тест",
@@ -10,7 +11,8 @@ export const metadata: Metadata = {
 
 export default function AdminCreateTestPage() {
   return (
-    <main className="flex flex-1 flex-col gap-6 p-6">
+    <WithSiteHeader>
+      <main className="flex flex-1 flex-col gap-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
@@ -39,5 +41,6 @@ export default function AdminCreateTestPage() {
       </div>
       <CreateTestForm />
     </main>
+    </WithSiteHeader>
   );
 }

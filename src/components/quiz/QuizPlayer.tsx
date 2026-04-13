@@ -14,11 +14,7 @@ import {
 } from "@/lib/quiz-helpers";
 import { FillInTheBlanksContentSchema } from "@/lib/validations/fill-in-the-blanks-schema";
 import { Button } from "@/components/ui/button";
-import {
-  Progress,
-  ProgressLabel,
-  ProgressValue,
-} from "@/components/ui/progress";
+import { Progress } from "@/components/ui/progress";
 import type { Json } from "@/types/database.types";
 import { useEffect, useMemo, useState, useTransition } from "react";
 
@@ -290,12 +286,15 @@ export function QuizPlayer({
     return (
       <div className="flex flex-col gap-10 py-8">
         <div className="flex flex-col items-center gap-6 text-center">
-          <Progress value={100} className="w-full max-w-md">
-            <div className="flex w-full items-center gap-2">
-              <ProgressLabel>Готово</ProgressLabel>
-              <ProgressValue />
+          <div className="flex w-full max-w-md flex-col gap-2">
+            <div className="flex w-full items-center gap-2 text-sm">
+              <span className="font-medium">Готово</span>
+              <span className="text-muted-foreground ml-auto tabular-nums">
+                100%
+              </span>
             </div>
-          </Progress>
+            <Progress value={100} className="w-full" />
+          </div>
           <div className="space-y-2">
             <h2 className="text-2xl font-semibold tracking-tight">
               Результат
@@ -377,14 +376,17 @@ export function QuizPlayer({
 
   return (
     <div className="flex flex-col gap-8">
-      <Progress value={progressValue} className="w-full">
-        <div className="flex w-full items-center gap-2">
-          <ProgressLabel>
+      <div className="flex w-full flex-col gap-2">
+        <div className="flex w-full items-center gap-2 text-sm">
+          <span>
             Вопрос {currentIndex + 1} из {total}
-          </ProgressLabel>
-          <ProgressValue />
+          </span>
+          <span className="text-muted-foreground ml-auto tabular-nums">
+            {progressValue}%
+          </span>
         </div>
-      </Progress>
+        <Progress value={progressValue} className="w-full" />
+      </div>
 
       <header className="space-y-1">
         <p className="text-muted-foreground text-sm">{testTitle}</p>

@@ -31,7 +31,7 @@ export function LandingFaq() {
           Ответы на популярные вопросы — звоните, если нужно уточнить детали
           записи.
         </p>
-        <Accordion className="mt-10">
+        <Accordion type="single" collapsible className="mt-10">
           {FAQ_ITEMS.map((item) => (
             <AccordionItem key={item.value} value={item.value}>
               <AccordionTrigger>{item.q}</AccordionTrigger>

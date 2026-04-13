@@ -113,7 +113,7 @@ export function LandingCourseCatalog() {
                     Язык
                   </label>
                   <Select
-                    value={language}
+                    value={language ?? undefined}
                     onValueChange={(v) => setLanguage(v)}
                   >
                     <SelectTrigger
@@ -136,7 +136,10 @@ export function LandingCourseCatalog() {
                   <label className="text-sm font-medium" htmlFor="level-adults">
                     Уровень
                   </label>
-                  <Select value={level} onValueChange={(v) => setLevel(v)}>
+                  <Select
+                    value={level ?? undefined}
+                    onValueChange={(v) => setLevel(v)}
+                  >
                     <SelectTrigger
                       id="level-adults"
                       className="w-full min-w-0"
@@ -163,7 +166,7 @@ export function LandingCourseCatalog() {
                     Язык
                   </label>
                   <Select
-                    value={language}
+                    value={language ?? undefined}
                     onValueChange={(v) => setLanguage(v)}
                   >
                     <SelectTrigger
@@ -187,7 +190,7 @@ export function LandingCourseCatalog() {
                     Возраст
                   </label>
                   <Select
-                    value={ageGroup}
+                    value={ageGroup ?? undefined}
                     onValueChange={(v) => setAgeGroup(v)}
                   >
                     <SelectTrigger
