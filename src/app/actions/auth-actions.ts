@@ -1,0 +1,65 @@
+"use server";
+
+import { redirect } from "next/navigation";
+
+import { createClient } from "@/lib/supabase/server";
+
+export type SignUpState = {
+  error?: string;
+};
+
+const initial: SignUpState = {};
+
+/**
+ * Регистрация через Supabase Auth; full_name уходит в user_metadata для триггера profiles.
+ * При отключённом «Confirm email» сразу выдаётся сессия — редирект на /dashboard.
+ */
+export async function signUp(
+  _prev: SignUpState,
+  formData: FormData,
+): Promise<SignUpState> {
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+
+  if (!fullName || !email || !password) {
+    return { ...initial, error: "Заполните все поля." };
+  }
+
+  if (password.length < 6) {
+    return { ...initial, error: "Пароль не короче 6 символов." };
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
+      },
+    },
+  });
+
+  if (error) {
+    return { ...initial, error: error.message };
+  }
+
+  if (data.session) {
+    redirect("/dashboard");
+  }
+
+  return {
+    ...initial,
+    error:
+      "Аккаунт создан, но вход не выполнен. Попробуйте войти на странице входа.",
+  };
+}
+
+/** Завершает сессию Supabase и перенаправляет на главную. */
+export async function signOut() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect("/");
+}

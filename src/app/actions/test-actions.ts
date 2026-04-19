@@ -387,7 +387,7 @@ export async function deleteTest(
       };
     }
 
-    revalidatePath("/admin");
+    revalidatePath("/dashboard/tests");
     revalidatePath("/test");
     revalidatePath("/");
 

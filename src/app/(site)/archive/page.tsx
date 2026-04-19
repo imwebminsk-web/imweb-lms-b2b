@@ -26,7 +26,7 @@ export default function ArchiveHomePage() {
 
         <div className="flex justify-center">
           <Link
-            href="/admin"
+            href="/dashboard/tests"
             className={buttonVariants({ size: "lg" })}
           >
             Начать работу
@@ -35,7 +35,7 @@ export default function ArchiveHomePage() {
       </div>
 
       <div className="grid w-full max-w-3xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        <Link href="/admin" className="group block h-full">
+        <Link href="/dashboard/tests" className="group block h-full">
           <Card className="hover:border-primary/40 h-full min-h-40 transition-colors group-hover:shadow-md">
             <CardHeader className="gap-3">
               <CardTitle className="text-xl">Админка</CardTitle>
@@ -46,7 +46,7 @@ export default function ArchiveHomePage() {
           </Card>
         </Link>
 
-        <Link href="/admin/create" className="group block h-full">
+        <Link href="/dashboard/tests/create" className="group block h-full">
           <Card className="hover:border-primary/40 h-full min-h-40 transition-colors group-hover:shadow-md">
             <CardHeader className="gap-3">
               <CardTitle className="text-xl">Создать тест</CardTitle>

@@ -31,7 +31,7 @@ export async function SiteHeader() {
           ) : (
             <>
               <Link
-                href="/admin"
+                href="/dashboard/tests"
                 className={buttonVariants({
                   variant: "outline",
                   size: "sm",

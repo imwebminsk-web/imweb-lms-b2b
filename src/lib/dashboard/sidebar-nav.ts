@@ -4,9 +4,10 @@ import {
   BookOpenIcon,
   DollarSignIcon,
   FilePlusIcon,
+  FileQuestionMarkIcon,
   GraduationCapIcon,
   LifeBuoyIcon,
-  Settings2Icon,
+  UsersIcon,
 } from "lucide-react";
 
 import type { Database } from "@/types/database.types";
@@ -22,29 +23,43 @@ export type SidebarNavItem = {
 export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
   if (role === "admin") {
     return [
-      { title: "Management", url: "/admin", icon: Settings2Icon },
-      { title: "Finances", url: "/admin/dashboard", icon: DollarSignIcon },
-      { title: "All Courses", url: "/admin/dashboard", icon: BookOpenIcon },
+      {
+        title: "Тесты",
+        url: "/dashboard/tests",
+        icon: FileQuestionMarkIcon,
+      },
+      { title: "Финансы", url: "/dashboard", icon: DollarSignIcon },
+      { title: "Все курсы", url: "/dashboard", icon: BookOpenIcon },
     ];
   }
   if (role === "teacher") {
     return [
-      { title: "My Courses", url: "/teacher/dashboard", icon: BookOpenIcon },
-      { title: "Create Lesson", url: "/admin/create", icon: FilePlusIcon },
+      { title: "Мои курсы", url: "/dashboard/courses", icon: BookOpenIcon },
+      { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
       {
-        title: "Student Analytics",
-        url: "/admin/dashboard",
+        title: "Тесты",
+        url: "/dashboard/tests",
+        icon: FileQuestionMarkIcon,
+      },
+      {
+        title: "Создать урок",
+        url: "/dashboard/tests/create",
+        icon: FilePlusIcon,
+      },
+      {
+        title: "Аналитика учеников",
+        url: "/dashboard",
         icon: BarChartIcon,
       },
     ];
   }
   return [
     {
-      title: "My Learning",
+      title: "Моё обучение",
       url: "/dashboard",
       icon: GraduationCapIcon,
     },
-    { title: "Catalog", url: "/", icon: BookOpenIcon },
-    { title: "Support", url: "/", icon: LifeBuoyIcon },
+    { title: "Каталог", url: "/", icon: BookOpenIcon },
+    { title: "Поддержка", url: "/", icon: LifeBuoyIcon },
   ];
 }

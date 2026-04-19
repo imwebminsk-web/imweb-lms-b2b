@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 };
 
 function sanitizeNext(raw: string | undefined): string {
-  if (!raw || !raw.startsWith("/")) return "/";
-  if (raw.startsWith("//")) return "/";
+  if (!raw || !raw.startsWith("/")) return "/dashboard";
+  if (raw.startsWith("//")) return "/dashboard";
   return raw;
 }
 

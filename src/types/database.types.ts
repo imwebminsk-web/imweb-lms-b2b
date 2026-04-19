@@ -16,12 +16,25 @@ export type Database = {
     Tables: {
       courses: {
         Row: {
+          age_group: string | null
+          category: string | null
+          created_at: string
           description: string | null
+          detailed_description: string | null
+          difficulty_level: string | null
+          delivery_format: string | null
+          duration_unit: string | null
+          duration_value: number | null
+          has_certificate: boolean
           id: string
+          image_url: string | null
           images_gallery: Json
           languages: string[]
-          level: Database["public"]["Enums"]["course_level"]
+          level: Database["public"]["Enums"]["course_level"] | null
+          marketing_audience: string | null
+          language: string | null
           price: string
+          promotional_images: string[] | null
           slug: string
           start_date: string | null
           start_date_type: Database["public"]["Enums"]["start_date_type"]
@@ -30,14 +43,30 @@ export type Database = {
           teacher_id: string
           thumbnail_url: string | null
           title: string
+          video_url: string | null
+          vimeo_url: string | null
+          youtube_url: string | null
         }
         Insert: {
+          age_group?: string | null
+          category?: string | null
+          created_at?: string
           description?: string | null
+          detailed_description?: string | null
+          difficulty_level?: string | null
+          delivery_format?: string | null
+          duration_unit?: string | null
+          duration_value?: number | null
+          has_certificate?: boolean
           id?: string
+          image_url?: string | null
           images_gallery?: Json
           languages?: string[]
-          level?: Database["public"]["Enums"]["course_level"]
+          level?: Database["public"]["Enums"]["course_level"] | null
+          marketing_audience?: string | null
+          language?: string | null
           price?: string
+          promotional_images?: string[]
           slug: string
           start_date?: string | null
           start_date_type?: Database["public"]["Enums"]["start_date_type"]
@@ -46,14 +75,30 @@ export type Database = {
           teacher_id: string
           thumbnail_url?: string | null
           title: string
+          video_url?: string | null
+          vimeo_url?: string | null
+          youtube_url?: string | null
         }
         Update: {
+          age_group?: string | null
+          category?: string | null
+          created_at?: string
           description?: string | null
+          detailed_description?: string | null
+          difficulty_level?: string | null
+          delivery_format?: string | null
+          duration_unit?: string | null
+          duration_value?: number | null
+          has_certificate?: boolean
           id?: string
+          image_url?: string | null
           images_gallery?: Json
           languages?: string[]
-          level?: Database["public"]["Enums"]["course_level"]
+          level?: Database["public"]["Enums"]["course_level"] | null
+          marketing_audience?: string | null
+          language?: string | null
           price?: string
+          promotional_images?: string[]
           slug?: string
           start_date?: string | null
           start_date_type?: Database["public"]["Enums"]["start_date_type"]
@@ -62,6 +107,9 @@ export type Database = {
           teacher_id?: string
           thumbnail_url?: string | null
           title?: string
+          video_url?: string | null
+          vimeo_url?: string | null
+          youtube_url?: string | null
         }
         Relationships: [
           {
@@ -73,10 +121,93 @@ export type Database = {
           },
         ]
       }
+      cohorts: {
+        Row: {
+          course_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          pin_code: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          pin_code: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          pin_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohorts_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      enrollments: {
+        Row: {
+          cohort_id: string | null
+          course_id: string
+          enrolled_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          cohort_id?: string | null
+          course_id: string
+          enrolled_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          cohort_id?: string | null
+          course_id?: string
+          enrolled_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enrollments_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lessons: {
         Row: {
           content: Json
+          created_at: string
           id: string
+          is_published: boolean
           module_id: string
           order_index: number
           test_id: string | null
@@ -85,16 +216,20 @@ export type Database = {
         }
         Insert: {
           content?: Json
+          created_at?: string
           id?: string
+          is_published?: boolean
           module_id: string
           order_index?: number
           test_id?: string | null
           title: string
-          type: Database["public"]["Enums"]["lesson_type"]
+          type?: Database["public"]["Enums"]["lesson_type"]
         }
         Update: {
           content?: Json
+          created_at?: string
           id?: string
+          is_published?: boolean
           module_id?: string
           order_index?: number
           test_id?: string | null
@@ -118,21 +253,62 @@ export type Database = {
           },
         ]
       }
+      lesson_blocks: {
+        Row: {
+          content: Json
+          created_at: string
+          id: string
+          lesson_id: string
+          order_index: number
+          type: Database["public"]["Enums"]["lesson_block_type"]
+          updated_at: string
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          id?: string
+          lesson_id: string
+          order_index?: number
+          type: Database["public"]["Enums"]["lesson_block_type"]
+          updated_at?: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          id?: string
+          lesson_id?: string
+          order_index?: number
+          type?: Database["public"]["Enums"]["lesson_block_type"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lesson_blocks_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       modules: {
         Row: {
           course_id: string
+          created_at: string
           id: string
           order_index: number
           title: string
         }
         Insert: {
           course_id: string
+          created_at?: string
           id?: string
           order_index?: number
           title: string
         }
         Update: {
           course_id?: string
+          created_at?: string
           id?: string
           order_index?: number
           title?: string
@@ -378,7 +554,14 @@ export type Database = {
         | "C1"
         | "C2"
       course_status: "draft" | "published"
-      lesson_type: "video" | "text" | "test"
+      lesson_block_type:
+        | "text"
+        | "image"
+        | "youtube"
+        | "vimeo"
+        | "assignment"
+        | "quiz"
+      lesson_type: "video" | "text" | "test" | "quiz"
       profile_role: "admin" | "teacher" | "student"
       start_date_type: "fixed" | "on_demand"
       target_audience: "kids" | "adults"
@@ -522,7 +705,15 @@ export const Constants = {
         "C2",
       ],
       course_status: ["draft", "published"],
-      lesson_type: ["video", "text", "test"],
+      lesson_block_type: [
+        "text",
+        "image",
+        "youtube",
+        "vimeo",
+        "assignment",
+        "quiz",
+      ],
+      lesson_type: ["video", "text", "test", "quiz"],
       profile_role: ["admin", "teacher", "student"],
       start_date_type: ["fixed", "on_demand"],
       target_audience: ["kids", "adults"],

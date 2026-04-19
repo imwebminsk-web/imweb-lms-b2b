@@ -8,6 +8,8 @@ export const dashboardTableRowSchema = z.object({
   status: z.string(),
   target: z.string(),
   limit: z.string(),
+  /** URL-сегмент публичной страницы курса (`/courses/[slug]`). */
+  slug: z.string(),
   reviewer: z.string(),
 });
 

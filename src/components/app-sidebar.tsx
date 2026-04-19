@@ -7,12 +7,15 @@ import {
   HelpCircleIcon,
   SearchIcon,
   SettingsIcon,
-  type LucideIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
+import {
+  getSidebarNavForRole,
+  type ProfileRole,
+} from "@/lib/dashboard/sidebar-nav"
 import {
   Sidebar,
   SidebarContent,
@@ -29,24 +32,20 @@ export type AppSidebarUser = {
   avatar: string
 }
 
-export type AppSidebarNavItem = {
-  title: string
-  url: string
-  icon: LucideIcon
-}
-
 export function AppSidebar({
   user,
-  navMain,
+  role,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   user: AppSidebarUser
-  navMain: AppSidebarNavItem[]
+  role: ProfileRole
 }) {
+  const navMain = getSidebarNavForRole(role)
+
   const navSecondary = [
-    { title: "Settings", url: "/admin", icon: SettingsIcon },
-    { title: "Get Help", url: "/", icon: HelpCircleIcon },
-    { title: "Search", url: "/", icon: SearchIcon },
+    { title: "Настройки", url: "/dashboard/tests", icon: SettingsIcon },
+    { title: "Помощь", url: "/", icon: HelpCircleIcon },
+    { title: "Поиск", url: "/", icon: SearchIcon },
   ]
 
   return (

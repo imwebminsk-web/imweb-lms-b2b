@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -11,7 +12,7 @@ type LoginFormProps = {
   redirectTo?: string;
 };
 
-export function LoginForm({ redirectTo = "/" }: LoginFormProps) {
+export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -48,13 +49,13 @@ export function LoginForm({ redirectTo = "/" }: LoginFormProps) {
       <div className="space-y-1">
         <h1 className="text-lg font-semibold tracking-tight">Вход</h1>
         <p className="text-muted-foreground text-sm">
-          Email и пароль из Supabase Auth
+          Адрес почты и пароль из Supabase Auth
         </p>
       </div>
 
       <div className="space-y-2">
         <label htmlFor="email" className="text-sm font-medium">
-          Email
+          Электронная почта
         </label>
         <input
           id="email"
@@ -93,6 +94,16 @@ export function LoginForm({ redirectTo = "/" }: LoginFormProps) {
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Входим…" : "Войти"}
       </Button>
+
+      <p className="text-muted-foreground text-center text-sm">
+        Нет аккаунта?{" "}
+        <Link
+          href="/register"
+          className="text-primary font-medium underline-offset-4 hover:underline"
+        >
+          Зарегистрироваться
+        </Link>
+      </p>
     </form>
   );
 }

@@ -4,6 +4,7 @@ import {
   type DashboardTableRow,
   dashboardTableRowSchema,
 } from "@/lib/dashboard-table-schema";
+import { formatCoursePriceDecimal } from "@/lib/format-course-price";
 import type { Database } from "@/types/database.types";
 
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
@@ -13,15 +14,10 @@ function uuidToStableNumber(id: string): number {
   return parseInt(hex, 16) % 2147483647;
 }
 
-function formatPrice(price: string): string {
-  const n = Number(price);
-  return Number.isFinite(n) ? n.toFixed(2) : price;
-}
-
 function courseStatusLabel(
   status: Database["public"]["Enums"]["course_status"],
-): "Done" | "In Process" {
-  return status === "published" ? "Done" : "In Process";
+): "Опубликован" | "Черновик" {
+  return status === "published" ? "Опубликован" : "Черновик";
 }
 
 function mapCourseRow(
@@ -29,15 +25,19 @@ function mapCourseRow(
     id: string;
     title: string;
     status: Database["public"]["Enums"]["course_status"];
-    level: Database["public"]["Enums"]["course_level"];
-    price: string;
+    level: Database["public"]["Enums"]["course_level"] | null;
+    price: string | number | null;
     slug: string;
     languages: string[];
     teacher: { full_name: string | null } | { full_name: string | null }[] | null;
   },
 ): DashboardTableRow {
   const languages =
-    row.languages?.length > 0 ? row.languages.join(", ") : String(row.level);
+    row.languages?.length > 0
+      ? row.languages.join(", ")
+      : row.level != null
+        ? String(row.level)
+        : "—";
   const teacherRel = row.teacher;
   const teacherName = Array.isArray(teacherRel)
     ? teacherRel[0]?.full_name
@@ -47,8 +47,9 @@ function mapCourseRow(
     header: row.title,
     type: languages,
     status: courseStatusLabel(row.status),
-    target: formatPrice(row.price),
+    target: formatCoursePriceDecimal(row.price),
     limit: row.slug,
+    slug: row.slug,
     reviewer: teacherName?.trim() || "—",
   });
 }

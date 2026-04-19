@@ -39,6 +39,7 @@ import {
   CheckCircle2Icon,
   CheckCircleIcon,
   ChevronDownIcon,
+  EyeIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ChevronsLeftIcon,
@@ -127,7 +128,7 @@ function DragHandle({ id }: { id: number }) {
       className="size-7 text-muted-foreground hover:bg-transparent"
     >
       <GripVerticalIcon className="size-3 text-muted-foreground" />
-      <span className="sr-only">Drag to reorder</span>
+      <span className="sr-only">Перетащите, чтобы изменить порядок</span>
     </Button>
   )
 }
@@ -153,7 +154,7 @@ const columns: ColumnDef<DashboardTableRow>[] = [
           onCheckedChange={(value) =>
             table.toggleAllPageRowsSelected(value === true)
           }
-          aria-label="Select all"
+          aria-label="Выбрать все"
         />
       </div>
     ),
@@ -162,7 +163,7 @@ const columns: ColumnDef<DashboardTableRow>[] = [
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
+          aria-label="Выбрать строку"
         />
       </div>
     ),
@@ -171,7 +172,7 @@ const columns: ColumnDef<DashboardTableRow>[] = [
   },
   {
     accessorKey: "header",
-    header: "Header",
+    header: "Название",
     cell: ({ row }) => {
       return <TableCellViewer item={row.original} />
     },
@@ -179,7 +180,7 @@ const columns: ColumnDef<DashboardTableRow>[] = [
   },
   {
     accessorKey: "type",
-    header: "Section Type",
+    header: "Тип / языки",
     cell: ({ row }) => (
       <div className="w-32">
         <Badge variant="outline" className="px-1.5 text-muted-foreground">
@@ -190,13 +191,13 @@ const columns: ColumnDef<DashboardTableRow>[] = [
   },
   {
     accessorKey: "status",
-    header: "Status",
+    header: "Статус",
     cell: ({ row }) => (
       <Badge
         variant="outline"
         className="flex gap-1 px-1.5 text-muted-foreground [&_svg]:size-3"
       >
-        {row.original.status === "Done" ? (
+        {row.original.status === "Опубликован" ? (
           <CheckCircle2Icon className="text-green-500 dark:text-green-400" />
         ) : (
           <LoaderIcon />
@@ -207,20 +208,20 @@ const columns: ColumnDef<DashboardTableRow>[] = [
   },
   {
     accessorKey: "target",
-    header: () => <div className="w-full text-right">Target</div>,
+    header: () => <div className="w-full text-right">Цена</div>,
     cell: ({ row }) => (
       <form
         onSubmit={(e) => {
           e.preventDefault()
           toast.promise(new Promise((resolve) => setTimeout(resolve, 1000)), {
-            loading: `Saving ${row.original.header}`,
-            success: "Done",
-            error: "Error",
+            loading: `Сохранение: ${row.original.header}`,
+            success: "Сохранено",
+            error: "Ошибка",
           })
         }}
       >
         <Label htmlFor={`${row.original.id}-target`} className="sr-only">
-          Target
+          Цена
         </Label>
         <Input
           className="h-8 w-16 border-transparent bg-transparent text-right shadow-none hover:bg-input/30 focus-visible:border focus-visible:bg-background"
@@ -232,20 +233,20 @@ const columns: ColumnDef<DashboardTableRow>[] = [
   },
   {
     accessorKey: "limit",
-    header: () => <div className="w-full text-right">Limit</div>,
+    header: () => <div className="w-full text-right">Slug</div>,
     cell: ({ row }) => (
       <form
         onSubmit={(e) => {
           e.preventDefault()
           toast.promise(new Promise((resolve) => setTimeout(resolve, 1000)), {
-            loading: `Saving ${row.original.header}`,
-            success: "Done",
-            error: "Error",
+            loading: `Сохранение: ${row.original.header}`,
+            success: "Сохранено",
+            error: "Ошибка",
           })
         }}
       >
         <Label htmlFor={`${row.original.id}-limit`} className="sr-only">
-          Limit
+          Slug
         </Label>
         <Input
           className="h-8 w-16 border-transparent bg-transparent text-right shadow-none hover:bg-input/30 focus-visible:border focus-visible:bg-background"
@@ -257,7 +258,7 @@ const columns: ColumnDef<DashboardTableRow>[] = [
   },
   {
     accessorKey: "reviewer",
-    header: "Reviewer",
+    header: "Преподаватель",
     cell: ({ row }) => {
       const isAssigned = row.original.reviewer !== "Assign reviewer"
 
@@ -268,14 +269,14 @@ const columns: ColumnDef<DashboardTableRow>[] = [
       return (
         <>
           <Label htmlFor={`${row.original.id}-reviewer`} className="sr-only">
-            Reviewer
+            Преподаватель
           </Label>
           <Select>
             <SelectTrigger
               className="h-8 w-40"
               id={`${row.original.id}-reviewer`}
             >
-              <SelectValue placeholder="Assign reviewer" />
+              <SelectValue placeholder="Назначить проверяющего" />
             </SelectTrigger>
             <SelectContent align="end">
               <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
@@ -290,7 +291,7 @@ const columns: ColumnDef<DashboardTableRow>[] = [
   },
   {
     id: "actions",
-    cell: () => (
+    cell: ({ row }) => (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -299,15 +300,25 @@ const columns: ColumnDef<DashboardTableRow>[] = [
             size="icon"
           >
             <MoreVerticalIcon />
-            <span className="sr-only">Open menu</span>
+            <span className="sr-only">Открыть меню</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-32">
-          <DropdownMenuItem>Edit</DropdownMenuItem>
-          <DropdownMenuItem>Make a copy</DropdownMenuItem>
-          <DropdownMenuItem>Favorite</DropdownMenuItem>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem
+            className="gap-2"
+            onClick={() => {
+              const path = `/courses/${encodeURIComponent(row.original.slug)}`
+              window.open(path, "_blank", "noopener,noreferrer")
+            }}
+          >
+            <EyeIcon className="size-4 opacity-70" aria-hidden />
+            Посмотреть курс
+          </DropdownMenuItem>
+          <DropdownMenuItem>Изменить</DropdownMenuItem>
+          <DropdownMenuItem>Дублировать</DropdownMenuItem>
+          <DropdownMenuItem>В избранное</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>Delete</DropdownMenuItem>
+          <DropdownMenuItem>Удалить</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     ),
@@ -411,26 +422,26 @@ export function DataTable({
     >
       <div className="flex items-center justify-between px-4 lg:px-6">
         <Label htmlFor="view-selector" className="sr-only">
-          View
+          Вид
         </Label>
         <Select defaultValue="outline">
           <SelectTrigger
             className="@4xl/main:hidden flex w-fit"
             id="view-selector"
           >
-            <SelectValue placeholder="Select a view" />
+            <SelectValue placeholder="Выберите вид" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="outline">Outline</SelectItem>
-            <SelectItem value="past-performance">Past Performance</SelectItem>
-            <SelectItem value="key-personnel">Key Personnel</SelectItem>
-            <SelectItem value="focus-documents">Focus Documents</SelectItem>
+            <SelectItem value="outline">Структура</SelectItem>
+            <SelectItem value="past-performance">Прошлые результаты</SelectItem>
+            <SelectItem value="key-personnel">Ключевые люди</SelectItem>
+            <SelectItem value="focus-documents">Документы фокуса</SelectItem>
           </SelectContent>
         </Select>
         <TabsList className="@4xl/main:flex hidden">
-          <TabsTrigger value="outline">Outline</TabsTrigger>
+          <TabsTrigger value="outline">Структура</TabsTrigger>
           <TabsTrigger value="past-performance" className="gap-1">
-            Past Performance{" "}
+            Прошлые результаты{" "}
             <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -439,7 +450,7 @@ export function DataTable({
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="key-personnel" className="gap-1">
-            Key Personnel{" "}
+            Ключевые люди{" "}
             <Badge
               variant="secondary"
               className="flex h-5 w-5 items-center justify-center rounded-full bg-muted-foreground/30"
@@ -447,15 +458,15 @@ export function DataTable({
               2
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="focus-documents">Focus Documents</TabsTrigger>
+          <TabsTrigger value="focus-documents">Документы фокуса</TabsTrigger>
         </TabsList>
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm">
                 <ColumnsIcon />
-                <span className="hidden lg:inline">Customize Columns</span>
-                <span className="lg:hidden">Columns</span>
+                <span className="hidden lg:inline">Настроить колонки</span>
+                <span className="lg:hidden">Колонки</span>
                 <ChevronDownIcon />
               </Button>
             </DropdownMenuTrigger>
@@ -485,7 +496,7 @@ export function DataTable({
           </DropdownMenu>
           <Button variant="outline" size="sm">
             <PlusIcon />
-            <span className="hidden lg:inline">Add Section</span>
+            <span className="hidden lg:inline">Добавить раздел</span>
           </Button>
         </div>
       </div>
@@ -536,7 +547,7 @@ export function DataTable({
                       colSpan={columns.length}
                       className="h-24 text-center"
                     >
-                      No results.
+                      Нет данных.
                     </TableCell>
                   </TableRow>
                 )}
@@ -546,13 +557,13 @@ export function DataTable({
         </div>
         <div className="flex items-center justify-between px-4">
           <div className="hidden flex-1 text-sm text-muted-foreground lg:flex">
-            {table.getFilteredSelectedRowModel().rows.length} of{" "}
-            {table.getFilteredRowModel().rows.length} row(s) selected.
+            Выбрано строк: {table.getFilteredSelectedRowModel().rows.length} из{" "}
+            {table.getFilteredRowModel().rows.length}.
           </div>
           <div className="flex w-full items-center gap-8 lg:w-fit">
             <div className="hidden items-center gap-2 lg:flex">
               <Label htmlFor="rows-per-page" className="text-sm font-medium">
-                Rows per page
+                Строк на странице
               </Label>
               <Select
                 value={`${table.getState().pagination.pageSize}`}
@@ -575,7 +586,7 @@ export function DataTable({
               </Select>
             </div>
             <div className="flex w-fit items-center justify-center text-sm font-medium">
-              Page {table.getState().pagination.pageIndex + 1} of{" "}
+              Стр. {table.getState().pagination.pageIndex + 1} из{" "}
               {table.getPageCount()}
             </div>
             <div className="ml-auto flex items-center gap-2 lg:ml-0">
@@ -585,7 +596,7 @@ export function DataTable({
                 onClick={() => table.setPageIndex(0)}
                 disabled={!table.getCanPreviousPage()}
               >
-                <span className="sr-only">Go to first page</span>
+                <span className="sr-only">На первую страницу</span>
                 <ChevronsLeftIcon />
               </Button>
               <Button
@@ -595,7 +606,7 @@ export function DataTable({
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
               >
-                <span className="sr-only">Go to previous page</span>
+                <span className="sr-only">На предыдущую страницу</span>
                 <ChevronLeftIcon />
               </Button>
               <Button
@@ -605,7 +616,7 @@ export function DataTable({
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
-                <span className="sr-only">Go to next page</span>
+                <span className="sr-only">На следующую страницу</span>
                 <ChevronRightIcon />
               </Button>
               <Button
@@ -615,7 +626,7 @@ export function DataTable({
                 onClick={() => table.setPageIndex(table.getPageCount() - 1)}
                 disabled={!table.getCanNextPage()}
               >
-                <span className="sr-only">Go to last page</span>
+                <span className="sr-only">На последнюю страницу</span>
                 <ChevronsRightIcon />
               </Button>
             </div>
@@ -642,21 +653,21 @@ export function DataTable({
 }
 
 const chartData = [
-  { month: "January", desktop: 186, mobile: 80 },
-  { month: "February", desktop: 305, mobile: 200 },
-  { month: "March", desktop: 237, mobile: 120 },
-  { month: "April", desktop: 73, mobile: 190 },
-  { month: "May", desktop: 209, mobile: 130 },
-  { month: "June", desktop: 214, mobile: 140 },
+  { month: "Янв.", desktop: 186, mobile: 80 },
+  { month: "Фев.", desktop: 305, mobile: 200 },
+  { month: "Мар.", desktop: 237, mobile: 120 },
+  { month: "Апр.", desktop: 73, mobile: 190 },
+  { month: "Май", desktop: 209, mobile: 130 },
+  { month: "Июн.", desktop: 214, mobile: 140 },
 ]
 
 const chartConfig = {
   desktop: {
-    label: "Desktop",
+    label: "Компьютер",
     color: "var(--primary)",
   },
   mobile: {
-    label: "Mobile",
+    label: "Мобильные",
     color: "var(--primary)",
   },
 } satisfies ChartConfig
@@ -678,7 +689,7 @@ function TableCellViewer({ item }: { item: DashboardTableRow }) {
         <SheetHeader className="gap-1">
           <SheetTitle>{item.header}</SheetTitle>
           <SheetDescription>
-            Showing total visitors for the last 6 months
+            Демонстрационный график за последние 6 месяцев
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto py-4 text-sm">
@@ -727,13 +738,11 @@ function TableCellViewer({ item }: { item: DashboardTableRow }) {
               <Separator />
               <div className="grid gap-2">
                 <div className="flex gap-2 font-medium leading-none">
-                  Trending up by 5.2% this month{" "}
+                  Рост на 5,2% за месяц{" "}
                   <TrendingUpIcon className="size-4" />
                 </div>
                 <div className="text-muted-foreground">
-                  Showing total visitors for the last 6 months. This is just
-                  some random text to test the layout. It spans multiple lines
-                  and should wrap around.
+                  Пример текста для проверки вёрстки: несколько строк и переносы.
                 </div>
               </div>
               <Separator />
@@ -741,65 +750,64 @@ function TableCellViewer({ item }: { item: DashboardTableRow }) {
           )}
           <form className="flex flex-col gap-4">
             <div className="flex flex-col gap-3">
-              <Label htmlFor="header">Header</Label>
+              <Label htmlFor="header">Название</Label>
               <Input id="header" defaultValue={item.header} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-3">
-                <Label htmlFor="type">Type</Label>
+                <Label htmlFor="type">Тип</Label>
                 <Select defaultValue={item.type}>
                   <SelectTrigger id="type" className="w-full">
-                    <SelectValue placeholder="Select a type" />
+                    <SelectValue placeholder="Выберите тип" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Table of Contents">
-                      Table of Contents
+                      Оглавление
                     </SelectItem>
                     <SelectItem value="Executive Summary">
-                      Executive Summary
+                      Резюме для руководства
                     </SelectItem>
                     <SelectItem value="Technical Approach">
-                      Technical Approach
+                      Технический подход
                     </SelectItem>
-                    <SelectItem value="Design">Design</SelectItem>
-                    <SelectItem value="Capabilities">Capabilities</SelectItem>
+                    <SelectItem value="Design">Дизайн</SelectItem>
+                    <SelectItem value="Capabilities">Возможности</SelectItem>
                     <SelectItem value="Focus Documents">
-                      Focus Documents
+                      Ключевые документы
                     </SelectItem>
-                    <SelectItem value="Narrative">Narrative</SelectItem>
-                    <SelectItem value="Cover Page">Cover Page</SelectItem>
+                    <SelectItem value="Narrative">Повествование</SelectItem>
+                    <SelectItem value="Cover Page">Титульная страница</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-3">
-                <Label htmlFor="status">Status</Label>
+                <Label htmlFor="status">Статус</Label>
                 <Select defaultValue={item.status}>
                   <SelectTrigger id="status" className="w-full">
-                    <SelectValue placeholder="Select a status" />
+                    <SelectValue placeholder="Выберите статус" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Done">Done</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Not Started">Not Started</SelectItem>
+                    <SelectItem value="Опубликован">Опубликован</SelectItem>
+                    <SelectItem value="Черновик">Черновик</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-3">
-                <Label htmlFor="target">Target</Label>
+                <Label htmlFor="target">Цена</Label>
                 <Input id="target" defaultValue={item.target} />
               </div>
               <div className="flex flex-col gap-3">
-                <Label htmlFor="limit">Limit</Label>
+                <Label htmlFor="limit">Slug</Label>
                 <Input id="limit" defaultValue={item.limit} />
               </div>
             </div>
             <div className="flex flex-col gap-3">
-              <Label htmlFor="reviewer">Reviewer</Label>
+              <Label htmlFor="reviewer">Преподаватель</Label>
               <Select defaultValue={item.reviewer}>
                 <SelectTrigger id="reviewer" className="w-full">
-                  <SelectValue placeholder="Select a reviewer" />
+                  <SelectValue placeholder="Выберите преподавателя" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Eddie Lake">Eddie Lake</SelectItem>
@@ -813,10 +821,10 @@ function TableCellViewer({ item }: { item: DashboardTableRow }) {
           </form>
         </div>
         <SheetFooter className="mt-auto flex gap-2 sm:flex-col sm:space-x-0">
-          <Button className="w-full">Submit</Button>
+          <Button className="w-full">Отправить</Button>
           <SheetClose asChild>
             <Button variant="outline" className="w-full">
-              Done
+              Готово
             </Button>
           </SheetClose>
         </SheetFooter>

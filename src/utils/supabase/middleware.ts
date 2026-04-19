@@ -37,7 +37,32 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Не убирать: инициирует refresh при необходимости и синхронизирует куки в ответе.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+
+  function withSessionCookies(response: NextResponse) {
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      response.cookies.set(cookie.name, cookie.value);
+    });
+    return response;
+  }
+
+  if (!user && (pathname.startsWith("/dashboard") || pathname.startsWith("/learn"))) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("next", pathname);
+    return withSessionCookies(NextResponse.redirect(url));
+  }
+
+  if (user && (pathname === "/login" || pathname === "/register")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    url.search = "";
+    return withSessionCookies(NextResponse.redirect(url));
+  }
 
   return supabaseResponse;
 }

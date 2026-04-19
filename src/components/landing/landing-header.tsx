@@ -73,7 +73,7 @@ export function LandingHeader() {
           >
             Войти
           </Link>
-          <Link href="/login" className={cn(buttonVariants({ size: "sm" }))}>
+          <Link href="/register" className={cn(buttonVariants({ size: "sm" }))}>
             Регистрация
           </Link>
         </div>

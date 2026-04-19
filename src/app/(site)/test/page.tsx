@@ -107,7 +107,7 @@ export default async function TestsListPage() {
           </CardHeader>
           <CardFooter>
             <Link
-              href="/admin/create"
+              href="/dashboard/tests/create"
               className={cn(buttonVariants({ size: "default" }))}
             >
               Создать тест

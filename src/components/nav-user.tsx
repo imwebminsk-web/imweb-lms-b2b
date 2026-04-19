@@ -29,6 +29,8 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
+import { signOut } from "@/app/actions/auth-actions"
+
 export function NavUser({
   user,
 }: {
@@ -86,22 +88,26 @@ export function NavUser({
             <DropdownMenuGroup>
               <DropdownMenuItem>
                 <UserCircleIcon />
-                Account
+                Аккаунт
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <CreditCardIcon />
-                Billing
+                Оплата
               </DropdownMenuItem>
               <DropdownMenuItem>
                 <BellIcon />
-                Notifications
+                Уведомления
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOutIcon />
-              Log out
-            </DropdownMenuItem>
+            <form action={signOut} className="w-full">
+              <DropdownMenuItem asChild>
+                <button type="submit" className="w-full">
+                  <LogOutIcon />
+                  Выйти
+                </button>
+              </DropdownMenuItem>
+            </form>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>
