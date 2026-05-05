@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -17,9 +18,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { formatCoursePrice } from "@/lib/format-course-price";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
+
+export const dynamic = "force-dynamic";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -34,10 +38,14 @@ type CourseRow = Pick<
   | "price"
   | "slug"
   | "image_url"
+  | "video_url"
   | "youtube_url"
+  | "vimeo_url"
   | "category"
+  | "delivery_format"
   | "marketing_audience"
   | "age_group"
+  | "language"
   | "duration_value"
   | "duration_unit"
   | "has_certificate"
@@ -132,6 +140,34 @@ function youtubeEmbedSrc(url: string | null): string | null {
   return null;
 }
 
+/** Возвращает URL для iframe Vimeo или null, если ссылка не распознана. */
+function vimeoEmbedSrc(url: string | null): string | null {
+  const raw = url?.trim();
+  if (!raw) return null;
+
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    if (host !== "vimeo.com" && host !== "player.vimeo.com") {
+      return null;
+    }
+
+    if (host === "player.vimeo.com" && u.pathname.startsWith("/video/")) {
+      return `${u.origin}${u.pathname}`;
+    }
+
+    const parts = u.pathname.split("/").filter(Boolean);
+    const id = parts[0];
+    if (!id || !/^\d+$/.test(id)) {
+      return null;
+    }
+
+    return `https://player.vimeo.com/video/${id}`;
+  } catch {
+    return null;
+  }
+}
+
 function buildCurriculumPreview(
   raw: CourseRow["modules"],
 ): CurriculumModulePreview[] {
@@ -168,10 +204,14 @@ const getPublishedCourseBySlug = cache(
         price,
         slug,
         image_url,
+        video_url,
         youtube_url,
+        vimeo_url,
         category,
+        delivery_format,
         marketing_audience,
         age_group,
+        language,
         duration_value,
         duration_unit,
         has_certificate,
@@ -235,8 +275,17 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
   }
 
   const curriculum = buildCurriculumPreview(course.modules);
-  const embedSrc = youtubeEmbedSrc(course.youtube_url);
-  const priceLabel = formatCoursePrice(course.price);
+  const hasYouTubeUrl = (course.youtube_url?.trim()?.length ?? 0) > 0;
+  const hasVimeoUrl = (course.vimeo_url?.trim()?.length ?? 0) > 0;
+  const hasSelfHostedVideo = (course.video_url?.trim()?.length ?? 0) > 0;
+  const youtubeSrc = youtubeEmbedSrc(course.youtube_url);
+  const vimeoSrc = vimeoEmbedSrc(course.vimeo_url);
+  const selfHostedVideo = course.video_url?.trim() || "";
+  const numericPrice = Number(course.price ?? 0);
+  const priceLabel =
+    Number.isFinite(numericPrice) && numericPrice > 0
+      ? formatCoursePrice(course.price)
+      : "Бесплатно";
   const durationLabel = formatDuration(
     course.duration_value,
     course.duration_unit,
@@ -246,157 +295,232 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
   const galleryUrls = (course.promotional_images ?? []).filter(
     (u) => typeof u === "string" && u.trim().length > 0,
   );
+  const audienceRaw = course.marketing_audience?.trim() ?? "";
+  const audienceLower = audienceRaw.toLowerCase();
+  const isAdultAudience = audienceLower.includes("взросл");
+  const isKidsAudience =
+    audienceLower.includes("дет") || audienceLower.includes("подрост");
+  const formatRaw = course.delivery_format?.trim() ?? "";
+  const formatLower = formatRaw.toLowerCase();
+
+  const markerBase =
+    "rounded-sm px-2 py-1 text-sm font-bold uppercase tracking-wider";
+
+  const audienceMarkerClass = isAdultAudience
+    ? "bg-[#7dd3fc] text-black"
+    : isKidsAudience
+      ? "bg-[#fde047] text-black"
+      : "bg-white/20 text-white";
+
+  const formatMarkerClass = formatLower.includes("онлайн")
+    ? "bg-[#a3e635] text-black"
+    : formatLower.includes("офлайн")
+      ? "bg-[#fb923c] text-black"
+      : formatLower.includes("гибрид")
+        ? "bg-[#c084fc] text-black"
+        : "bg-white/20 text-white";
 
   return (
     <WithSiteHeader>
-      <main className="mx-auto w-full max-w-6xl px-4 py-8 lg:px-8">
-        <div className="grid gap-10 lg:grid-cols-[1fr_minmax(280px,340px)] lg:items-start">
-          <div className="min-w-0 space-y-10">
-            <header className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {course.category?.trim() ? (
-                  <Badge variant="secondary">{course.category.trim()}</Badge>
-                ) : null}
-                {course.marketing_audience?.trim() ? (
-                  <Badge variant="secondary">
-                    {course.marketing_audience.trim()}
-                  </Badge>
-                ) : null}
-                {course.age_group?.trim() ? (
-                  <Badge variant="outline">
-                    Возраст: {course.age_group.trim()}
-                  </Badge>
-                ) : null}
-                {course.level != null ? (
-                  <Badge variant="outline">CEFR: {course.level}</Badge>
-                ) : null}
-              </div>
-              <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-                {course.title}
-              </h1>
-              {course.description?.trim() ? (
-                <p className="text-muted-foreground max-w-3xl text-lg leading-relaxed">
-                  {course.description.trim()}
-                </p>
-              ) : null}
-            </header>
+      <section className="bg-slate-900 py-16">
+        <div className="container mx-auto space-y-6 px-4 sm:px-6">
+          <div className="mb-4 flex flex-wrap gap-2">
+            {course.category?.trim() ? (
+              <span className={`${markerBase} bg-white/20 text-white`}>
+                {course.category.trim()}
+              </span>
+            ) : null}
+            {course.language?.trim() ? (
+              <span className={`${markerBase} bg-[#fb7185] text-black`}>
+                {course.language.trim()}
+              </span>
+            ) : null}
+            {audienceRaw ? (
+              <span className={`${markerBase} ${audienceMarkerClass}`}>
+                {audienceRaw}
+              </span>
+            ) : null}
+            {isAdultAudience && course.level != null ? (
+              <span className={`${markerBase} bg-white/20 text-white`}>
+                Уровень: {course.level}
+              </span>
+            ) : null}
+            {isKidsAudience && course.age_group?.trim() ? (
+              <span className={`${markerBase} bg-white/20 text-white`}>
+                Возраст: {course.age_group.trim()}
+              </span>
+            ) : null}
+          </div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">
+            {course.title}
+          </h1>
+          {course.description?.trim() ? (
+            <p className="max-w-3xl text-xl leading-relaxed text-white/80">
+              {course.description.trim()}
+            </p>
+          ) : null}
+          {formatRaw ? (
+            <div className="mt-6 flex flex-wrap gap-2">
+              <span className={`${markerBase} ${formatMarkerClass}`}>
+                {formatRaw}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </section>
 
-            <section aria-label="Превью курса" className="space-y-3">
-              {embedSrc ? (
+      <main className="container mx-auto grid grid-cols-1 gap-8 px-4 py-12 sm:px-6 md:grid-cols-3">
+        <div className="space-y-24 md:col-span-2">
+          <section aria-label="Подробное описание" className="space-y-3">
+            <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+              О курсе
+            </h2>
+            {detailedHtml ? (
+              <div
+                className="prose prose-lg prose-slate max-w-none dark:prose-invert prose-img:max-w-full prose-img:h-auto prose-img:rounded-md [&_img]:mx-auto [&_img]:my-8 [&_img]:max-h-[600px] [&_img]:w-auto [&_img]:object-contain [&_img]:rounded-xl [&_iframe]:my-8 [&_iframe]:aspect-video [&_iframe]:w-full [&_video]:my-8 [&_video]:w-full"
+                dangerouslySetInnerHTML={{ __html: detailedHtml }}
+              />
+            ) : (
+              <p className="text-slate-600">
+                Подробное описание скоро появится.
+              </p>
+            )}
+          </section>
+
+          <section aria-label="Превью курса" className="space-y-3">
+            <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+              Видео
+            </h2>
+            <div className="flex flex-col gap-6">
+              {hasYouTubeUrl && youtubeSrc ? (
                 <div className="aspect-video w-full overflow-hidden rounded-xl border bg-muted shadow-sm">
                   <iframe
                     title="Превью курса на YouTube"
-                    src={embedSrc}
+                    src={youtubeSrc}
                     className="size-full"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowFullScreen
                     loading="lazy"
                   />
                 </div>
-              ) : course.image_url?.trim() ? (
+              ) : null}
+
+              {hasVimeoUrl && vimeoSrc ? (
                 <div className="aspect-video w-full overflow-hidden rounded-xl border bg-muted shadow-sm">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- произвольный URL обложки (Storage / внешние CDN) */}
-                  <img
-                    src={course.image_url.trim()}
-                    alt={`Обложка курса: ${course.title}`}
-                    className="size-full object-cover"
+                  <iframe
+                    title="Превью курса на Vimeo"
+                    src={vimeoSrc}
+                    className="size-full"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    allowFullScreen
+                    loading="lazy"
                   />
                 </div>
               ) : null}
-            </section>
 
-            {detailedHtml ? (
-              <section aria-label="Подробное описание" className="space-y-3">
-                <h2 className="text-xl font-semibold tracking-tight">
-                  О курсе
-                </h2>
-                <div
-                  className="prose dark:prose-invert max-w-none"
-                  dangerouslySetInnerHTML={{ __html: detailedHtml }}
-                />
-              </section>
-            ) : null}
+              {hasSelfHostedVideo ? (
+                <video
+                  controls
+                  playsInline
+                  className="aspect-video w-full rounded-xl border bg-muted object-cover shadow-sm"
+                  src={selfHostedVideo}
+                  preload="metadata"
+                >
+                  Ваш браузер не поддерживает воспроизведение видео.
+                </video>
+              ) : null}
+            </div>
+          </section>
 
-            {galleryUrls.length > 0 ? (
-              <section aria-label="Галерея курса" className="space-y-3">
-                <h2 className="text-xl font-semibold tracking-tight">
-                  Галерея
-                </h2>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                  {galleryUrls.map((src) => (
-                    <div
-                      key={src}
-                      className="border-border aspect-[4/3] overflow-hidden rounded-xl border bg-muted/20"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={src}
-                        alt=""
-                        className="size-full object-cover"
-                        loading="lazy"
-                      />
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            <section aria-label="Программа курса" className="space-y-3">
-              <h2 className="text-xl font-semibold tracking-tight">
-                Программа
+          {galleryUrls.length > 0 ? (
+            <section aria-label="Галерея курса" className="space-y-3">
+              <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+                Галерея
               </h2>
-              <CourseCurriculumAccordion modules={curriculum} />
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {galleryUrls.map((src) => (
+                  <div
+                    key={src}
+                    className="relative aspect-[4/3] overflow-hidden rounded-xl border bg-muted/50 shadow-sm"
+                  >
+                    <Image
+                      src={src}
+                      alt={`Изображение галереи курса: ${course.title}`}
+                      fill
+                      unoptimized
+                      className="object-contain"
+                      loading="lazy"
+                    />
+                  </div>
+                ))}
+              </div>
             </section>
-          </div>
+          ) : null}
 
-          <aside className="lg:sticky lg:top-24">
-            <Card className="shadow-md">
-              <CardHeader>
-                <CardTitle className="text-lg">Запись на курс</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-3xl font-semibold tabular-nums">
-                  {priceLabel}
-                </p>
-                <ul className="text-muted-foreground space-y-2 text-sm">
-                  {durationLabel ? (
-                    <li>
-                      <span className="text-foreground font-medium">
-                        Длительность:{" "}
-                      </span>
-                      {durationLabel}
-                    </li>
-                  ) : null}
-                  {startLabel ? (
-                    <li>
-                      <span className="text-foreground font-medium">
-                        Старт:{" "}
-                      </span>
-                      {startLabel}
-                    </li>
-                  ) : null}
-                  {course.has_certificate ? (
-                    <li>
-                      <Badge variant="secondary" className="mt-1">
-                        Сертификат по окончании
-                      </Badge>
-                    </li>
-                  ) : null}
-                </ul>
-              </CardContent>
-              <CardFooter className="flex flex-col gap-2">
-                <Button className="w-full" size="lg" asChild>
-                  <Link href={`/learn/${encodeURIComponent(course.slug)}`}>
-                    Начать обучение
-                  </Link>
-                </Button>
-                <p className="text-muted-foreground text-center text-xs">
-                  Войдите в аккаунт, чтобы открыть уроки в плеере.
-                </p>
-              </CardFooter>
-            </Card>
-          </aside>
+          <section aria-label="Программа курса" className="space-y-3">
+            <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+              Программа
+            </h2>
+            <CourseCurriculumAccordion modules={curriculum} />
+          </section>
         </div>
+
+        <aside className="md:col-span-1">
+          <Card className="sticky top-24 overflow-hidden shadow-md">
+            {course.image_url?.trim() ? (
+              <div className="relative aspect-video w-full overflow-hidden rounded-t-xl">
+                <Image
+                  src={course.image_url.trim()}
+                  alt={`Обложка курса: ${course.title}`}
+                  fill
+                  unoptimized
+                  className="object-cover"
+                />
+              </div>
+            ) : null}
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-lg">Запись на курс</CardTitle>
+              <p className="text-3xl font-semibold tabular-nums">{priceLabel}</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="text-sm">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Длительность:{" "}
+                </span>
+                <span className="text-base font-semibold text-slate-900">
+                  {durationLabel || "Не указана"}
+                </span>
+              </div>
+              {startLabel ? (
+                <>
+                  <Separator />
+                  <div className="text-sm">
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Старт:{" "}
+                    </span>
+                    <span className="text-base font-semibold text-slate-900">
+                      {startLabel}
+                    </span>
+                  </div>
+                </>
+              ) : null}
+              {course.has_certificate ? (
+                <>
+                  <Separator />
+                  <Badge variant="secondary">Сертификат по окончании</Badge>
+                </>
+              ) : null}
+            </CardContent>
+            <CardFooter className="flex flex-col gap-2">
+              <Button className="w-full" size="lg" asChild>
+                <Link href="/login">Присоединиться</Link>
+              </Button>
+              <p className="text-muted-foreground text-center text-xs">
+                После входа вы сможете начать обучение.
+              </p>
+            </CardFooter>
+          </Card>
+        </aside>
       </main>
     </WithSiteHeader>
   );
