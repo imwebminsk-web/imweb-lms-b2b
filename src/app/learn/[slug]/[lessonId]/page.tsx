@@ -24,7 +24,7 @@ function decodeSlugParam(slug: string): string {
 
 type LessonRow = Pick<
   Database["public"]["Tables"]["lessons"]["Row"],
-  "id" | "title" | "type" | "content" | "is_published" | "module_id"
+  "id" | "title" | "type" | "content" | "is_published" | "module_id" | "test_id"
 >;
 
 export default async function LearnLessonPlayerPage({ params }: PageProps) {
@@ -54,7 +54,7 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
 
   const { data: lesson, error: lessonError } = await supabase
     .from("lessons")
-    .select("id, title, type, content, is_published, module_id")
+    .select("id, title, type, content, is_published, module_id, test_id")
     .eq("id", lessonId)
     .eq("is_published", true)
     .maybeSingle();
@@ -92,6 +92,7 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
         title: lessonRow.title,
         type: lessonRow.type,
         content: lessonRow.content as Json,
+        test_id: lessonRow.test_id,
       }}
       blocks={blocks}
     />

@@ -7,6 +7,7 @@ import { saveFullTest } from "@/app/actions/test-actions";
 import { FillInTheBlanksEditor } from "@/components/admin/questions/FillInTheBlanksEditor";
 import { Button } from "@/components/ui/button";
 import type { FillInTheBlanksContent } from "@/lib/validations/fill-in-the-blanks-schema";
+import { saveFullTestPayloadSchema } from "@/lib/validations/admin-test-schema";
 import {
   Card,
   CardContent,
@@ -14,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { z } from "zod";
 import {
   Select,
   SelectContent,
@@ -34,6 +36,7 @@ type ChoiceOptionField = { text: string; isCorrect: boolean };
 type PuzzleOptionField = { left: string; right: string };
 /** Одна строка в БД: картинка + правильное слово для неё. */
 type LabelingPairField = { url: string; correctWord: string; title: string };
+export type CreateTestValues = z.infer<typeof saveFullTestPayloadSchema>;
 
 type QuestionField =
   | {
@@ -139,6 +142,7 @@ function isFillInTheBlanksQuestion(
   return q.type === "fill_in_the_blanks";
 }
 
+// TODO: Перевести форму на useForm<CreateTestValues> вместо ручного useState.
 export function CreateTestForm() {
   const router = useRouter();
   const [title, setTitle] = useState("");

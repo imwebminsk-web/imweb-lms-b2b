@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 
+import { TestRunner } from "@/components/student/test-runner";
 import {
   Accordion,
   AccordionContent,
@@ -20,6 +21,7 @@ import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { cn } from "@/lib/utils";
 import type { Database, Json } from "@/types/database.types";
 import { ArrowLeft, FileText, ListChecks, Video } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 
 type LessonType = Database["public"]["Enums"]["lesson_type"];
 
@@ -28,6 +30,7 @@ export type PlayerLessonPayload = {
   title: string;
   type: LessonType;
   content: Json;
+  test_id: string | null;
 };
 
 type PlayerLayoutProps = {
@@ -268,6 +271,18 @@ export function PlayerLayout({
           ) : (
             <LessonMainContent lesson={lesson} />
           )}
+          {lesson.test_id ? (
+            <section className="space-y-5 pt-2">
+              <Separator />
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold tracking-tight">Проверка знаний</h2>
+                <p className="text-muted-foreground text-sm">
+                  Пройдите тест после изучения материала урока.
+                </p>
+              </div>
+              <TestRunner testId={lesson.test_id} />
+            </section>
+          ) : null}
         </div>
       </main>
     </div>

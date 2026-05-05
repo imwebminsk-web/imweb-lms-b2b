@@ -193,6 +193,8 @@ export type TestWithQuestionsPayload = Pick<
   questions: SafeTestQuestion[];
 };
 
+export type SafeTestForClientPayload = TestWithQuestionsPayload;
+
 export type TestListItem = Pick<
   Tables<"tests">,
   "id" | "title" | "description"
@@ -484,6 +486,96 @@ export async function getTestWithQuestions(
   };
 
   return { success: true, data: payload };
+}
+
+/**
+ * Безопасная версия для клиентского раннера:
+ * даже если в ответе есть `is_correct`, поле удаляется перед возвратом.
+ */
+export async function getSafeTestForClient(
+  testId: string,
+): Promise<
+  | { success: true; data: SafeTestForClientPayload }
+  | {
+      success: false;
+      error: string;
+      kind?: "not_found" | "supabase" | "validation";
+    }
+> {
+  const idResult = testIdSchema.safeParse(testId);
+  if (!idResult.success) {
+    const msg = idResult.error.issues[0]?.message ?? "Некорректный ID теста";
+    return { success: false, error: msg, kind: "validation" };
+  }
+
+  const supabase = await createClient();
+  const uuid = idResult.data;
+
+  const { data, error } = await supabase
+    .from("tests")
+    .select(
+      `
+      id,
+      title,
+      description,
+      created_at,
+      is_published,
+      questions (
+        id,
+        content,
+        order_index,
+        type,
+        created_at,
+        options ( id, content, order_index, is_correct )
+      )
+    `,
+    )
+    .eq("id", uuid)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      return {
+        success: false,
+        error: "Тест не найден",
+        kind: "not_found" as const,
+      };
+    }
+    return {
+      success: false,
+      error: error.message,
+      kind: "supabase" as const,
+    };
+  }
+
+  const questions: SafeTestQuestion[] = [...(data.questions ?? [])]
+    .sort((a, b) => a.order_index - b.order_index)
+    .map((q) => ({
+      id: q.id,
+      content: q.content,
+      order_index: q.order_index,
+      type: q.type,
+      created_at: q.created_at,
+      options: [...(q.options ?? [])]
+        .sort((a, b) => a.order_index - b.order_index)
+        .map((o) => ({
+          id: o.id,
+          content: o.content,
+          order_index: o.order_index,
+        })),
+    }));
+
+  return {
+    success: true,
+    data: {
+      id: data.id,
+      title: data.title,
+      description: data.description,
+      created_at: data.created_at,
+      is_published: data.is_published,
+      questions,
+    },
+  };
 }
 
 async function fetchInProgressAttemptId(
@@ -1469,6 +1561,9 @@ export async function saveFullTest(
 ): Promise<
   { success: true; testId: string } | { success: false; error: string }
 > {
+  const forbiddenMessage =
+    "Доступ запрещен. Тесты могут создавать только преподаватели или администраторы.";
+
   const parsed = saveFullTestPayloadSchema.safeParse(payload);
   if (!parsed.success) {
     const msg =
@@ -1482,6 +1577,20 @@ export async function saveFullTest(
   } = await supabase.auth.getUser();
   if (!user) {
     return { success: false, error: "Требуется войти в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError || !profile) {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  if (profile.role !== "admin" && profile.role !== "teacher") {
+    return { success: false, error: forbiddenMessage };
   }
 
   const d = parsed.data;
