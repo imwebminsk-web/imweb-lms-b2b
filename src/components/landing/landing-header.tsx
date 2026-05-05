@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { signOutAction } from "@/app/actions/auth-actions";
+import { ModeToggle } from "@/components/mode-toggle";
 import { buttonVariants } from "@/components/ui/button";
 import {
   NavigationMenu,
@@ -73,8 +74,10 @@ export async function LandingHeader() {
           </a>
         </div>
 
-        {!isAuthed ? (
-          <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          <ModeToggle />
+          {!isAuthed ? (
+            <>
             <Link
               href="/login"
               className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
@@ -87,9 +90,9 @@ export async function LandingHeader() {
             >
               Регистрация
             </Link>
-          </div>
-        ) : (
-          <div className="flex shrink-0 items-center gap-2">
+            </>
+          ) : (
+            <>
             <Link
               href="/dashboard"
               className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
@@ -101,8 +104,9 @@ export async function LandingHeader() {
                 Выйти
               </button>
             </form>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

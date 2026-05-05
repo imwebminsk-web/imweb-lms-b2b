@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
 import { buttonVariants } from "@/components/ui/button";
+import { ModeToggle } from "@/components/mode-toggle";
 import { LogoutButton } from "@/components/site/logout-button";
 
 export async function SiteHeader() {
@@ -21,6 +22,7 @@ export async function SiteHeader() {
         </Link>
 
         <nav className="flex items-center gap-2">
+          <ModeToggle />
           {!isAuthed ? (
             <Link
               href="/login"
