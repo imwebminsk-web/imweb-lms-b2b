@@ -322,54 +322,55 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
 
   return (
     <WithSiteHeader>
-      <section className="bg-slate-900 py-16">
-        <div className="container mx-auto space-y-6 px-4 sm:px-6">
-          <div className="mb-4 flex flex-wrap gap-2">
-            {course.category?.trim() ? (
-              <span className={`${markerBase} bg-white/20 text-white`}>
-                {course.category.trim()}
-              </span>
+      <div className="bg-white text-slate-900">
+        <section className="bg-slate-900 py-8 md:py-16">
+          <div className="container mx-auto space-y-6 px-4 sm:px-6">
+            <div className="mb-4 flex flex-wrap gap-2">
+              {course.category?.trim() ? (
+                <span className={`${markerBase} bg-white/20 text-white`}>
+                  {course.category.trim()}
+                </span>
+              ) : null}
+              {course.language?.trim() ? (
+                <span className={`${markerBase} bg-[#fb7185] text-black`}>
+                  {course.language.trim()}
+                </span>
+              ) : null}
+              {audienceRaw ? (
+                <span className={`${markerBase} ${audienceMarkerClass}`}>
+                  {audienceRaw}
+                </span>
+              ) : null}
+              {isAdultAudience && course.level != null ? (
+                <span className={`${markerBase} bg-white/20 text-white`}>
+                  Уровень: {course.level}
+                </span>
+              ) : null}
+              {isKidsAudience && course.age_group?.trim() ? (
+                <span className={`${markerBase} bg-white/20 text-white`}>
+                  Возраст: {course.age_group.trim()}
+                </span>
+              ) : null}
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">
+              {course.title}
+            </h1>
+            {course.description?.trim() ? (
+              <p className="max-w-3xl text-xl leading-relaxed text-white/80">
+                {course.description.trim()}
+              </p>
             ) : null}
-            {course.language?.trim() ? (
-              <span className={`${markerBase} bg-[#fb7185] text-black`}>
-                {course.language.trim()}
-              </span>
-            ) : null}
-            {audienceRaw ? (
-              <span className={`${markerBase} ${audienceMarkerClass}`}>
-                {audienceRaw}
-              </span>
-            ) : null}
-            {isAdultAudience && course.level != null ? (
-              <span className={`${markerBase} bg-white/20 text-white`}>
-                Уровень: {course.level}
-              </span>
-            ) : null}
-            {isKidsAudience && course.age_group?.trim() ? (
-              <span className={`${markerBase} bg-white/20 text-white`}>
-                Возраст: {course.age_group.trim()}
-              </span>
+            {formatRaw ? (
+              <div className="mt-6 flex flex-wrap gap-2">
+                <span className={`${markerBase} ${formatMarkerClass}`}>
+                  {formatRaw}
+                </span>
+              </div>
             ) : null}
           </div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">
-            {course.title}
-          </h1>
-          {course.description?.trim() ? (
-            <p className="max-w-3xl text-xl leading-relaxed text-white/80">
-              {course.description.trim()}
-            </p>
-          ) : null}
-          {formatRaw ? (
-            <div className="mt-6 flex flex-wrap gap-2">
-              <span className={`${markerBase} ${formatMarkerClass}`}>
-                {formatRaw}
-              </span>
-            </div>
-          ) : null}
-        </div>
-      </section>
+        </section>
 
-      <main className="container mx-auto grid grid-cols-1 gap-8 px-4 py-12 sm:px-6 md:grid-cols-3">
+        <main className="container mx-auto grid grid-cols-1 gap-8 px-4 py-12 sm:px-6 md:grid-cols-3">
         <div className="space-y-24 md:col-span-2">
           <section aria-label="Подробное описание" className="space-y-3">
             <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
@@ -521,7 +522,8 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
             </CardFooter>
           </Card>
         </aside>
-      </main>
+        </main>
+      </div>
     </WithSiteHeader>
   );
 }
