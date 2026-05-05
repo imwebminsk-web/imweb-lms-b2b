@@ -322,7 +322,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
 
   return (
     <WithSiteHeader>
-      <div className="bg-white text-slate-900">
+      <div className="bg-slate-950 text-slate-100">
         <section className="bg-slate-900 py-8 md:py-16">
           <div className="container mx-auto space-y-6 px-4 sm:px-6">
             <div className="mb-4 flex flex-wrap gap-2">
@@ -373,28 +373,28 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
         <main className="container mx-auto grid grid-cols-1 gap-8 px-4 py-12 sm:px-6 md:grid-cols-3">
         <div className="space-y-24 md:col-span-2">
           <section aria-label="Подробное описание" className="space-y-3">
-            <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+            <h2 className="mb-8 text-2xl font-bold tracking-tight text-white md:text-3xl">
               О курсе
             </h2>
             {detailedHtml ? (
               <div
-                className="prose prose-lg prose-slate max-w-none dark:prose-invert prose-img:max-w-full prose-img:h-auto prose-img:rounded-md [&_img]:mx-auto [&_img]:my-8 [&_img]:max-h-[600px] [&_img]:w-auto [&_img]:object-contain [&_img]:rounded-xl [&_iframe]:my-8 [&_iframe]:aspect-video [&_iframe]:w-full [&_video]:my-8 [&_video]:w-full"
+                className="prose prose-lg prose-invert prose-slate max-w-none prose-img:max-w-full prose-img:h-auto prose-img:rounded-md [&_img]:mx-auto [&_img]:my-8 [&_img]:max-h-[600px] [&_img]:w-auto [&_img]:object-contain [&_img]:rounded-xl [&_iframe]:my-8 [&_iframe]:aspect-video [&_iframe]:w-full [&_video]:my-8 [&_video]:w-full"
                 dangerouslySetInnerHTML={{ __html: detailedHtml }}
               />
             ) : (
-              <p className="text-slate-600">
+              <p className="text-slate-400">
                 Подробное описание скоро появится.
               </p>
             )}
           </section>
 
           <section aria-label="Превью курса" className="space-y-3">
-            <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+            <h2 className="mb-8 text-2xl font-bold tracking-tight text-white md:text-3xl">
               Видео
             </h2>
             <div className="flex flex-col gap-6">
               {hasYouTubeUrl && youtubeSrc ? (
-                <div className="aspect-video w-full overflow-hidden rounded-xl border bg-muted shadow-sm">
+                <div className="aspect-video w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
                   <iframe
                     title="Превью курса на YouTube"
                     src={youtubeSrc}
@@ -407,7 +407,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
               ) : null}
 
               {hasVimeoUrl && vimeoSrc ? (
-                <div className="aspect-video w-full overflow-hidden rounded-xl border bg-muted shadow-sm">
+                <div className="aspect-video w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-sm">
                   <iframe
                     title="Превью курса на Vimeo"
                     src={vimeoSrc}
@@ -423,7 +423,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
                 <video
                   controls
                   playsInline
-                  className="aspect-video w-full rounded-xl border bg-muted object-cover shadow-sm"
+                  className="aspect-video w-full rounded-xl border border-slate-800 bg-slate-900 object-cover shadow-sm"
                   src={selfHostedVideo}
                   preload="metadata"
                 >
@@ -435,14 +435,14 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
 
           {galleryUrls.length > 0 ? (
             <section aria-label="Галерея курса" className="space-y-3">
-              <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+              <h2 className="mb-8 text-2xl font-bold tracking-tight text-white md:text-3xl">
                 Галерея
               </h2>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 {galleryUrls.map((src) => (
                   <div
                     key={src}
-                    className="relative aspect-[4/3] overflow-hidden rounded-xl border bg-muted/50 shadow-sm"
+                    className="relative aspect-[4/3] overflow-hidden rounded-xl border border-slate-800 bg-slate-900 shadow-sm"
                   >
                     <Image
                       src={src}
@@ -459,15 +459,18 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
           ) : null}
 
           <section aria-label="Программа курса" className="space-y-3">
-            <h2 className="mb-8 text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
+            <h2 className="mb-8 text-2xl font-bold tracking-tight text-white md:text-3xl">
               Программа
             </h2>
-            <CourseCurriculumAccordion modules={curriculum} />
+            <CourseCurriculumAccordion
+              modules={curriculum}
+              className="rounded-xl border border-slate-800 bg-slate-900/40 px-4"
+            />
           </section>
         </div>
 
         <aside className="md:col-span-1">
-          <Card className="sticky top-24 overflow-hidden shadow-md">
+          <Card className="sticky top-24 overflow-hidden border-slate-800 bg-slate-900/60 text-slate-100 shadow-md backdrop-blur-md">
             {course.image_url?.trim() ? (
               <div className="relative aspect-video w-full overflow-hidden rounded-t-xl">
                 <Image
@@ -485,10 +488,10 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-sm">
-                <span className="text-sm font-medium text-muted-foreground">
+                <span className="text-sm font-medium text-slate-400">
                   Длительность:{" "}
                 </span>
-                <span className="text-base font-semibold text-slate-900">
+                <span className="text-base font-semibold text-white">
                   {durationLabel || "Не указана"}
                 </span>
               </div>
@@ -496,10 +499,10 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
                 <>
                   <Separator />
                   <div className="text-sm">
-                    <span className="text-sm font-medium text-muted-foreground">
+                    <span className="text-sm font-medium text-slate-400">
                       Старт:{" "}
                     </span>
-                    <span className="text-base font-semibold text-slate-900">
+                    <span className="text-base font-semibold text-white">
                       {startLabel}
                     </span>
                   </div>
@@ -516,7 +519,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
               <Button className="w-full" size="lg" asChild>
                 <Link href="/login">Присоединиться</Link>
               </Button>
-              <p className="text-muted-foreground text-center text-xs">
+              <p className="text-center text-xs text-slate-400">
                 После входа вы сможете начать обучение.
               </p>
             </CardFooter>
