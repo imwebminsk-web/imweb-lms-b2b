@@ -539,7 +539,12 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      join_cohort_by_pin: {
+        Args: {
+          p_pin: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       attempt_status: "in_progress" | "completed"

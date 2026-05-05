@@ -201,7 +201,7 @@ export function CourseSettingsForm({
   ]);
 
   return (
-    <Form action={formAction} className="max-w-3xl space-y-6">
+    <Form action={formAction} className="space-y-8">
       <input type="hidden" name="id" value={course.id} />
       <input type="hidden" name="status" value={status} />
       <input type="hidden" name="marketing_audience" value={marketingAudience} />
@@ -240,11 +240,14 @@ export function CourseSettingsForm({
             Основная информация
           </AccordionTrigger>
           <AccordionContent>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Карточка курса</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4">
+            <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Карточка курса</h3>
+                <p className="text-muted-foreground text-sm">
+                  Основная информация, цена и статус публикации.
+                </p>
+              </div>
+              <div className="grid gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="course-edit-title">Название</Label>
                   <Input
@@ -302,7 +305,7 @@ export function CourseSettingsForm({
                     }
                     disabled={isPending}
                   >
-                    <SelectTrigger id="course-edit-status" className="w-full max-w-md">
+                    <SelectTrigger id="course-edit-status" className="w-full">
                       <SelectValue placeholder="Статус" />
                     </SelectTrigger>
                     <SelectContent>
@@ -311,8 +314,8 @@ export function CourseSettingsForm({
                     </SelectContent>
                   </Select>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </AccordionContent>
         </AccordionItem>
 
@@ -320,20 +323,27 @@ export function CourseSettingsForm({
           <AccordionTrigger className="text-base font-medium">
             Медиа
           </AccordionTrigger>
-          <AccordionContent className="space-y-6 pt-2">
-            <CourseImageUpload
-              courseId={course.id}
-              initialImageUrl={course.image_url}
-            />
-            <CourseVideoUpload
-              courseId={course.id}
-              initialVideoUrl={course.video_url}
-            />
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Внешние площадки</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4">
+          <AccordionContent className="pt-2">
+            <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-6">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Медиа и внешние ссылки</h3>
+                <p className="text-muted-foreground text-sm">
+                  Обложка, видео и ссылки на внешние площадки.
+                </p>
+              </div>
+              <CourseImageUpload
+                courseId={course.id}
+                initialImageUrl={course.image_url}
+              />
+              <CourseVideoUpload
+                courseId={course.id}
+                initialVideoUrl={course.video_url}
+              />
+              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-base font-semibold">Внешние площадки</h4>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="course-youtube">Ссылка YouTube</Label>
                   <Input
@@ -356,8 +366,9 @@ export function CourseSettingsForm({
                     disabled={isPending}
                   />
                 </div>
-              </CardContent>
-            </Card>
+                </div>
+              </div>
+            </div>
           </AccordionContent>
         </AccordionItem>
 
@@ -366,11 +377,17 @@ export function CourseSettingsForm({
             Лендинг
           </AccordionTrigger>
           <AccordionContent>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Подробное описание</CardTitle>
-              </CardHeader>
-              <CardContent>
+            <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-6">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Контент лендинга</h3>
+                <p className="text-muted-foreground text-sm">
+                  Текст страницы и галерея изображений.
+                </p>
+              </div>
+              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-base font-semibold">Подробное описание</h4>
+                </div>
                 <div className="grid gap-2">
                   <Label htmlFor="course-detailed">Текст для страницы курса</Label>
                   <Editor
@@ -384,14 +401,12 @@ export function CourseSettingsForm({
                     страницы курса.
                   </p>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
 
-            <Card className="mt-6">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Галерея лендинга</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
+              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-base font-semibold">Галерея лендинга</h4>
+                </div>
                 <p className="text-muted-foreground text-xs">
                   До 24 изображений. Перед загрузкой файлы сжимаются в браузере
                   (цель до 100 КБ каждый), затем попадают в Storage. Сохраните
@@ -462,8 +477,8 @@ export function CourseSettingsForm({
                     Пока нет изображений — добавьте через кнопку выше.
                   </p>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </AccordionContent>
         </AccordionItem>
 
@@ -472,8 +487,11 @@ export function CourseSettingsForm({
             Целевая аудитория и уровень
           </AccordionTrigger>
           <AccordionContent>
-            <Card>
-              <CardContent className="grid gap-4 pt-6">
+            <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Целевая аудитория и уровень</h3>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="course-audience">Аудитория (лендинг)</Label>
                   <Select
@@ -486,7 +504,7 @@ export function CourseSettingsForm({
                     }}
                     disabled={isPending}
                   >
-                    <SelectTrigger id="course-audience" className="w-full max-w-md">
+                    <SelectTrigger id="course-audience" className="w-full">
                       <SelectValue placeholder="Не выбрано" />
                     </SelectTrigger>
                     <SelectContent>
@@ -507,7 +525,7 @@ export function CourseSettingsForm({
                       }
                       disabled={isPending}
                     >
-                      <SelectTrigger id="course-level" className="w-full max-w-md">
+                      <SelectTrigger id="course-level" className="w-full">
                         <SelectValue placeholder="Выберите уровень" />
                       </SelectTrigger>
                       <SelectContent>
@@ -535,10 +553,7 @@ export function CourseSettingsForm({
                       }
                       disabled={isPending}
                     >
-                      <SelectTrigger
-                        id="course-age-group"
-                        className="w-full max-w-md"
-                      >
+                      <SelectTrigger id="course-age-group" className="w-full">
                         <SelectValue placeholder="Выберите группу" />
                       </SelectTrigger>
                       <SelectContent>
@@ -552,8 +567,8 @@ export function CourseSettingsForm({
                     </Select>
                   </div>
                 ) : null}
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </AccordionContent>
         </AccordionItem>
 
@@ -562,8 +577,11 @@ export function CourseSettingsForm({
             Витрина и каталог
           </AccordionTrigger>
           <AccordionContent>
-            <Card>
-              <CardContent className="grid gap-4 pt-6">
+            <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Витрина и каталог</h3>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="course-delivery-format">Формат проведения</Label>
                   <Select
@@ -573,10 +591,7 @@ export function CourseSettingsForm({
                     }
                     disabled={isPending}
                   >
-                    <SelectTrigger
-                      id="course-delivery-format"
-                      className="w-full max-w-md"
-                    >
+                    <SelectTrigger id="course-delivery-format" className="w-full">
                       <SelectValue placeholder="Не выбрано" />
                     </SelectTrigger>
                     <SelectContent>
@@ -598,10 +613,7 @@ export function CourseSettingsForm({
                     }
                     disabled={isPending}
                   >
-                    <SelectTrigger
-                      id="course-catalog-language"
-                      className="w-full max-w-md"
-                    >
+                    <SelectTrigger id="course-catalog-language" className="w-full">
                       <SelectValue placeholder="Не выбрано" />
                     </SelectTrigger>
                     <SelectContent>
@@ -617,8 +629,8 @@ export function CourseSettingsForm({
                 <p className="text-muted-foreground text-xs">
                   Эти поля используются на главной странице для фильтров каталога.
                 </p>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </AccordionContent>
         </AccordionItem>
 
@@ -627,8 +639,11 @@ export function CourseSettingsForm({
             Расписание и длительность
           </AccordionTrigger>
           <AccordionContent>
-            <Card>
-              <CardContent className="grid gap-4 pt-6">
+            <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold">Расписание и длительность</h3>
+              </div>
+              <div className="grid gap-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-2">
                     <Label htmlFor="course-duration-value">Длительность (число)</Label>
@@ -695,8 +710,8 @@ export function CourseSettingsForm({
                     Выдаётся сертификат
                   </Label>
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </AccordionContent>
         </AccordionItem>
       </Accordion>

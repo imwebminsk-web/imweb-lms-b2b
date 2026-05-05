@@ -58,8 +58,13 @@ export async function signUp(
 }
 
 /** Завершает сессию Supabase и перенаправляет на главную. */
-export async function signOut() {
+export async function signOutAction() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/");
+}
+
+/** Совместимость со старыми импортами в проекте. */
+export async function signOut() {
+  await signOutAction();
 }

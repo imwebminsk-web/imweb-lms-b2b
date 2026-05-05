@@ -51,7 +51,7 @@ export function CourseEditorTabs({
 
   return (
     <Tabs defaultValue="settings" className="w-full gap-6">
-      <TabsList variant="line" className="w-full max-w-xl justify-start">
+      <TabsList variant="line" className="h-auto w-full flex-wrap justify-start">
         <TabsTrigger value="settings">Настройки</TabsTrigger>
         <TabsTrigger value="curriculum">Программа</TabsTrigger>
         <TabsTrigger value="students">Ученики</TabsTrigger>

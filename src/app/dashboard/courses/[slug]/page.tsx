@@ -117,7 +117,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
       <>
         <SiteHeader fullName={displayName} />
         <div className="flex flex-1 flex-col">
-          <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
+          <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
             <Button variant="ghost" className="w-fit px-0" asChild>
               <Link href="/dashboard/courses">← Назад</Link>
             </Button>
@@ -190,7 +190,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     <>
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col">
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-8 lg:px-6">
+        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 lg:px-6">
           <Button variant="ghost" className="w-fit px-0" asChild>
             <Link href="/dashboard/courses">← Назад</Link>
           </Button>

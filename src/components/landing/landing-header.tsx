@@ -1,7 +1,6 @@
-"use client";
-
 import Link from "next/link";
 
+import { signOutAction } from "@/app/actions/auth-actions";
 import { buttonVariants } from "@/components/ui/button";
 import {
   NavigationMenu,
@@ -9,9 +8,17 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
 } from "@/components/ui/navigation-menu";
+import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
-export function LandingHeader() {
+export async function LandingHeader() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const isAuthed = Boolean(user);
+
   return (
     <header className="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 w-full border-b backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
@@ -66,17 +73,36 @@ export function LandingHeader() {
           </a>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Link
-            href="/login"
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            Войти
-          </Link>
-          <Link href="/register" className={cn(buttonVariants({ size: "sm" }))}>
-            Регистрация
-          </Link>
-        </div>
+        {!isAuthed ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/login"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              Войти
+            </Link>
+            <Link
+              href="/register"
+              className={cn(buttonVariants({ size: "sm" }))}
+            >
+              Регистрация
+            </Link>
+          </div>
+        ) : (
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/dashboard"
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              Личный кабинет
+            </Link>
+            <form action={signOutAction}>
+              <button type="submit" className={cn(buttonVariants({ size: "sm" }))}>
+                Выйти
+              </button>
+            </form>
+          </div>
+        )}
       </div>
     </header>
   );
