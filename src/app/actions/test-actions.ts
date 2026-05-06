@@ -6,12 +6,22 @@ import {
   parseLabelPairsFromAnswerData,
 } from "@/lib/quiz-helpers";
 import { createClient } from "@/lib/supabase/server";
-import { saveFullTestPayloadSchema } from "@/lib/validations/admin-test-schema";
-import { FillInTheBlanksContentSchema } from "@/lib/validations/fill-in-the-blanks-schema";
+import {
+  saveFullTestPayloadSchema,
+  type SaveFullTestPayload,
+} from "@/lib/validations/admin-test-schema";
+import {
+  FillInTheBlanksContentSchema,
+  type FillInTheBlanksContent,
+} from "@/lib/validations/fill-in-the-blanks-schema";
 import {
   submitAnswerSchema,
   type SubmitAnswerInput,
 } from "@/lib/validations/test-schemas";
+import type {
+  CreateTestFormInitialData,
+  QuestionField,
+} from "@/types/create-test-form";
 import type { Database, Json, Tables } from "@/types/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -710,15 +720,19 @@ function resolveOptionAndAnswerData(
   }
 
   if (Array.isArray(option_id) && option_id.length > 0) {
+    const uniqueIds = Array.from(new Set(option_id));
     const merged: Json =
       extra !== null && typeof extra === "object" && !Array.isArray(extra)
-        ? { ...(extra as Record<string, Json | undefined>), selectedOptionIds: option_id }
-        : { selectedOptionIds: option_id };
+        ? {
+            ...(extra as Record<string, Json | undefined>),
+            selectedOptionIds: uniqueIds,
+          }
+        : { selectedOptionIds: uniqueIds };
     return {
       ok: true,
-      optionId: option_id[0],
+      optionId: uniqueIds[0]!,
       answerData: merged,
-      allOptionIds: option_id,
+      allOptionIds: uniqueIds,
     };
   }
 
@@ -754,6 +768,18 @@ export type AttemptResult = {
   answeredCount: number;
   percentCorrect: number;
 };
+
+async function deleteAttemptAnswersForQuestion(
+  supabase: SupabaseClient<Database>,
+  attemptId: string,
+  questionId: string,
+): Promise<string | null> {
+  const { error } = await supabase
+    .from("attempt_answers")
+    .delete()
+    .match({ attempt_id: attemptId, question_id: questionId });
+  return error?.message ?? null;
+}
 
 /**
  * Сохраняет ответ по вопросу в рамках попытки.
@@ -870,14 +896,13 @@ export async function submitAnswer(
       return { success: false, error: "У вопроса нет пар для пазла" };
     }
 
-    const { error: deleteError } = await supabase
-      .from("attempt_answers")
-      .delete()
-      .eq("attempt_id", attempt_id)
-      .eq("question_id", question_id);
-
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
     if (deleteError) {
-      return { success: false, error: deleteError.message };
+      return { success: false, error: deleteError };
     }
 
     const answerJson: Json =
@@ -885,15 +910,17 @@ export async function submitAnswer(
         ? { pairs: pairsToValidate }
         : { matchingPairs: pairsToValidate };
 
-    const { error: insertError } = await supabase.from("attempt_answers").insert({
-      attempt_id,
-      question_id,
-      option_id: anchorId,
-      answer_data: answerJson,
-    });
+    const { error: insertErr } = await supabase
+      .from("attempt_answers")
+      .insert({
+        attempt_id,
+        question_id,
+        option_id: anchorId,
+        answer_data: answerJson,
+      });
 
-    if (insertError) {
-      return { success: false, error: insertError.message };
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
     }
 
     return { success: true };
@@ -947,19 +974,18 @@ export async function submitAnswer(
       return { success: false, error: "У вопроса нет вариантов с картинками" };
     }
 
-    const { error: deleteError } = await supabase
-      .from("attempt_answers")
-      .delete()
-      .eq("attempt_id", attempt_id)
-      .eq("question_id", question_id);
-
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
     if (deleteError) {
-      return { success: false, error: deleteError.message };
+      return { success: false, error: deleteError };
     }
 
     const answerJson: Json = { labelPairs: ilParsed.data.labelPairs };
 
-    const { error: insertError } = await supabase
+    const { error: insertErr } = await supabase
       .from("attempt_answers")
       .insert({
         attempt_id,
@@ -968,8 +994,8 @@ export async function submitAnswer(
         answer_data: answerJson,
       });
 
-    if (insertError) {
-      return { success: false, error: insertError.message };
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
     }
 
     return { success: true };
@@ -1029,19 +1055,18 @@ export async function submitAnswer(
       };
     }
 
-    const { error: deleteError } = await supabase
-      .from("attempt_answers")
-      .delete()
-      .eq("attempt_id", attempt_id)
-      .eq("question_id", question_id);
-
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
     if (deleteError) {
-      return { success: false, error: deleteError.message };
+      return { success: false, error: deleteError };
     }
 
     const answerJson: Json = { fillAssignments: assign };
 
-    const { error: insertError } = await supabase
+    const { error: insertErr } = await supabase
       .from("attempt_answers")
       .insert({
         attempt_id,
@@ -1050,10 +1075,24 @@ export async function submitAnswer(
         answer_data: answerJson,
       });
 
-    if (insertError) {
-      return { success: false, error: insertError.message };
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
     }
 
+    return { success: true };
+  }
+
+  const isExplicitEmptySelection =
+    Array.isArray(optionIdOrComplex) && optionIdOrComplex.length === 0;
+  if (isExplicitEmptySelection) {
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
+    if (deleteError) {
+      return { success: false, error: deleteError };
+    }
     return { success: true };
   }
 
@@ -1076,8 +1115,8 @@ export async function submitAnswer(
     return { success: false, error: resolved.error };
   }
 
-  const { optionId, answerData: resolvedAnswerData, allOptionIds } = resolved;
-  const uniqueOptionIds = [...new Set(allOptionIds)];
+  const { answerData: resolvedAnswerData, allOptionIds } = resolved;
+  const uniqueOptionIds = Array.from(new Set(allOptionIds));
 
   const isMultiple =
     question.type === "multiple_choice" || question.type === "multiple";
@@ -1105,28 +1144,91 @@ export async function submitAnswer(
     };
   }
 
-  const { error: deleteError } = await supabase
-    .from("attempt_answers")
-    .delete()
-    .eq("attempt_id", attempt_id)
-    .eq("question_id", question_id);
-
-  if (deleteError) {
-    return { success: false, error: deleteError.message };
-  }
-
-  const { error: insertError } = await supabase.from("attempt_answers").insert({
+  const deleteError = await deleteAttemptAnswersForQuestion(
+    supabase,
     attempt_id,
     question_id,
-    option_id: optionId,
-    answer_data: resolvedAnswerData,
-  });
+  );
+  if (deleteError) {
+    return { success: false, error: deleteError };
+  }
 
-  if (insertError) {
-    return { success: false, error: insertError.message };
+  const mergedMultiData: Json =
+    resolvedAnswerData !== null &&
+    typeof resolvedAnswerData === "object" &&
+    !Array.isArray(resolvedAnswerData)
+      ? {
+          ...(resolvedAnswerData as Record<string, Json | undefined>),
+          selectedOptionIds: uniqueOptionIds,
+        }
+      : { selectedOptionIds: uniqueOptionIds };
+
+  const rowsToInsert = isMultiple
+    ? uniqueOptionIds.map((oid) => ({
+        attempt_id,
+        question_id,
+        option_id: oid,
+        answer_data: mergedMultiData,
+      }))
+    : [
+        {
+          attempt_id,
+          question_id,
+          option_id: uniqueOptionIds[0]!,
+          answer_data: resolvedAnswerData,
+        },
+      ];
+  if (rowsToInsert.length === 0) {
+    return { success: true };
+  }
+
+  const { error: insertErr } = await supabase
+    .from("attempt_answers")
+    .insert(rowsToInsert);
+
+  if (insertErr && insertErr.code !== "23505") {
+    return { success: false, error: insertErr.message };
   }
 
   return { success: true };
+}
+
+/**
+ * Несколько строк `attempt_answers` на один вопрос (напр. multiple_choice) —
+ * берём строку с полным `answer_data.selectedOptionIds`, иначе последнюю.
+ */
+function pickRepresentativeAttemptAnswerRow(
+  questionType: string | null,
+  rowsForQuestion: {
+    option_id: string;
+    answer_data: Json | null;
+  }[],
+):
+  | { option_id: string; answer_data: Json | null }
+  | undefined {
+  if (rowsForQuestion.length === 0) {
+    return undefined;
+  }
+  if (rowsForQuestion.length === 1) {
+    return rowsForQuestion[0];
+  }
+  const isMultiple =
+    questionType === "multiple_choice" || questionType === "multiple";
+  if (!isMultiple) {
+    return rowsForQuestion[0];
+  }
+  const withSel = rowsForQuestion.find((r) => {
+    if (!r.answer_data || typeof r.answer_data !== "object") {
+      return false;
+    }
+    if (Array.isArray(r.answer_data)) {
+      return false;
+    }
+    const raw = (r.answer_data as { selectedOptionIds?: unknown })
+      .selectedOptionIds;
+    return Array.isArray(raw) && raw.length > 0;
+  });
+  return withSel ?? rowsForQuestion[rowsForQuestion.length - 1];
 }
 
 function parseSelectedIdsFromAnswerRow(
@@ -1176,7 +1278,12 @@ export async function getAttemptReviewAnswers(
 ): Promise<
   | {
       success: true;
-      data: { question_id: string; answer_data: Json | null }[];
+      data: {
+        question_id: string;
+        option_id: string;
+        answer_data: Json | null;
+        correct_option_ids: string[];
+      }[];
     }
   | { success: false; error: string }
 > {
@@ -1213,18 +1320,38 @@ export async function getAttemptReviewAnswers(
 
   const { data: rows, error: answersError } = await supabase
     .from("attempt_answers")
-    .select("question_id, answer_data")
+    .select("question_id, option_id, answer_data")
     .eq("attempt_id", idResult.data);
 
   if (answersError) {
     return { success: false, error: answersError.message };
   }
 
+  const questionIds = [...new Set((rows ?? []).map((r) => r.question_id))];
+  const correctByQuestion = new Map<string, string[]>();
+  if (questionIds.length > 0) {
+    const { data: optionRows, error: optionErr } = await supabase
+      .from("options")
+      .select("id, question_id, is_correct")
+      .in("question_id", questionIds);
+    if (optionErr) {
+      return { success: false, error: optionErr.message };
+    }
+    for (const o of optionRows ?? []) {
+      if (!o.is_correct) continue;
+      const list = correctByQuestion.get(o.question_id) ?? [];
+      list.push(o.id);
+      correctByQuestion.set(o.question_id, list);
+    }
+  }
+
   return {
     success: true,
     data: (rows ?? []).map((r) => ({
       question_id: r.question_id,
+      option_id: r.option_id,
       answer_data: r.answer_data,
+      correct_option_ids: correctByQuestion.get(r.question_id) ?? [],
     })),
   };
 }
@@ -1335,7 +1462,7 @@ export async function completeAttempt(
   }
 
   const rows = answers ?? [];
-  const answeredCount = rows.length;
+  const answeredCount = new Set(rows.map((r) => r.question_id)).size;
 
   const { data: questionRows, error: questionsFetchError } = await supabase
     .from("questions")
@@ -1415,14 +1542,19 @@ export async function completeAttempt(
     }
   }
 
-  const answerByQuestion = new Map<string, (typeof rows)[number]>();
+  const rowsByQuestionId = new Map<string, typeof rows>();
   for (const row of rows) {
-    answerByQuestion.set(row.question_id, row);
+    const list = rowsByQuestionId.get(row.question_id) ?? [];
+    list.push(row);
+    rowsByQuestionId.set(row.question_id, list);
   }
 
   let correctCount = 0;
   for (const q of questionsOrdered) {
-    const answerRow = answerByQuestion.get(q.id);
+    const listForQ = rowsByQuestionId.get(q.id);
+    const answerRow = listForQ
+      ? pickRepresentativeAttemptAnswerRow(q.type, listForQ)
+      : undefined;
     if (!answerRow) {
       continue;
     }
@@ -1552,6 +1684,461 @@ async function rollbackCreatedTest(
     .eq("user_id", ownerUserId);
 }
 
+function fillContentToFormFields(content: FillInTheBlanksContent): {
+  fillRawText: string;
+  fillExtraWords: string[];
+} {
+  const wordById = new Map(content.wordBank.map((w) => [w.id, w.text]));
+  const usedCorrectWordIds = new Set(Object.values(content.correctMapping));
+  const extraWords = content.wordBank
+    .filter((w) => !usedCorrectWordIds.has(w.id))
+    .map((w) => w.text);
+  let raw = "";
+  for (const seg of content.segments) {
+    if (seg.type === "text") {
+      raw += seg.value;
+    } else {
+      const wid = content.correctMapping[seg.id];
+      const txt = wid ? wordById.get(wid) : undefined;
+      raw += txt ? `[${txt}]` : "[?]";
+    }
+  }
+  return { fillRawText: raw, fillExtraWords: extraWords };
+}
+
+function mapDbQuestionRowToQuestionField(row: {
+  content: Json;
+  type: string | null;
+  options?: {
+    content: Json;
+    order_index: number;
+    is_correct: boolean | null;
+  }[];
+}): QuestionField {
+  const rawType = row.type ?? "single_choice";
+  const type =
+    rawType === "multiple" ? ("multiple_choice" as const) : rawType;
+
+  const opts = [...(row.options ?? [])].sort(
+    (a, b) => a.order_index - b.order_index,
+  );
+
+  if (type === "fill_in_the_blanks") {
+    const parsed = FillInTheBlanksContentSchema.safeParse(row.content);
+    if (!parsed.success) {
+      return {
+        text: "",
+        type: "fill_in_the_blanks",
+        fillRawText: "",
+        fillExtraWords: [],
+        fillContent: null,
+      };
+    }
+    const { fillRawText, fillExtraWords } = fillContentToFormFields(
+      parsed.data,
+    );
+    const textRoot = z.object({ text: z.string() }).safeParse(row.content);
+    return {
+      text: textRoot.success ? textRoot.data.text : "",
+      type: "fill_in_the_blanks",
+      fillRawText,
+      fillExtraWords,
+      fillContent: parsed.data,
+    };
+  }
+
+  const textRoot = z.object({ text: z.string() }).safeParse(row.content);
+  const text = textRoot.success ? textRoot.data.text : "";
+
+  if (type === "matching_puzzle" || type === "dnd_puzzle") {
+    const puzzleType: "matching_puzzle" | "dnd_puzzle" =
+      type === "dnd_puzzle" ? "dnd_puzzle" : "matching_puzzle";
+    return {
+      text,
+      type: puzzleType,
+      options: opts.map((o) => {
+        const c = o.content as { left?: unknown; right?: unknown };
+        return {
+          left: typeof c.left === "string" ? c.left : "",
+          right: typeof c.right === "string" ? c.right : "",
+        };
+      }),
+    };
+  }
+
+  if (type === "image_labeling") {
+    return {
+      text,
+      type: "image_labeling",
+      labelingPairs: opts.map((o) => {
+        const c = o.content as {
+          imageUrl?: unknown;
+          correctText?: unknown;
+          title?: unknown;
+        };
+        return {
+          url: typeof c.imageUrl === "string" ? c.imageUrl : "",
+          correctWord:
+            typeof c.correctText === "string" ? c.correctText : "",
+          title: typeof c.title === "string" ? c.title : "",
+        };
+      }),
+    };
+  }
+
+  const qType: "single_choice" | "multiple_choice" =
+    type === "multiple_choice" ? "multiple_choice" : "single_choice";
+
+  return {
+    text,
+    type: qType,
+    options: opts
+      .filter((o) => {
+        const c = o.content as { text?: unknown };
+        return c.text !== "__fill_in_the_blanks__";
+      })
+      .map((o) => {
+        const c = o.content as { text?: unknown };
+        return {
+          text: typeof c.text === "string" ? c.text : "",
+          isCorrect: Boolean(o.is_correct),
+        };
+      }),
+  };
+}
+
+/** Вставка вопросов и вариантов для существующего `test_id` (без отката теста). */
+async function insertQuestionsAndOptionsForTest(
+  client: SupabaseClient<Database>,
+  testId: string,
+  questions: SaveFullTestPayload["questions"],
+): Promise<{ success: true } | { success: false; error: string }> {
+  const questionInserts = questions.map((q, i) => ({
+    test_id: testId,
+    content:
+      q.type === "fill_in_the_blanks"
+        ? (q.content as Json)
+        : ({ text: q.content.text } as Json),
+    order_index: i,
+    type: q.type,
+  }));
+
+  const { data: insertedQuestions, error: qInsErr } = await client
+    .from("questions")
+    .insert(questionInserts)
+    .select("id, order_index");
+
+  if (qInsErr || !insertedQuestions?.length) {
+    return {
+      success: false,
+      error: qInsErr?.message ?? "Не удалось создать вопросы",
+    };
+  }
+
+  const sortedQ = [...insertedQuestions].sort(
+    (a, b) => a.order_index - b.order_index,
+  );
+
+  if (sortedQ.length !== questions.length) {
+    return {
+      success: false,
+      error: "Ошибка согласованности при создании вопросов",
+    };
+  }
+
+  const optionRows = sortedQ.flatMap((qRow, qi) => {
+    const q = questions[qi];
+    if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
+      return q.options.map((opt, oi) => ({
+        question_id: qRow.id,
+        content: { left: opt.content.left, right: opt.content.right } as Json,
+        order_index: oi,
+        is_correct: true,
+      }));
+    }
+    if (q.type === "image_labeling") {
+      return q.options.map((opt, oi) => {
+        const c = opt.content;
+        const content: Json = {
+          imageUrl: c.imageUrl,
+          correctText: c.correctText,
+          ...(c.title != null && String(c.title).trim() !== ""
+            ? { title: String(c.title).trim() }
+            : {}),
+        };
+        return {
+          question_id: qRow.id,
+          content,
+          order_index: oi,
+          is_correct: true,
+        };
+      });
+    }
+    if (q.type === "fill_in_the_blanks") {
+      return [
+        {
+          question_id: qRow.id,
+          content: { text: "__fill_in_the_blanks__" } as Json,
+          order_index: 0,
+          is_correct: true,
+        },
+      ];
+    }
+    return q.options.map((opt, oi) => ({
+      question_id: qRow.id,
+      content: { text: opt.content.text } as Json,
+      order_index: oi,
+      is_correct: opt.is_correct,
+    }));
+  });
+
+  if (optionRows.length > 0) {
+    const { error: oInsErr } = await client.from("options").insert(optionRows);
+
+    if (oInsErr) {
+      return { success: false, error: oInsErr.message };
+    }
+  }
+
+  return { success: true };
+}
+
+const attemptsBlockEditMessage =
+  "Нельзя редактировать вопросы в тесте, который уже начали проходить студенты.";
+
+/**
+ * Данные теста для формы создания/редактирования (с `is_correct` у вариантов).
+ * Доступ: роль teacher или admin; teacher — только свой `tests.user_id`.
+ */
+export async function getTestDraftForEdit(
+  testId: string,
+): Promise<
+  | { success: true; data: { id: string; initialData: CreateTestFormInitialData } }
+  | { success: false; error: string }
+> {
+  const forbiddenMessage =
+    "Доступ запрещён. Редактировать тест могут только преподаватели или администраторы.";
+
+  const idResult = testIdSchema.safeParse(testId);
+  if (!idResult.success) {
+    return {
+      success: false,
+      error:
+        idResult.error.issues[0]?.message ?? "Некорректный ID теста",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется войти в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError || !profile) {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  if (profile.role !== "admin" && profile.role !== "teacher") {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  const tid = idResult.data;
+
+  const { data, error } = await supabase
+    .from("tests")
+    .select(
+      `
+      id,
+      title,
+      description,
+      user_id,
+      questions (
+        content,
+        order_index,
+        type,
+        options ( content, order_index, is_correct )
+      )
+    `,
+    )
+    .eq("id", tid)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      return { success: false, error: "Тест не найден" };
+    }
+    return { success: false, error: error.message };
+  }
+
+  if (profile.role !== "admin" && data.user_id !== user.id) {
+    return {
+      success: false,
+      error: "Вы можете редактировать только свои тесты.",
+    };
+  }
+
+  const rawQuestions = data.questions ?? [];
+  const sorted = [...rawQuestions].sort((a, b) => a.order_index - b.order_index);
+  const questions = sorted.map((q) => mapDbQuestionRowToQuestionField(q));
+
+  const initialData: CreateTestFormInitialData = {
+    title: data.title,
+    description: data.description ?? "",
+    questions,
+  };
+
+  return {
+    success: true,
+    data: { id: data.id, initialData },
+  };
+}
+
+export async function updateFullTest(
+  testId: string,
+  payload: unknown,
+): Promise<
+  { success: true; testId: string } | { success: false; error: string }
+> {
+  const forbiddenMessage =
+    "Доступ запрещен. Тесты могут сохранять только преподаватели или администраторы.";
+
+  const idResult = testIdSchema.safeParse(testId);
+  if (!idResult.success) {
+    return {
+      success: false,
+      error:
+        idResult.error.issues[0]?.message ?? "Некорректный ID теста",
+    };
+  }
+
+  const parsed = saveFullTestPayloadSchema.safeParse(payload);
+  if (!parsed.success) {
+    const msg =
+      parsed.error.issues[0]?.message ?? "Некорректные данные для сохранения";
+    return { success: false, error: msg };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Требуется войти в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError || !profile) {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  if (profile.role !== "admin" && profile.role !== "teacher") {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  const tid = idResult.data;
+
+  const { data: testRow, error: testFetchErr } = await supabase
+    .from("tests")
+    .select("id, user_id")
+    .eq("id", tid)
+    .single();
+
+  if (testFetchErr || !testRow) {
+    return {
+      success: false,
+      error:
+        testFetchErr?.code === "PGRST116"
+          ? "Тест не найден"
+          : (testFetchErr?.message ?? "Тест не найден"),
+    };
+  }
+
+  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+    return {
+      success: false,
+      error: "Вы можете редактировать только свои тесты.",
+    };
+  }
+
+  const { count: attemptCount, error: countErr } = await supabase
+    .from("student_attempts")
+    .select("id", { count: "exact", head: true })
+    .eq("test_id", tid);
+
+  if (countErr) {
+    return { success: false, error: countErr.message };
+  }
+
+  if ((attemptCount ?? 0) > 0) {
+    return { success: false, error: attemptsBlockEditMessage };
+  }
+
+  const d = parsed.data;
+
+  const { error: updateTestErr } = await supabase
+    .from("tests")
+    .update({
+      title: d.title,
+      description: d.description ?? null,
+      is_published: d.is_published ?? true,
+    })
+    .eq("id", tid);
+
+  if (updateTestErr) {
+    return { success: false, error: updateTestErr.message };
+  }
+
+  try {
+    const { error: delErr } = await supabase
+      .from("questions")
+      .delete()
+      .eq("test_id", tid);
+
+    if (delErr) {
+      const code = delErr.code?.toUpperCase?.() ?? "";
+      const msg = delErr.message?.toLowerCase?.() ?? "";
+      if (
+        code === "23503" ||
+        msg.includes("foreign key") ||
+        msg.includes("violates foreign key")
+      ) {
+        return { success: false, error: attemptsBlockEditMessage };
+      }
+      return { success: false, error: delErr.message };
+    }
+
+    const ins = await insertQuestionsAndOptionsForTest(supabase, tid, d.questions);
+    if (!ins.success) {
+      return { success: false, error: ins.error };
+    }
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    const low = message.toLowerCase();
+    if (low.includes("foreign key") || low.includes("violates")) {
+      return { success: false, error: attemptsBlockEditMessage };
+    }
+    return { success: false, error: message };
+  }
+
+  revalidatePath("/dashboard/tests");
+  revalidatePath(`/test/${tid}`);
+  return { success: true, testId: tid };
+}
+
 /**
  * Создаёт тест, вопросы и варианты за несколько запросов.
  * При любой ошибке после создания теста вызывается откат (имитация транзакции).
@@ -1615,96 +2202,18 @@ export async function saveFullTest(
 
   const testId = testRow.id;
 
-  const questionInserts = d.questions.map((q, i) => ({
-    test_id: testId,
-    content:
-      q.type === "fill_in_the_blanks"
-        ? (q.content as Json)
-        : ({ text: q.content.text } as Json),
-    order_index: i,
-    type: q.type,
-  }));
-
-  const { data: insertedQuestions, error: qInsErr } = await supabase
-    .from("questions")
-    .insert(questionInserts)
-    .select("id, order_index");
-
-  if (qInsErr || !insertedQuestions?.length) {
-    await rollbackCreatedTest(supabase, testId, user.id);
-    return {
-      success: false,
-      error: qInsErr?.message ?? "Не удалось создать вопросы",
-    };
-  }
-
-  const sortedQ = [...insertedQuestions].sort(
-    (a, b) => a.order_index - b.order_index,
+  const inserted = await insertQuestionsAndOptionsForTest(
+    supabase,
+    testId,
+    d.questions,
   );
-
-  if (sortedQ.length !== d.questions.length) {
+  if (!inserted.success) {
     await rollbackCreatedTest(supabase, testId, user.id);
-    return {
-      success: false,
-      error: "Ошибка согласованности при создании вопросов",
-    };
+    return { success: false, error: inserted.error };
   }
 
-  const optionRows = sortedQ.flatMap((qRow, qi) => {
-    const q = d.questions[qi];
-    if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
-      return q.options.map((opt, oi) => ({
-        question_id: qRow.id,
-        content: { left: opt.content.left, right: opt.content.right } as Json,
-        order_index: oi,
-        is_correct: true,
-      }));
-    }
-    if (q.type === "image_labeling") {
-      return q.options.map((opt, oi) => {
-        const c = opt.content;
-        const content: Json = {
-          imageUrl: c.imageUrl,
-          correctText: c.correctText,
-          ...(c.title != null && String(c.title).trim() !== ""
-            ? { title: String(c.title).trim() }
-            : {}),
-        };
-        return {
-          question_id: qRow.id,
-          content,
-          order_index: oi,
-          is_correct: true,
-        };
-      });
-    }
-    if (q.type === "fill_in_the_blanks") {
-      /** Якорь для `attempt_answers.option_id` (FK); не показывается в UI плеера. */
-      return [
-        {
-          question_id: qRow.id,
-          content: { text: "__fill_in_the_blanks__" } as Json,
-          order_index: 0,
-          is_correct: true,
-        },
-      ];
-    }
-    return q.options.map((opt, oi) => ({
-      question_id: qRow.id,
-      content: { text: opt.content.text } as Json,
-      order_index: oi,
-      is_correct: opt.is_correct,
-    }));
-  });
-
-  if (optionRows.length > 0) {
-    const { error: oInsErr } = await supabase.from("options").insert(optionRows);
-
-    if (oInsErr) {
-      await rollbackCreatedTest(supabase, testId, user.id);
-      return { success: false, error: oInsErr.message };
-    }
-  }
+  revalidatePath("/dashboard/tests");
+  revalidatePath(`/test/${testId}`);
 
   return { success: true, testId };
 }

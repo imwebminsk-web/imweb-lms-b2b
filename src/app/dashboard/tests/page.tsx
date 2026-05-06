@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { getTests } from "@/app/actions/test-actions";
-import { DeleteTestButton } from "@/components/admin/tests/DeleteTestButton";
+import { TestRowActions } from "@/components/admin/tests/TestRowActions";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -77,41 +77,28 @@ export default async function DashboardTestsPage() {
           </CardFooter>
         </Card>
       ) : (
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="flex flex-col gap-3">
           {result.data.map((test) => (
             <li key={test.id}>
-              <Card className="flex h-full flex-col">
-                <CardHeader className="flex-1 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <CardTitle className="line-clamp-2 min-w-0 flex-1 text-lg leading-snug">
-                      {test.title}
-                    </CardTitle>
-                    <DeleteTestButton testId={test.id} />
-                  </div>
-                  {test.description ? (
-                    <CardDescription className="line-clamp-3">
-                      {test.description}
-                    </CardDescription>
-                  ) : (
-                    <CardDescription className="text-muted-foreground/70 italic">
-                      Без описания
-                    </CardDescription>
-                  )}
-                  <p className="text-muted-foreground text-xs tabular-nums">
-                    Вопросов: {test.totalQuestions}
+              <Card className="flex flex-row items-center gap-4 p-4">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="line-clamp-1 text-lg font-medium leading-snug">
+                    {test.title}
                   </p>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <Link
-                    href={`/test/${test.id}`}
-                    className={cn(
-                      buttonVariants({ variant: "outline", size: "default" }),
-                      "w-full justify-center",
-                    )}
-                  >
-                    Открыть как ученик
-                  </Link>
-                </CardContent>
+                  {test.description ? (
+                    <p className="text-muted-foreground line-clamp-1 text-sm">
+                      {test.description}
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground/70 line-clamp-1 text-sm italic">
+                      Без описания
+                    </p>
+                  )}
+                  <Badge variant="secondary" className="tabular-nums">
+                    Вопросов: {test.totalQuestions}
+                  </Badge>
+                </div>
+                <TestRowActions testId={test.id} />
               </Card>
             </li>
           ))}

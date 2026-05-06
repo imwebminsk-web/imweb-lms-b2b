@@ -4,7 +4,7 @@ import type { SafeTestOption } from "@/app/actions/test-actions";
 import { Button } from "@/components/ui/button";
 import type { Json } from "@/types/database.types";
 import { CheckCircle2, Link2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export type MatchingPair = {
   leftOptionId: string;
@@ -48,27 +48,39 @@ export function MatchingPuzzleQuestion({
   onPairsChange,
 }: MatchingPuzzleQuestionProps) {
   const [activeLeftId, setActiveLeftId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const leftColumn = useMemo(
     () =>
-      shuffle(
-        options.map((o) => ({
+      [...options]
+        .sort((a, b) => a.order_index - b.order_index)
+        .map((o) => ({
           optionId: o.id,
           label: labelLeft(o.content),
         })),
-      ),
+    [options],
+  );
+
+  /** Детерминированный порядок для SSR и первого кадра на клиенте (без гидрационного расхождения). */
+  const rightColumnOrdered = useMemo(
+    () =>
+      [...options]
+        .sort((a, b) => a.order_index - b.order_index)
+        .map((o) => ({
+          optionId: o.id,
+          label: labelRight(o.content),
+        })),
     [options],
   );
 
   const rightColumn = useMemo(
     () =>
-      shuffle(
-        options.map((o) => ({
-          optionId: o.id,
-          label: labelRight(o.content),
-        })),
-      ),
-    [options],
+      isMounted ? shuffle([...rightColumnOrdered]) : rightColumnOrdered,
+    [isMounted, rightColumnOrdered],
   );
 
   const pairedLeft = new Set(pairs.map((p) => p.leftOptionId));
@@ -112,11 +124,11 @@ export function MatchingPuzzleQuestion({
   return (
     <div className="flex flex-col gap-6">
       <p className="text-muted-foreground text-sm">
-        Выберите элемент слева, затем соответствующий справа. Повторите для
-        всех пар. Нажмите на пару ниже, чтобы отменить сопоставление.
+        Сначала выберите элемент слева, затем кликните по элементу справа.
+        Нажмите на готовую пару ниже, чтобы убрать сопоставление.
       </p>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 rounded-xl border border-border bg-muted/30 p-4 md:grid-cols-2">
         <div className="space-y-2">
           <div className="text-muted-foreground flex items-center gap-2 text-xs font-medium tracking-wide uppercase">
             <Link2 className="size-3.5" aria-hidden />
@@ -132,12 +144,12 @@ export function MatchingPuzzleQuestion({
                     type="button"
                     onClick={() => onLeftClick(item.optionId)}
                     className={
-                      "border-input flex min-h-11 w-full items-center gap-2 rounded-xl border px-3 py-3 text-left text-base transition-colors md:min-h-12 md:text-lg " +
+                      "border-input flex min-h-11 w-full items-center gap-2 rounded-xl border bg-card px-3 py-3 text-left text-base transition-colors md:min-h-12 md:text-lg " +
                       (done
                         ? "bg-muted/50 text-muted-foreground line-through opacity-70"
                         : active
                           ? "border-primary bg-primary/15 ring-primary/30 ring-2"
-                          : "hover:bg-muted/50 bg-card")
+                          : "hover:bg-muted/50")
                     }
                   >
                     {done ? (
@@ -169,12 +181,12 @@ export function MatchingPuzzleQuestion({
                     onClick={() => onRightClick(item.optionId)}
                     disabled={!activeLeftId && !done}
                     className={
-                      "border-input flex min-h-11 w-full items-center gap-2 rounded-xl border px-3 py-3 text-left text-base transition-colors md:min-h-12 md:text-lg " +
+                      "border-input flex min-h-11 w-full items-center gap-2 rounded-xl border bg-card px-3 py-3 text-left text-base transition-colors md:min-h-12 md:text-lg " +
                       (done
                         ? "bg-muted/50 text-muted-foreground line-through opacity-70"
                         : !activeLeftId
                           ? "cursor-not-allowed opacity-60"
-                          : "hover:bg-muted/50 bg-card")
+                          : "hover:bg-muted/50")
                     }
                   >
                     {done ? (

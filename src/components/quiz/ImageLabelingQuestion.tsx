@@ -2,22 +2,19 @@
 
 import type { SafeTestOption } from "@/app/actions/test-actions";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import {
   DndContext,
-  DragOverlay,
   PointerSensor,
+  TouchSensor,
   rectIntersection,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragStartEvent,
 } from "@dnd-kit/core";
-import { useMemo, useState } from "react";
-
-const WORD_PREFIX = "imglbl-word-";
-const IMAGE_PREFIX = "imglbl-img-";
+import type { ReactNode } from "react";
 
 export type ImageLabelingImage = {
   id: string;
@@ -34,26 +31,22 @@ export type ImageLabelingQuestionProps = {
   images: ImageLabelingImage[];
   words: ImageLabelingWord[];
   assignments: Record<string, string | null>;
-  /** В режиме просмотра после теста не передаётся. */
   onAssignmentsChange?: (next: Record<string, string | null>) => void;
-  /** Только завершённый тест: без DnD, с подсветкой верных/неверных ответов. */
   isReviewMode?: boolean;
 };
 
-/** Восстанавливает map слот картинки → id выбранного слова из сохранённых `labelPairs`. */
+const WORD_PREFIX = "il-word-";
+const SLOT_PREFIX = "il-slot-";
+const BANK_ID = "il-bank";
+
 export function buildAssignmentsFromLabelPairs(
   labelPairs: { imageId: string; wordId: string }[] | null,
   imageIds: string[],
 ): Record<string, string | null> {
-  const map = new Map(
-    (labelPairs ?? []).map((p) => [p.imageId, p.wordId] as const),
-  );
-  return Object.fromEntries(
-    imageIds.map((id) => [id, map.get(id) ?? null] as const),
-  );
+  const map = new Map((labelPairs ?? []).map((p) => [p.imageId, p.wordId] as const));
+  return Object.fromEntries(imageIds.map((id) => [id, map.get(id) ?? null] as const));
 }
 
-/** Пары «одна строка БД»: у каждой картинки есть слово с тем же option id. */
 function isPairStyleLabeling(
   images: ImageLabelingImage[],
   words: ImageLabelingWord[],
@@ -62,146 +55,6 @@ function isPairStyleLabeling(
   return images.every((img) => words.some((w) => w.id === img.id));
 }
 
-/** Плашка на картинке после теста: зелёный / красный / пропуск. */
-function ImageLabelingReviewSlot({
-  imageId,
-  assignedWordId,
-  wordById,
-  pairStyle,
-}: {
-  imageId: string;
-  assignedWordId: string | null;
-  wordById: Map<string, ImageLabelingWord>;
-  pairStyle: boolean;
-}) {
-  const correctWordText = wordById.get(imageId)?.text ?? "";
-  const isEmpty = assignedWordId == null || assignedWordId === "";
-
-  const userWordText = !isEmpty
-    ? (wordById.get(assignedWordId)?.text ?? "—")
-    : null;
-
-  const isCorrect =
-    pairStyle && !isEmpty && assignedWordId === imageId;
-
-  if (isEmpty) {
-    return (
-      <div className="absolute bottom-2 left-1/2 z-10 flex w-[max(100%-1rem,8rem)] -translate-x-1/2 flex-col items-center gap-1 px-1">
-        <div className="w-full rounded-md border border-amber-600/55 bg-orange-50/95 px-3 py-2 text-center shadow-sm">
-          <span className="mb-0.5 block text-xs font-medium text-stone-600">
-            Пропущено
-          </span>
-          {pairStyle && correctWordText ? (
-            <span className="text-sm font-semibold text-green-700">
-              {correctWordText}
-            </span>
-          ) : (
-            <span className="text-muted-foreground text-xs">Нет ответа</span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (!pairStyle) {
-    return (
-      <div className="absolute bottom-2 left-1/2 z-10 w-[max(100%-1rem,8rem)] -translate-x-1/2 px-1">
-        <div className="rounded-md border border-border bg-muted/80 px-3 py-2 text-center text-sm font-medium text-foreground shadow-sm">
-          {userWordText}
-        </div>
-        <p className="text-muted-foreground mt-1 text-center text-[10px] leading-tight">
-          Разбор по цвету доступен для вопросов в формате «пара в одной строке».
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="absolute bottom-2 left-1/2 z-10 flex w-[max(100%-1rem,8rem)] -translate-x-1/2 flex-col items-center gap-1 px-1">
-      <div
-        className={cn(
-          "w-full rounded-md border px-3 py-2 text-center text-sm font-medium shadow-sm",
-          isCorrect
-            ? "border-green-500 bg-green-100 text-green-800"
-            : "border-red-500 bg-red-100 text-red-800",
-        )}
-      >
-        {userWordText}
-      </div>
-      {!isCorrect ? (
-        <div className="rounded bg-white/80 px-1 text-xs font-semibold text-green-600">
-          Правильно: {correctWordText || "—"}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ImageLabelingReviewView({
-  images,
-  words,
-  assignments,
-}: {
-  images: ImageLabelingImage[];
-  words: ImageLabelingWord[];
-  assignments: Record<string, string | null>;
-}) {
-  const wordById = useMemo(() => {
-    const m = new Map<string, ImageLabelingWord>();
-    for (const w of words) m.set(w.id, w);
-    return m;
-  }, [words]);
-
-  const pairStyle = useMemo(
-    () => isPairStyleLabeling(images, words),
-    [images, words],
-  );
-
-  if (images.length === 0) {
-    return (
-      <p className="text-muted-foreground text-center text-sm">
-        Нет изображений для разбора.
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      <p className="text-muted-foreground text-sm">
-        Разбор ответов: верно — зелёным, ошибка — красным. Проверка только после
-        завершения теста.
-      </p>
-      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {images.map((img) => (
-          <li key={img.id}>
-            <div className="border-border relative overflow-hidden rounded-xl border-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={img.url}
-                alt={img.title ?? ""}
-                className="aspect-[4/3] h-auto w-full object-cover"
-                draggable={false}
-              />
-              <ImageLabelingReviewSlot
-                imageId={img.id}
-                assignedWordId={assignments[img.id] ?? null}
-                wordById={wordById}
-                pairStyle={pairStyle}
-              />
-            </div>
-            {img.title ? (
-              <p className="text-muted-foreground mt-1 text-center text-xs">
-                {img.title}
-              </p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** Пары для отправки на сервер (только при полном заполнении). */
 export function imageLabelingPairsFromAssignments(
   assignments: Record<string, string | null>,
   imageIds: string[],
@@ -233,10 +86,6 @@ function correctTextFromPairContent(rec: Record<string, unknown>): string {
   return "";
 }
 
-/**
- * Новый формат: каждая опция — пара `imageUrl` + `correctText` (или `correctWord`).
- * Старый формат: отдельные строки только с картинкой и только со словом.
- */
 export function parseImageLabelingOptions(options: SafeTestOption[]): {
   images: ImageLabelingImage[];
   words: ImageLabelingWord[];
@@ -290,62 +139,190 @@ export function parseImageLabelingOptions(options: SafeTestOption[]): {
   return { images, words };
 }
 
-function WordItem({
-  word,
-  variant,
-}: {
-  word: ImageLabelingWord;
-  variant: "pool" | "sticker";
-}) {
+function clearWordFromSlots(
+  prev: Record<string, string | null>,
+  wordId: string,
+): Record<string, string | null> {
+  const next = { ...prev };
+  for (const k of Object.keys(next)) {
+    if (next[k] === wordId) {
+      next[k] = null;
+    }
+  }
+  return next;
+}
+
+function DraggableWordPill({ word }: { word: ImageLabelingWord }) {
   const id = `${WORD_PREFIX}${word.id}`;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
   });
 
   return (
-    <div
+    <span
       ref={setNodeRef}
       className={cn(
-        "cursor-grab touch-none rounded-md border border-border bg-card px-3 py-2 text-sm font-medium text-foreground shadow-sm active:cursor-grabbing",
-        variant === "sticker" &&
-          "bg-card/90 shadow-md backdrop-blur-sm",
-        isDragging && "opacity-40",
+        "touch-none cursor-grab rounded-full border border-border bg-secondary px-3 py-1.5 text-sm font-medium shadow-sm active:cursor-grabbing",
+        isDragging && "opacity-50",
       )}
       {...listeners}
       {...attributes}
     >
       {word.text}
+    </span>
+  );
+}
+
+function DraggableWordInSlot({
+  word,
+  imageId,
+}: {
+  word: ImageLabelingWord;
+  imageId: string;
+}) {
+  const id = `${WORD_PREFIX}${word.id}`;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id,
+    data: { sourceImageId: imageId },
+  });
+
+  return (
+    <span
+      ref={setNodeRef}
+      className={cn(
+        "touch-none inline-flex cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-50",
+      )}
+      {...listeners}
+      {...attributes}
+    >
+      <span className="rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-md">
+        {word.text}
+      </span>
+    </span>
+  );
+}
+
+function ImageRowWithDrop({
+  img,
+  assignedWord,
+}: {
+  img: ImageLabelingImage;
+  assignedWord: ImageLabelingWord | undefined;
+}) {
+  const slotId = `${SLOT_PREFIX}${img.id}`;
+  const { setNodeRef, isOver } = useDroppable({ id: slotId });
+
+  return (
+    <li className="rounded-xl border border-border bg-card p-3">
+      <p className="mb-2 text-sm font-medium">{img.title || "Изображение"}</p>
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-md border border-border bg-muted/20 transition-shadow",
+          isOver && "ring-2 ring-inset ring-primary",
+        )}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={img.url}
+          alt={img.title ?? ""}
+          className="mx-auto max-h-80 w-full object-contain"
+          draggable={false}
+        />
+        <div
+          ref={setNodeRef}
+          className={cn(
+            "absolute inset-0 z-10 transition-colors",
+            isOver && "bg-black/10",
+          )}
+          aria-hidden
+        />
+        {assignedWord ? (
+          <div className="absolute bottom-2 left-1/2 z-20 -translate-x-1/2">
+            <DraggableWordInSlot word={assignedWord} imageId={img.id} />
+          </div>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+function WordBankDropZone({ children }: { children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: BANK_ID });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex min-h-[72px] flex-wrap gap-2 rounded-lg border p-3 transition-colors",
+        isOver ? "border-primary bg-primary/5" : "border-border bg-muted/30",
+      )}
+    >
+      {children}
     </div>
   );
 }
 
-function ImageCard({
-  image,
-  assignedWord,
+function ImageLabelingReviewView({
+  images,
+  words,
+  assignments,
 }: {
-  image: ImageLabelingImage;
-  assignedWord: ImageLabelingWord | null;
+  images: ImageLabelingImage[];
+  words: ImageLabelingWord[];
+  assignments: Record<string, string | null>;
 }) {
-  const dropId = `${IMAGE_PREFIX}${image.id}`;
-  const { setNodeRef } = useDroppable({ id: dropId });
+  const wordById = new Map(words.map((w) => [w.id, w]));
+  const pairStyle = isPairStyleLabeling(images, words);
 
   return (
-    <div
-      ref={setNodeRef}
-      className="border-border relative overflow-hidden rounded-xl border-2"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={image.url}
-        alt={image.title ?? ""}
-        className="aspect-[4/3] h-auto w-full object-cover"
-        draggable={false}
-      />
-      {assignedWord ? (
-        <div className="absolute bottom-2 left-1/2 z-10 w-[max(100%-1rem,8rem)] -translate-x-1/2 px-1">
-          <WordItem word={assignedWord} variant="sticker" />
-        </div>
-      ) : null}
+    <div className="space-y-4">
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {images.map((img) => {
+          const assignedWordId = assignments[img.id] ?? null;
+          const assignedText = assignedWordId
+            ? (wordById.get(assignedWordId)?.text ?? "—")
+            : "—";
+          const isCorrect = pairStyle && assignedWordId === img.id;
+          const correctText = wordById.get(img.id)?.text ?? "—";
+
+          return (
+            <li key={img.id} className="rounded-xl border border-border bg-card p-3">
+              <div className="flex items-center justify-between gap-2 pb-2">
+                <p className="line-clamp-1 text-sm font-medium">
+                  {img.title || "Изображение"}
+                </p>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    isCorrect
+                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                      : "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300",
+                  )}
+                >
+                  {isCorrect ? "Верно" : "Ошибка"}
+                </Badge>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img.url}
+                alt={img.title ?? ""}
+                className="mx-auto max-h-80 w-full rounded-lg border border-border bg-muted/20 object-contain"
+                draggable={false}
+              />
+              <div className="mt-3 text-sm">
+                <p>
+                  Ваш ответ: <span className="font-medium">{assignedText}</span>
+                </p>
+                {!isCorrect ? (
+                  <p className="text-muted-foreground">
+                    Правильно: <span className="font-medium">{correctText}</span>
+                  </p>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -355,142 +332,87 @@ function ImageLabelingPlayView({
   words,
   assignments,
   onAssignmentsChange,
-}: Omit<ImageLabelingQuestionProps, "isReviewMode">) {
-  if (!onAssignmentsChange) {
-    throw new Error(
-      "ImageLabelingQuestion: передайте onAssignmentsChange, если isReviewMode не задан",
-    );
-  }
-
-  const patchAssignments = onAssignmentsChange;
-
-  const [activeWordId, setActiveWordId] = useState<string | null>(null);
-
-  const wordById = useMemo(() => {
-    const m = new Map<string, ImageLabelingWord>();
-    for (const w of words) m.set(w.id, w);
-    return m;
-  }, [words]);
-
-  const assignedWordIds = useMemo(
-    () => new Set(Object.values(assignments).filter(Boolean) as string[]),
-    [assignments],
+}: {
+  images: ImageLabelingImage[];
+  words: ImageLabelingWord[];
+  assignments: Record<string, string | null>;
+  onAssignmentsChange: (next: Record<string, string | null>) => void;
+}) {
+  const wordById = new Map(words.map((w) => [w.id, w]));
+  const assignedIds = new Set(
+    Object.values(assignments).filter(
+      (v): v is string => typeof v === "string" && v.length > 0,
+    ),
   );
-
-  const poolWords = useMemo(
-    () => words.filter((w) => !assignedWordIds.has(w.id)),
-    [words, assignedWordIds],
-  );
-
-  const activeWord = activeWordId ? wordById.get(activeWordId) : undefined;
+  const poolWords = words.filter((w) => !assignedIds.has(w.id));
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
+    }),
   );
-
-  function handleDragStart(event: DragStartEvent) {
-    const raw = String(event.active.id);
-    if (!raw.startsWith(WORD_PREFIX)) return;
-    setActiveWordId(raw.slice(WORD_PREFIX.length));
-  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
-    setActiveWordId(null);
-
     const aid = String(active.id);
     if (!aid.startsWith(WORD_PREFIX)) return;
     const wordId = aid.slice(WORD_PREFIX.length);
 
-    const clearWordFromAssignments = (
-      prev: Record<string, string | null>,
-    ): Record<string, string | null> => {
-      const next = { ...prev };
-      for (const key of Object.keys(next)) {
-        if (next[key] === wordId) next[key] = null;
-      }
-      return next;
-    };
+    const overId = over ? String(over.id) : null;
 
-    if (over) {
-      const oid = String(over.id);
-      if (oid.startsWith(IMAGE_PREFIX)) {
-        const imageId = oid.slice(IMAGE_PREFIX.length);
-        let next = clearWordFromAssignments(assignments);
-        next = { ...next, [imageId]: wordId };
-        patchAssignments(next);
-        return;
-      }
+    if (overId?.startsWith(SLOT_PREFIX)) {
+      const imageId = overId.slice(SLOT_PREFIX.length);
+      let next = clearWordFromSlots(assignments, wordId);
+      next = { ...next, [imageId]: wordId };
+      onAssignmentsChange(next);
+      return;
     }
 
-    patchAssignments(clearWordFromAssignments(assignments));
-  }
-
-  if (images.length === 0) {
-    return (
-      <p className="text-muted-foreground text-center text-sm">
-        Нет изображений для подписи (ожидаются варианты с{" "}
-        <code className="text-foreground text-xs">imageUrl</code> в контенте).
-      </p>
-    );
+    if (overId === BANK_ID || overId === null) {
+      onAssignmentsChange(clearWordFromSlots(assignments, wordId));
+    }
   }
 
   return (
     <DndContext
       sensors={sensors}
       collisionDetection={rectIntersection}
-      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex flex-col gap-10">
-        <div>
-          <p className="text-muted-foreground mb-3 text-sm">
-            Перетащите слово на картинку. Проверка будет после отправки ответа.
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-sm font-medium">
+            Перетащите слово на картинку; снизу — банк неназначенных слов
           </p>
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {images.map((img) => {
-              const wid = assignments[img.id];
-              const assignedWord =
-                wid != null ? wordById.get(wid) ?? null : null;
+              const wid = assignments[img.id] ?? null;
+              const assigned = wid ? wordById.get(wid) : undefined;
               return (
-                <li key={img.id}>
-                  <ImageCard image={img} assignedWord={assignedWord} />
-                  {img.title ? (
-                    <p className="text-muted-foreground mt-1 text-center text-xs">
-                      {img.title}
-                    </p>
-                  ) : null}
-                </li>
+                <ImageRowWithDrop
+                  key={img.id}
+                  img={img}
+                  assignedWord={assigned}
+                />
               );
             })}
           </ul>
         </div>
 
-        <div className="border-border rounded-xl border border-dashed bg-muted/20 p-4">
-          <p className="text-muted-foreground mb-3 text-sm font-medium">
-            Банк слов
-          </p>
-          {poolWords.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              Все слова размещены на картинках.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {poolWords.map((w) => (
-                <WordItem key={w.id} word={w} variant="pool" />
-              ))}
-            </div>
-          )}
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-sm font-medium">Банк слов</p>
+          <WordBankDropZone>
+            {poolWords.length === 0 ? (
+              <span className="text-muted-foreground text-sm">
+                Все слова назначены.
+              </span>
+            ) : (
+              poolWords.map((w) => <DraggableWordPill key={w.id} word={w} />)
+            )}
+          </WordBankDropZone>
         </div>
       </div>
-
-      <DragOverlay dropAnimation={null}>
-        {activeWord ? (
-          <div className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium shadow-lg">
-            {activeWord.text}
-          </div>
-        ) : null}
-      </DragOverlay>
     </DndContext>
   );
 }
@@ -509,6 +431,12 @@ export function ImageLabelingQuestion({
         words={words}
         assignments={assignments}
       />
+    );
+  }
+
+  if (!onAssignmentsChange) {
+    throw new Error(
+      "ImageLabelingQuestion: передайте onAssignmentsChange, если isReviewMode не задан",
     );
   }
 

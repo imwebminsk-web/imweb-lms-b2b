@@ -5,6 +5,7 @@ import {
   getAttemptReviewAnswers,
   submitAnswer,
   type AttemptResult,
+  type SafeTestOption,
   type SafeTestQuestion,
 } from "@/app/actions/test-actions";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/quiz-helpers";
 import { FillInTheBlanksContentSchema } from "@/lib/validations/fill-in-the-blanks-schema";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { Json } from "@/types/database.types";
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -38,16 +40,49 @@ import { MultipleChoiceQuestion } from "./MultipleChoiceQuestion";
 import { FillInTheBlanksQuestion } from "./FillInTheBlanksQuestion";
 
 function textFromContent(content: Json): string {
-  if (
-    content &&
-    typeof content === "object" &&
-    !Array.isArray(content) &&
-    "text" in content &&
-    typeof (content as { text: unknown }).text === "string"
-  ) {
-    return (content as { text: string }).text;
+  if (typeof content === "string") return content;
+
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((node) => {
+        if (!node || typeof node !== "object") return "";
+        const rec = node as { text?: unknown; children?: unknown };
+        if (typeof rec.text === "string") return rec.text;
+        if (Array.isArray(rec.children)) {
+          return rec.children
+            .map((child) => {
+              if (!child || typeof child !== "object") return "";
+              const c = child as { text?: unknown };
+              return typeof c.text === "string" ? c.text : "";
+            })
+            .join("");
+        }
+        return "";
+      })
+      .join("")
+      .trim();
+    if (parts) return parts;
+    return "Вопрос";
   }
-  return typeof content === "string" ? content : String(content ?? "");
+
+  if (content && typeof content === "object") {
+    const rec = content as { text?: unknown; children?: unknown };
+    if (typeof rec.text === "string") {
+      return rec.text;
+    }
+    if (Array.isArray(rec.children)) {
+      const parts = rec.children
+        .map((child) => {
+          if (!child || typeof child !== "object") return "";
+          const c = child as { text?: unknown };
+          return typeof c.text === "string" ? c.text : "";
+        })
+        .join("")
+        .trim();
+      if (parts) return parts;
+    }
+  }
+  return "Вопрос";
 }
 
 /** Заголовок над блоком вопроса: у fill контент — JSON сегментов, не показываем как строку. */
@@ -60,6 +95,34 @@ function questionHeading(content: Json, type: string | null): string | null {
 
 function isMultipleChoice(type: string | null | undefined): boolean {
   return type === "multiple_choice" || type === "multiple";
+}
+
+function parsePairsFromAnswerData(
+  answerData: Json | null,
+): { leftOptionId: string; rightOptionId: string }[] {
+  if (!answerData || typeof answerData !== "object" || Array.isArray(answerData)) {
+    return [];
+  }
+  const raw =
+    (answerData as { pairs?: unknown }).pairs ??
+    (answerData as { matchingPairs?: unknown }).matchingPairs;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (p): p is { leftOptionId: string; rightOptionId: string } =>
+      typeof p === "object" &&
+      p !== null &&
+      !Array.isArray(p) &&
+      typeof (p as { leftOptionId?: unknown }).leftOptionId === "string" &&
+      typeof (p as { rightOptionId?: unknown }).rightOptionId === "string",
+  );
+}
+
+function puzzlePartText(content: Json, side: "left" | "right"): string {
+  if (content && typeof content === "object" && !Array.isArray(content)) {
+    const v = (content as { left?: unknown; right?: unknown })[side];
+    if (typeof v === "string") return v;
+  }
+  return "—";
 }
 
 export type QuizPlayerProps = {
@@ -93,6 +156,11 @@ export function QuizPlayer({
   const [reviewFillByQuestionId, setReviewFillByQuestionId] = useState<
     Map<string, Record<string, string>> | null
   >(null);
+  const [reviewRowsByQuestionId, setReviewRowsByQuestionId] = useState<
+    Map<string, { option_id: string; answer_data: Json | null }[]> | null
+  >(null);
+  const [reviewCorrectIdsByQuestionId, setReviewCorrectIdsByQuestionId] =
+    useState<Map<string, string[]> | null>(null);
 
   const total = questions.length;
   const current = questions[currentIndex];
@@ -157,7 +225,17 @@ export function QuizPlayer({
       if (cancelled || !res.success) return;
       const map = new Map<string, Record<string, string | null>>();
       const fillMap = new Map<string, Record<string, string>>();
+      const rowsMap = new Map<
+        string,
+        { option_id: string; answer_data: Json | null }[]
+      >();
+      const correctIdsMap = new Map<string, string[]>();
       for (const row of res.data) {
+        const list = rowsMap.get(row.question_id) ?? [];
+        list.push({ option_id: row.option_id, answer_data: row.answer_data });
+        rowsMap.set(row.question_id, list);
+        correctIdsMap.set(row.question_id, row.correct_option_ids);
+
         const pairs = parseLabelPairsFromAnswerData(row.answer_data);
         if (pairs) {
           const q = questions.find((x) => x.id === row.question_id);
@@ -181,6 +259,8 @@ export function QuizPlayer({
       if (!cancelled) {
         setReviewAnswersByQuestionId(map);
         setReviewFillByQuestionId(fillMap);
+        setReviewRowsByQuestionId(rowsMap);
+        setReviewCorrectIdsByQuestionId(correctIdsMap);
       }
     })();
     return () => {
@@ -276,12 +356,71 @@ export function QuizPlayer({
   }
 
   if (finished && result) {
-    const imageLabelingReviewList = questions.filter(
-      (q) => q.type === "image_labeling",
-    );
-    const fillReviewList = questions.filter(
-      (q) => q.type === "fill_in_the_blanks",
-    );
+    const getSelectedIdsForQuestion = (questionId: string) => {
+      const rows = reviewRowsByQuestionId?.get(questionId) ?? [];
+      const selectedIdsFromData =
+        rows.length > 0 &&
+        rows[0]?.answer_data &&
+        typeof rows[0].answer_data === "object" &&
+        !Array.isArray(rows[0].answer_data) &&
+        Array.isArray(
+          (rows[0].answer_data as { selectedOptionIds?: unknown }).selectedOptionIds,
+        )
+          ? (
+              (rows[0].answer_data as { selectedOptionIds: unknown[] })
+                .selectedOptionIds
+            ).filter((x): x is string => typeof x === "string")
+          : [];
+      return selectedIdsFromData.length > 0
+        ? selectedIdsFromData
+        : rows.map((r) => r.option_id);
+    };
+
+    const isQuestionFullyCorrect = (q: SafeTestQuestion): boolean => {
+      const rows = reviewRowsByQuestionId?.get(q.id) ?? [];
+      const answerData = rows[0]?.answer_data ?? null;
+
+      if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
+        const pairs = parsePairsFromAnswerData(answerData);
+        if (pairs.length !== q.options.length) return false;
+        return q.options.every((leftOpt) =>
+          pairs.some(
+            (p) => p.leftOptionId === leftOpt.id && p.rightOptionId === leftOpt.id,
+          ),
+        );
+      }
+
+      if (q.type === "single_choice" || q.type === "multiple_choice" || q.type === "multiple") {
+        const selected = [...new Set(getSelectedIdsForQuestion(q.id))].sort();
+        const correct = [...new Set(reviewCorrectIdsByQuestionId?.get(q.id) ?? [])].sort();
+        if (selected.length !== correct.length) return false;
+        return selected.every((id, i) => id === correct[i]);
+      }
+
+      if (q.type === "fill_in_the_blanks") {
+        const p = FillInTheBlanksContentSchema.safeParse(q.content);
+        if (!p.success) return false;
+        const saved = reviewFillByQuestionId?.get(q.id) ?? {};
+        const blankIds = Object.keys(p.data.correctMapping);
+        if (Object.keys(saved).length !== blankIds.length) return false;
+        return blankIds.every((id) => saved[id] === p.data.correctMapping[id]);
+      }
+
+      if (q.type === "image_labeling") {
+        const meta = parseImageLabelingOptions(q.options);
+        const assignments = reviewAnswersByQuestionId?.get(q.id) ?? {};
+        return (
+          meta.images.length > 0 &&
+          meta.images.every((img) => assignments[img.id] !== null && assignments[img.id] === img.id)
+        );
+      }
+
+      return false;
+    };
+
+    const totalCorrectQuestions = questions.filter((q) =>
+      isQuestionFullyCorrect(q),
+    ).length;
 
     return (
       <div className="flex flex-col gap-10 py-8">
@@ -302,11 +441,11 @@ export function QuizPlayer({
             <p className="text-muted-foreground text-lg">
               Правильных ответов:{" "}
               <span className="text-foreground font-semibold tabular-nums">
-                {result.correctCount}
+                {totalCorrectQuestions}
               </span>{" "}
               из{" "}
               <span className="text-foreground font-semibold tabular-nums">
-                {result.totalQuestions}
+                {questions.length}
               </span>
             </p>
             <p className="text-muted-foreground text-sm">
@@ -316,60 +455,199 @@ export function QuizPlayer({
           </div>
         </div>
 
-        {imageLabelingReviewList.length > 0 ? (
-          <section className="border-border w-full rounded-xl border bg-card/30 p-4 text-left shadow-sm sm:p-6">
-            <h3 className="text-foreground mb-4 text-lg font-semibold tracking-tight">
-              Разбор: подписи к картинкам
-            </h3>
-            <div className="flex flex-col gap-10">
-              {imageLabelingReviewList.map((q) => {
-                const meta = parseImageLabelingOptions(q.options);
-                const assignments =
-                  reviewAnswersByQuestionId?.get(q.id) ??
-                  Object.fromEntries(
-                    meta.images.map((i) => [i.id, null] as const),
-                  );
-                return (
-                  <div key={q.id} className="flex flex-col gap-4">
-                    <h4 className="text-foreground text-base font-medium leading-snug">
-                      {textFromContent(q.content)}
-                    </h4>
-                    <ImageLabelingQuestion
-                      isReviewMode
-                      images={meta.images}
-                      words={meta.words}
-                      assignments={assignments}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        ) : null}
+        <section className="border-border w-full rounded-xl border bg-card/30 p-4 text-left shadow-sm sm:p-6">
+          <h3 className="text-foreground mb-4 text-lg font-semibold tracking-tight">
+            Разбор ответов
+          </h3>
+          <div className="flex flex-col gap-10">
+            {questions.map((q, index) => {
+              const rows = reviewRowsByQuestionId?.get(q.id) ?? [];
+              const answerData = rows[0]?.answer_data ?? null;
+              const questionFullyCorrect = isQuestionFullyCorrect(q);
 
-        {fillReviewList.length > 0 ? (
-          <section className="border-border w-full rounded-xl border bg-card/30 p-4 text-left shadow-sm sm:p-6">
-            <h3 className="text-foreground mb-4 text-lg font-semibold tracking-tight">
-              Разбор: заполнение пропусков
-            </h3>
-            <div className="flex flex-col gap-10">
-              {fillReviewList.map((q) => {
-                const p = FillInTheBlanksContentSchema.safeParse(q.content);
-                if (!p.success) return null;
-                const saved = reviewFillByQuestionId?.get(q.id) ?? {};
-                return (
-                  <div key={q.id} className="flex flex-col gap-4">
-                    <FillInTheBlanksQuestion
-                      content={p.data}
-                      value={saved}
-                      isReviewMode
-                    />
+              const selectedIdsFromData =
+                rows.length > 0 &&
+                rows[0]?.answer_data &&
+                typeof rows[0].answer_data === "object" &&
+                !Array.isArray(rows[0].answer_data) &&
+                Array.isArray(
+                  (rows[0].answer_data as { selectedOptionIds?: unknown })
+                    .selectedOptionIds,
+                )
+                  ? (
+                      (rows[0].answer_data as { selectedOptionIds: unknown[] })
+                        .selectedOptionIds
+                    ).filter((x): x is string => typeof x === "string")
+                  : [];
+              const selectedIds =
+                selectedIdsFromData.length > 0
+                  ? selectedIdsFromData
+                  : rows.map((r) => r.option_id);
+
+              return (
+                <div
+                  key={q.id}
+                  className="mb-6 space-y-4 rounded-xl border p-6"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-foreground text-base font-medium leading-snug">
+                      Вопрос {index + 1}: {textFromContent(q.content)}
+                    </h4>
+                    <Badge
+                      variant={questionFullyCorrect ? "secondary" : "destructive"}
+                      className={
+                        questionFullyCorrect
+                          ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                          : undefined
+                      }
+                    >
+                      {questionFullyCorrect ? "Верно" : "Ошибка"}
+                    </Badge>
                   </div>
-                );
-              })}
-            </div>
-          </section>
-        ) : null}
+
+                  {(q.type === "matching_puzzle" || q.type === "dnd_puzzle") && (() => {
+                    const pairs = parsePairsFromAnswerData(answerData);
+                    const optionById = new Map(q.options.map((o) => [o.id, o]));
+                    return (
+                      <div className="flex flex-col gap-2">
+                        {q.options.map((leftOpt) => {
+                          const pair = pairs.find((p) => p.leftOptionId === leftOpt.id);
+                          const userRight = pair
+                            ? optionById.get(pair.rightOptionId)
+                            : undefined;
+                          const correctRight = optionById.get(leftOpt.id);
+                          const isCorrect = Boolean(
+                            pair && pair.rightOptionId === leftOpt.id,
+                          );
+                          return (
+                            <div
+                              key={`${q.id}-${leftOpt.id}`}
+                              className="rounded-md border bg-muted/50 p-2 text-sm"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">
+                                  {puzzlePartText(leftOpt.content, "left")}
+                                </span>
+                                <span className="text-muted-foreground">—</span>
+                                <span>
+                                  {userRight
+                                    ? puzzlePartText(userRight.content, "right")
+                                    : "— Нет ответа —"}
+                                </span>
+                                <Badge
+                                  variant={isCorrect ? "secondary" : "destructive"}
+                                  className={
+                                    isCorrect
+                                      ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                      : undefined
+                                  }
+                                >
+                                  {isCorrect ? "Верно" : "Ошибка"}
+                                </Badge>
+                              </div>
+                              {!isCorrect && correctRight ? (
+                                <p className="text-muted-foreground mt-1 text-xs">
+                                  Правильно: {puzzlePartText(correctRight.content, "right")}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                  {(q.type === "single_choice" ||
+                    q.type === "multiple_choice" ||
+                    q.type === "multiple") && (() => {
+                    const correctIds = reviewCorrectIdsByQuestionId?.get(q.id) ?? [];
+                    const selectedOptions = selectedIds
+                      .map((id) => q.options.find((o) => o.id === id))
+                      .filter((o): o is SafeTestOption => Boolean(o));
+                    const missedCorrectIds = correctIds.filter(
+                      (id) => !selectedIds.includes(id),
+                    );
+                    return (
+                      <div className="flex flex-col gap-2">
+                        {selectedOptions.length > 0 ? (
+                          selectedOptions.map((opt) => {
+                            const isCorrect = correctIds.includes(opt.id);
+                            return (
+                              <div
+                                key={`${q.id}-${opt.id}`}
+                                className="flex items-center gap-2 rounded-md border bg-muted/50 p-2 text-sm"
+                              >
+                                <span>{textFromContent(opt.content)}</span>
+                                <Badge
+                                  variant={isCorrect ? "secondary" : "destructive"}
+                                  className={
+                                    isCorrect
+                                      ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                      : undefined
+                                  }
+                                >
+                                  {isCorrect ? "Верно" : "Ошибка"}
+                                </Badge>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="text-muted-foreground text-sm">— Нет ответа —</p>
+                        )}
+                        {missedCorrectIds.length > 0 ? (
+                          <p className="text-muted-foreground text-xs">
+                            Правильный ответ:{" "}
+                            {missedCorrectIds
+                              .map((id) => q.options.find((o) => o.id === id))
+                              .filter((o): o is SafeTestOption => Boolean(o))
+                              .map((o) => textFromContent(o.content))
+                              .join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
+
+                  {q.type === "image_labeling" && (() => {
+                    const meta = parseImageLabelingOptions(q.options);
+                    const assignments =
+                      reviewAnswersByQuestionId?.get(q.id) ??
+                      Object.fromEntries(
+                        meta.images.map((i) => [i.id, null] as const),
+                      );
+                    return (
+                      <ImageLabelingQuestion
+                        isReviewMode
+                        images={meta.images}
+                        words={meta.words}
+                        assignments={assignments}
+                      />
+                    );
+                  })()}
+
+                  {q.type === "fill_in_the_blanks" && (() => {
+                    const p = FillInTheBlanksContentSchema.safeParse(q.content);
+                    if (!p.success) {
+                      return (
+                        <p className="text-muted-foreground text-sm">
+                          Не удалось показать разбор этого вопроса.
+                        </p>
+                      );
+                    }
+                    const saved = reviewFillByQuestionId?.get(q.id) ?? {};
+                    return (
+                      <FillInTheBlanksQuestion
+                        content={p.data}
+                        value={saved}
+                        isReviewMode
+                      />
+                    );
+                  })()}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
     );
   }

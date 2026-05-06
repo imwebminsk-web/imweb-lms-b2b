@@ -130,10 +130,10 @@ export function FillInTheBlanksEditor({
                   <span key={i}>{seg.value}</span>
                 ) : (
                   <span
-                    key={seg.id}
+                    key={i}
                     className="border-primary/40 bg-primary/10 text-primary mx-0.5 inline-block min-w-[4rem] rounded border px-2 py-0.5 text-center text-xs font-medium"
                   >
-                    ___ ({seg.id.slice(0, 8)}…)
+                    Пропуск {i + 1}
                   </span>
                 ),
               )}

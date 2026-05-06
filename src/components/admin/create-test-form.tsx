@@ -3,11 +3,19 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveFullTest } from "@/app/actions/test-actions";
+import { saveFullTest, updateFullTest } from "@/app/actions/test-actions";
 import { FillInTheBlanksEditor } from "@/components/admin/questions/FillInTheBlanksEditor";
+import { ImageLabelingImageUploadField } from "@/components/admin/questions/ImageLabelingImageUploadField";
 import { Button } from "@/components/ui/button";
-import type { FillInTheBlanksContent } from "@/lib/validations/fill-in-the-blanks-schema";
 import { saveFullTestPayloadSchema } from "@/lib/validations/admin-test-schema";
+import type {
+  CreateTestFormInitialData,
+  LabelingPairField,
+  ChoiceOptionField,
+  PuzzleOptionField,
+  QuestionField,
+  QuestionKind,
+} from "@/types/create-test-form";
 import {
   Card,
   CardContent,
@@ -24,51 +32,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type QuestionKind =
-  | "single_choice"
-  | "multiple_choice"
-  | "matching_puzzle"
-  | "dnd_puzzle"
-  | "image_labeling"
-  | "fill_in_the_blanks";
-
-type ChoiceOptionField = { text: string; isCorrect: boolean };
-type PuzzleOptionField = { left: string; right: string };
-/** Одна строка в БД: картинка + правильное слово для неё. */
-type LabelingPairField = { url: string; correctWord: string; title: string };
 export type CreateTestValues = z.infer<typeof saveFullTestPayloadSchema>;
 
-type QuestionField =
-  | {
-      text: string;
-      type: "single_choice" | "multiple_choice";
-      options: ChoiceOptionField[];
-    }
-  | {
-      text: string;
-      type: "matching_puzzle" | "dnd_puzzle";
-      options: PuzzleOptionField[];
-    }
-  | {
-      text: string;
-      type: "image_labeling";
-      labelingPairs: LabelingPairField[];
-    }
-  | {
-      text: string;
-      type: "fill_in_the_blanks";
-      fillRawText: string;
-      fillExtraWords: string[];
-      fillContent: FillInTheBlanksContent | null;
-    };
+export type {
+  CreateTestFormInitialData,
+  QuestionField,
+} from "@/types/create-test-form";
 
 const QUESTION_TYPE_LABELS: Record<QuestionKind, string> = {
-  single_choice: "Один ответ",
-  multiple_choice: "Несколько ответов",
-  matching_puzzle: "Пазл",
-  dnd_puzzle: "Супер-Пазл",
-  image_labeling: "Подпиши картинку",
-  fill_in_the_blanks: "Заполнить пропуски",
+  single_choice: "Один выбор",
+  multiple_choice: "Множественный выбор",
+  matching_puzzle: "Сопоставление пар (клик)",
+  dnd_puzzle: "Визуальный пазл (стыковка)",
+  image_labeling: "Метки на картинке",
+  fill_in_the_blanks: "Заполнение пропусков",
 };
 
 function defaultOptionsForType(
@@ -142,12 +119,24 @@ function isFillInTheBlanksQuestion(
   return q.type === "fill_in_the_blanks";
 }
 
+type CreateTestFormProps = {
+  initialData?: CreateTestFormInitialData;
+  testId?: string;
+};
+
 // TODO: Перевести форму на useForm<CreateTestValues> вместо ручного useState.
-export function CreateTestForm() {
+export function CreateTestForm({
+  initialData,
+  testId,
+}: CreateTestFormProps) {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [questions, setQuestions] = useState<QuestionField[]>([emptyQuestion()]);
+  const [title, setTitle] = useState(initialData?.title ?? "");
+  const [description, setDescription] = useState(
+    initialData?.description ?? "",
+  );
+  const [questions, setQuestions] = useState<QuestionField[]>(
+    initialData?.questions?.length ? initialData.questions : [emptyQuestion()],
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -332,12 +321,29 @@ export function CreateTestForm() {
     setPending(true);
 
     for (const q of questions) {
+      if (q.text.trim().length === 0) {
+        setError("Текст вопроса обязателен для всех вопросов.");
+        setPending(false);
+        return;
+      }
       if (isFillInTheBlanksQuestion(q) && !q.fillContent) {
         setError(
           "Для вопроса «Заполнить пропуски» исправьте текст: нужен хотя бы один пропуск [слово] и валидный банк слов (см. предпросмотр).",
         );
         setPending(false);
         return;
+      }
+      if (isImageLabelingQuestion(q)) {
+        const badPair = q.labelingPairs.find(
+          (p) => !p.url.trim() || !p.correctWord.trim(),
+        );
+        if (badPair) {
+          setError(
+            "Для «Подпиши картинку» загрузите изображение и укажите правильное слово для каждой пары.",
+          );
+          setPending(false);
+          return;
+        }
       }
     }
 
@@ -391,7 +397,9 @@ export function CreateTestForm() {
       }),
     };
 
-    const result = await saveFullTest(payload);
+    const result = testId
+      ? await updateFullTest(testId, payload)
+      : await saveFullTest(payload);
     setPending(false);
 
     if (!result.success) {
@@ -399,14 +407,16 @@ export function CreateTestForm() {
       return;
     }
 
-    router.push(`/test/${result.testId}`);
+    router.push("/dashboard/tests");
   }
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto flex max-w-2xl flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Новый тест</CardTitle>
+          <CardTitle>
+            {testId ? "Редактирование теста" : "Новый тест"}
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="space-y-2">
@@ -451,20 +461,12 @@ export function CreateTestForm() {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {isFillInTheBlanksQuestion(q)
-                  ? "Подпись к вопросу (необязательно)"
-                  : "Текст вопроса"}
-              </label>
+              <label className="text-sm font-medium">Текст вопроса *</label>
               <Input
                 value={q.text}
                 onChange={(e) => updateQuestion(qi, { text: e.target.value })}
-                placeholder={
-                  isFillInTheBlanksQuestion(q)
-                    ? "Краткий заголовок над упражнением"
-                    : "Формулировка"
-                }
-                required={!isFillInTheBlanksQuestion(q)}
+                placeholder={isFillInTheBlanksQuestion(q) ? "Введите текст вопроса..." : "Формулировка"}
+                required
               />
             </div>
             <div className="space-y-2">
@@ -486,17 +488,23 @@ export function CreateTestForm() {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="single_choice">Один ответ</SelectItem>
-                  <SelectItem value="multiple_choice">
-                    Несколько ответов
+                  <SelectItem value="single_choice">
+                    {QUESTION_TYPE_LABELS.single_choice}
                   </SelectItem>
-                  <SelectItem value="matching_puzzle">Пазл</SelectItem>
-                  <SelectItem value="dnd_puzzle">Супер-Пазл</SelectItem>
+                  <SelectItem value="multiple_choice">
+                    {QUESTION_TYPE_LABELS.multiple_choice}
+                  </SelectItem>
+                  <SelectItem value="matching_puzzle">
+                    {QUESTION_TYPE_LABELS.matching_puzzle}
+                  </SelectItem>
+                  <SelectItem value="dnd_puzzle">
+                    {QUESTION_TYPE_LABELS.dnd_puzzle}
+                  </SelectItem>
                   <SelectItem value="image_labeling">
-                    Подпиши картинку
+                    {QUESTION_TYPE_LABELS.image_labeling}
                   </SelectItem>
                   <SelectItem value="fill_in_the_blanks">
-                    Заполнить пропуски
+                    {QUESTION_TYPE_LABELS.fill_in_the_blanks}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -528,20 +536,13 @@ export function CreateTestForm() {
                     className="flex flex-col gap-2 rounded-lg border border-dashed p-3"
                   >
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="min-w-0 space-y-1">
-                        <label className="text-muted-foreground text-xs font-medium">
-                          URL изображения
-                        </label>
-                        <Input
-                          className="min-w-0"
+                      <div className="min-w-0">
+                        <ImageLabelingImageUploadField
                           value={pair.url}
-                          onChange={(e) =>
-                            updateLabelingPair(qi, pi, {
-                              url: e.target.value,
-                            })
+                          onUrlChange={(url) =>
+                            updateLabelingPair(qi, pi, { url })
                           }
-                          placeholder="https://…"
-                          required
+                          disabled={pending}
                         />
                       </div>
                       <div className="min-w-0 space-y-1">
@@ -723,7 +724,13 @@ export function CreateTestForm() {
 
       <div className="pb-4">
         <Button type="submit" disabled={pending} className="min-w-40">
-          {pending ? "Сохранение…" : "Опубликовать и перейти"}
+          {pending
+            ? testId
+              ? "Сохранение…"
+              : "Создание…"
+            : testId
+              ? "Сохранить изменения"
+              : "Создать тест"}
         </Button>
       </div>
     </form>

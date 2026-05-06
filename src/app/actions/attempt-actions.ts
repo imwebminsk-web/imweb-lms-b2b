@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database.types";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 
 const attemptIdSchema = z.string().uuid("Некорректный ID попытки");
@@ -16,6 +17,44 @@ const studentAnswerSchema = z.object({
 const studentAnswersSchema = z.array(studentAnswerSchema);
 
 type StudentAnswer = z.infer<typeof studentAnswerSchema>;
+
+/**
+ * Песочница преподавателя: удаляет только попытки текущего пользователя по этому тесту,
+ * затем открывает маршрут прохождения как у ученика.
+ */
+export async function resetTeacherAttemptAndRedirect(
+  testId: string,
+): Promise<void> {
+  const parsed = testIdSchema.safeParse(testId);
+  if (!parsed.success) {
+    redirect("/dashboard/tests");
+  }
+
+  const tid = parsed.data;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect(
+      `/login?next=${encodeURIComponent(`/dashboard/tests/${tid}/sandbox`)}`,
+    );
+  }
+
+  const { error } = await supabase
+    .from("student_attempts")
+    .delete()
+    .eq("test_id", tid)
+    .eq("student_id", user.id);
+
+  if (error) {
+    redirect("/dashboard/tests");
+  }
+
+  redirect(`/dashboard/tests/${tid}/sandbox`);
+}
 
 export async function startTestAttempt(
   testId: string,
@@ -175,7 +214,9 @@ function evaluateQuestion(
   if (!studentAnswer) return false;
 
   const questionType = question.type;
-  const selectedOptionIds = normalizeIdSet(studentAnswer.option_ids ?? []);
+  const selectedOptionIds = normalizeIdSet(
+    Array.from(new Set(studentAnswer.option_ids ?? [])),
+  );
   const correctOptionIds = normalizeIdSet(
     question.options.filter((o) => o.is_correct).map((o) => o.id),
   );
@@ -197,6 +238,90 @@ function evaluateQuestion(
 
   // TODO: Для image_labeling и других интерактивных типов добавить специализированный парсер/проверку.
   return false;
+}
+
+function buildAttemptAnswerRows(
+  attemptId: string,
+  questionRows: {
+    id: string;
+    type: string | null;
+    options: { id: string }[] | null;
+  }[],
+  answerByQuestion: Map<string, StudentAnswer>,
+): { attempt_id: string; question_id: string; option_id: string; answer_data: Json | null }[] {
+  const rows: {
+    attempt_id: string;
+    question_id: string;
+    option_id: string;
+    answer_data: Json | null;
+  }[] = [];
+
+  for (const question of questionRows) {
+    const answer = answerByQuestion.get(question.id);
+    const options = question.options ?? [];
+    const validOptionIds = new Set(options.map((o) => o.id));
+    const uniqueOptionIds = Array.from(new Set(answer?.option_ids ?? [])).filter(
+      (id) => validOptionIds.has(id),
+    );
+
+    const anchorId = options[0]?.id;
+    const qType = question.type;
+    const answerData = (answer?.answer_data ?? null) as Json | null;
+
+    if (
+      qType === "matching_puzzle" ||
+      qType === "dnd_puzzle" ||
+      qType === "image_labeling" ||
+      qType === "fill_in_the_blanks"
+    ) {
+      if (!anchorId) {
+        continue;
+      }
+      rows.push({
+        attempt_id: attemptId,
+        question_id: question.id,
+        option_id: anchorId,
+        answer_data: answerData,
+      });
+      continue;
+    }
+
+    if (qType === "multiple_choice" || qType === "multiple") {
+      if (uniqueOptionIds.length === 0) {
+        continue;
+      }
+      const shared: Json = {
+        ...(answerData &&
+        typeof answerData === "object" &&
+        !Array.isArray(answerData)
+          ? { ...(answerData as Record<string, Json>) }
+          : {}),
+        selectedOptionIds: uniqueOptionIds,
+      };
+      for (const oid of uniqueOptionIds) {
+        rows.push({
+          attempt_id: attemptId,
+          question_id: question.id,
+          option_id: oid,
+          answer_data: shared,
+        });
+      }
+      continue;
+    }
+
+    if (uniqueOptionIds.length === 0) {
+      continue;
+    }
+
+    rows.push({
+      attempt_id: attemptId,
+      question_id: question.id,
+      option_id: uniqueOptionIds[0]!,
+      answer_data: answerData,
+    });
+  }
+
+  return rows;
 }
 
 export async function submitTestAttempt(
@@ -253,12 +378,17 @@ export async function submitTestAttempt(
     return { success: false, error: "В тесте нет вопросов" };
   }
 
+  const normalizedAnswers: StudentAnswer[] = answersParsed.data.map((a) => ({
+    ...a,
+    option_ids: Array.from(new Set(a.option_ids ?? [])),
+  }));
+
   const answerByQuestion = new Map(
-    answersParsed.data.map((a) => [a.question_id, a] as const),
+    normalizedAnswers.map((a) => [a.question_id, a] as const),
   );
 
   const validQuestionIds = new Set(questionRows.map((q) => q.id));
-  for (const answer of answersParsed.data) {
+  for (const answer of normalizedAnswers) {
     if (!validQuestionIds.has(answer.question_id)) {
       return {
         success: false,
@@ -290,32 +420,33 @@ export async function submitTestAttempt(
 
   const finalScore = Math.round((earnedScore / Math.max(maxScore, 1)) * 100);
 
-  const upsertRows = questionRows.map((question) => {
-    const answer = answerByQuestion.get(question.id);
-    const options = question.options ?? [];
-    const validOptionIds = new Set(options.map((o) => o.id));
-    const selected = (answer?.option_ids ?? []).filter((id) => validOptionIds.has(id));
-    const fallbackOptionId = options[0]?.id;
-    const optionId = selected[0] ?? fallbackOptionId;
-
-    if (!optionId) {
-      throw new Error(`У вопроса ${question.id} нет доступных вариантов ответа`);
-    }
-
-    return {
-      attempt_id: attempt.id,
-      question_id: question.id,
-      option_id: optionId,
-      answer_data: (answer?.answer_data ?? null) as Json | null,
-    };
-  });
-
-  const { error: upsertError } = await supabase
+  const { error: deleteAnswersError } = await supabase
     .from("attempt_answers")
-    .upsert(upsertRows, { onConflict: "attempt_id,question_id" });
+    .delete()
+    .eq("attempt_id", attempt.id);
 
-  if (upsertError) {
-    return { success: false, error: upsertError.message };
+  if (deleteAnswersError) {
+    return { success: false, error: deleteAnswersError.message };
+  }
+
+  const insertRows = buildAttemptAnswerRows(
+    attempt.id,
+    questionRows.map((q) => ({
+      id: q.id,
+      type: q.type,
+      options: q.options ?? [],
+    })),
+    answerByQuestion,
+  );
+
+  if (insertRows.length > 0) {
+    const { error: insertErr } = await supabase
+      .from("attempt_answers")
+      .insert(insertRows);
+
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
+    }
   }
 
   const { error: updateError } = await supabase
