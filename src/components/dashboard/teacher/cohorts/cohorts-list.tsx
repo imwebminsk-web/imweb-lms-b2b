@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -71,6 +72,7 @@ export function CohortsList({ cohorts }: { cohorts: CohortListRow[] }) {
             <TableHead>PIN</TableHead>
             <TableHead>Статус</TableHead>
             <TableHead className="text-right">Создана</TableHead>
+            <TableHead className="text-right">Детали</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -118,6 +120,11 @@ export function CohortsList({ cohorts }: { cohorts: CohortListRow[] }) {
               </TableCell>
               <TableCell className="text-muted-foreground text-right text-sm">
                 {formatCreatedAt(row.created_at)}
+              </TableCell>
+              <TableCell className="text-right">
+                <Button asChild size="sm" variant="outline">
+                  <Link href={`/dashboard/cohorts/${row.id}`}>Открыть</Link>
+                </Button>
               </TableCell>
             </TableRow>
           ))}

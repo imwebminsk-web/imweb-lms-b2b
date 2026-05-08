@@ -129,6 +129,7 @@ export type DndMatchingPuzzleQuestionProps = {
   options: SafeTestOption[];
   pairs: DndMatchingPair[];
   onPairsChange: (pairs: DndMatchingPair[]) => void;
+  readOnly?: boolean;
 };
 
 function DraggableRightItem({
@@ -304,6 +305,7 @@ export function DndMatchingPuzzleQuestion({
   options,
   pairs,
   onPairsChange,
+  readOnly = false,
 }: DndMatchingPuzzleQuestionProps) {
   const leftOrdered = useMemo(
     () => [...options].sort((a, b) => a.order_index - b.order_index),
@@ -410,6 +412,40 @@ export function DndMatchingPuzzleQuestion({
     onPairsChange(next);
   };
 
+  function handleMobilePairSelect(leftOptionId: string, rightOptionId: string) {
+    if (readOnly) return;
+
+    if (!rightOptionId) {
+      onPairsChange(pairs.filter((p) => p.leftOptionId !== leftOptionId));
+      return;
+    }
+
+    const previousLeftForRight = pairs.find(
+      (p) => p.rightOptionId === rightOptionId,
+    )?.leftOptionId;
+
+    const next = pairs.filter(
+      (p) => p.leftOptionId !== leftOptionId && p.rightOptionId !== rightOptionId,
+    );
+    next.push({ leftOptionId: leftOptionId, rightOptionId });
+    onPairsChange(next);
+
+    // Синхронизация визуального размещения для desktop после resize.
+    setSlotByLeft((prev) => {
+      const out = { ...prev };
+      const oldRightAtLeft = out[leftOptionId];
+      if (
+        previousLeftForRight !== undefined &&
+        previousLeftForRight !== leftOptionId &&
+        oldRightAtLeft
+      ) {
+        out[previousLeftForRight] = oldRightAtLeft;
+      }
+      out[leftOptionId] = rightOptionId;
+      return out;
+    });
+  }
+
   const activeOpt = activeRightId ? rightById.get(activeRightId) : undefined;
 
   const overlayClasses = cn(
@@ -435,30 +471,61 @@ export function DndMatchingPuzzleQuestion({
           </ul>
         </div>
 
-        <div className="flex w-full flex-col gap-4">
+        <div className="hidden md:block space-y-4">
+          <div className="flex w-full flex-col gap-4">
+            {leftOrdered.map((left) => {
+              const currentRightId = slotByLeft[left.id];
+              const slotRight = currentRightId ? rightById.get(currentRightId) : undefined;
+              const isConnected = currentRightId
+                ? pairs.some(
+                    (p) =>
+                      p.leftOptionId === left.id && p.rightOptionId === currentRightId,
+                  )
+                : false;
+              if (!slotRight) return null;
+              return (
+                <PuzzleRow
+                  key={left.id}
+                  left={left}
+                  slotRight={slotRight}
+                  isLocked={isConnected}
+                  onDisconnect={handleDisconnect}
+                />
+              );
+            })}
+          </div>
+          <UnassignDropZone />
+        </div>
+
+        <div className="block md:hidden space-y-4">
           {leftOrdered.map((left) => {
-            const currentRightId = slotByLeft[left.id];
-            const slotRight = currentRightId ? rightById.get(currentRightId) : undefined;
-            const isConnected = currentRightId
-              ? pairs.some(
-                  (p) =>
-                    p.leftOptionId === left.id && p.rightOptionId === currentRightId,
-                )
-              : false;
-            if (!slotRight) return null;
+            const selectedRightId =
+              pairs.find((p) => p.leftOptionId === left.id)?.rightOptionId ?? "";
             return (
-              <PuzzleRow
-                key={left.id}
-                left={left}
-                slotRight={slotRight}
-                isLocked={isConnected}
-                onDisconnect={handleDisconnect}
-              />
+              <div
+                key={`mobile-${left.id}`}
+                className="w-full rounded-xl border p-4 space-y-3 bg-white dark:bg-zinc-800"
+              >
+                <p className="font-medium text-sm">{labelLeft(left.content)}</p>
+                <select
+                  className="w-full rounded-lg border bg-background p-3 text-sm"
+                  value={selectedRightId}
+                  onChange={(e) =>
+                    handleMobilePairSelect(left.id, e.target.value)
+                  }
+                  disabled={readOnly}
+                >
+                  <option value="">- Выберите ответ -</option>
+                  {rightOrdered.map((right) => (
+                    <option key={`mobile-opt-${left.id}-${right.id}`} value={right.id}>
+                      {labelRight(right.content)}
+                    </option>
+                  ))}
+                </select>
+              </div>
             );
           })}
         </div>
-
-        <UnassignDropZone />
       </div>
 
       <DragOverlay dropAnimation={null}>

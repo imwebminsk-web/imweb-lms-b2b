@@ -14,6 +14,19 @@ export type CreateCohortResult =
   | { success: true; pinCode: string; cohortId: string }
   | { success: false; error: string };
 
+export type UpdateCohortStatusResult =
+  | { success: true; isActive: boolean }
+  | { success: false; error: string };
+
+export type AssignContentToCohortResult =
+  | { success: true }
+  | { success: false; error: string };
+
+export type BulkAssignableItem = {
+  id: string;
+  type: "lesson";
+};
+
 function generatePinCode(): string {
   let pin = "";
   for (let i = 0; i < PIN_LENGTH; i += 1) {
@@ -104,4 +117,324 @@ export async function createCohort(
     success: false,
     error: "Не удалось сгенерировать уникальный PIN. Попробуйте ещё раз.",
   };
+}
+
+export async function updateCohortStatus(
+  cohortId: string,
+  isActive: boolean,
+): Promise<UpdateCohortStatusResult> {
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { success: false, error: "Не выбрана группа." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Нужна авторизация." };
+  }
+
+  const { data: cohort, error: cohortError } = await supabase
+    .from("cohorts")
+    .select("id, course_id, is_active")
+    .eq("id", cid)
+    .maybeSingle();
+
+  if (cohortError || !cohort) {
+    return { success: false, error: "Группа не найдена." };
+  }
+
+  const { data: course, error: courseError } = await supabase
+    .from("courses")
+    .select("id, teacher_id")
+    .eq("id", cohort.course_id)
+    .maybeSingle();
+
+  if (courseError || !course) {
+    return { success: false, error: "Курс группы не найден." };
+  }
+
+  if (course.teacher_id !== user.id) {
+    return { success: false, error: "Нет прав на изменение статуса этой группы." };
+  }
+
+  const { error: updateError } = await supabase
+    .from("cohorts")
+    .update({ is_active: isActive })
+    .eq("id", cohort.id);
+
+  if (updateError) {
+    console.error("[updateCohortStatus]", updateError.message);
+    return {
+      success: false,
+      error: updateError.message || "Не удалось обновить статус группы.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cohort.id}`);
+  return { success: true, isActive };
+}
+
+type AssignableContentInput = {
+  cohortId: string;
+  lessonId: string;
+  isRequired?: boolean;
+  dueDate?: string | null;
+};
+
+async function validateTeacherOwnsCohort(cohortId: string): Promise<
+  | { ok: true; userId: string; courseId: string }
+  | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, error: "Нужна авторизация." };
+  }
+
+  const { data: cohort, error: cohortError } = await supabase
+    .from("cohorts")
+    .select("id, course_id")
+    .eq("id", cohortId)
+    .maybeSingle();
+
+  if (cohortError || !cohort) {
+    return { ok: false, error: "Группа не найдена." };
+  }
+
+  const { data: course, error: courseError } = await supabase
+    .from("courses")
+    .select("id, teacher_id")
+    .eq("id", cohort.course_id)
+    .maybeSingle();
+
+  if (courseError || !course) {
+    return { ok: false, error: "Курс группы не найден." };
+  }
+
+  if (course.teacher_id !== user.id) {
+    return { ok: false, error: "Нет прав на изменение назначений этой группы." };
+  }
+
+  return { ok: true, userId: user.id, courseId: course.id };
+}
+
+export async function assignContentToCohort(
+  input: AssignableContentInput,
+): Promise<AssignContentToCohortResult> {
+  const cohortId = input.cohortId.trim();
+  if (!cohortId) {
+    return { success: false, error: "Не выбрана группа." };
+  }
+
+  const ownership = await validateTeacherOwnsCohort(cohortId);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const supabase = await createClient();
+  const basePayload = {
+    cohort_id: cohortId,
+    is_required: input.isRequired ?? true,
+    due_date: input.dueDate ?? null,
+  };
+  const lessonId = input.lessonId.trim();
+  if (!lessonId) {
+    return { success: false, error: "Не указан урок." };
+  }
+
+  const { data: lesson, error: lessonError } = await supabase
+    .from("lessons")
+    .select("id, modules!inner(course_id)")
+    .eq("id", lessonId)
+    .maybeSingle();
+
+  if (lessonError || !lesson) {
+    return { success: false, error: "Урок не найден." };
+  }
+
+  const lessonCourseId = Array.isArray(lesson.modules)
+    ? lesson.modules[0]?.course_id
+    : lesson.modules?.course_id;
+
+  if (!lessonCourseId || lessonCourseId !== ownership.courseId) {
+    return { success: false, error: "Урок не принадлежит курсу этой группы." };
+  }
+
+  const { error: insertError } = await supabase.from("cohort_assignments").upsert(
+    {
+      ...basePayload,
+      lesson_id: lessonId,
+      test_id: null,
+    },
+    {
+      onConflict: "cohort_id,lesson_id",
+      ignoreDuplicates: false,
+    },
+  );
+
+  if (insertError) {
+    return {
+      success: false,
+      error: insertError.message || "Не удалось назначить урок группе.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cohortId}`);
+  return { success: true };
+}
+
+export async function unassignContentFromCohort(
+  input: { cohortId: string; lessonId?: string },
+): Promise<AssignContentToCohortResult> {
+  const cohortId = input.cohortId.trim();
+  if (!cohortId) {
+    return { success: false, error: "Не выбрана группа." };
+  }
+
+  const lessonId = input.lessonId?.trim() ?? "";
+  if (!lessonId) {
+    return { success: false, error: "Не указан контент для снятия назначения." };
+  }
+
+  const ownership = await validateTeacherOwnsCohort(cohortId);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("cohort_assignments")
+    .delete()
+    .eq("cohort_id", cohortId)
+    .eq("lesson_id", lessonId);
+  if (error) {
+    return {
+      success: false,
+      error: error.message || "Не удалось снять назначение контента.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cohortId}`);
+  return { success: true };
+}
+
+export async function bulkAssignContentToCohort(
+  cohortId: string,
+  itemIds: BulkAssignableItem[],
+): Promise<AssignContentToCohortResult> {
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { success: false, error: "Не выбрана группа." };
+  }
+
+  const normalized = itemIds
+    .map((it) => ({ id: it.id.trim(), type: it.type }))
+    .filter((it) => it.id.length > 0);
+
+  if (normalized.length === 0) {
+    return { success: true };
+  }
+
+  const ownership = await validateTeacherOwnsCohort(cid);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const supabase = await createClient();
+  const lessonIds = normalized.map((x) => x.id);
+
+  const { data: lessonRows, error: lessonsError } = await supabase
+    .from("lessons")
+    .select("id, modules!inner(course_id)")
+    .in("id", lessonIds);
+
+  if (lessonsError) {
+    return { success: false, error: lessonsError.message || "Не удалось проверить уроки." };
+  }
+
+  const validLessonIds = (lessonRows ?? [])
+    .filter((row) => {
+      const courseId = Array.isArray(row.modules)
+        ? row.modules[0]?.course_id
+        : row.modules?.course_id;
+      return courseId === ownership.courseId;
+    })
+    .map((row) => row.id);
+
+  if (validLessonIds.length > 0) {
+    const { error: insertLessonsError } = await supabase
+      .from("cohort_assignments")
+      .upsert(
+        validLessonIds.map((id) => ({
+          cohort_id: cid,
+          lesson_id: id,
+          test_id: null,
+          is_required: true,
+        })),
+        { onConflict: "cohort_id,lesson_id", ignoreDuplicates: false },
+      );
+
+    if (insertLessonsError) {
+      return {
+        success: false,
+        error: insertLessonsError.message || "Не удалось назначить уроки группе.",
+      };
+    }
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cid}`);
+  return { success: true };
+}
+
+export async function bulkUnassignContentFromCohort(
+  cohortId: string,
+  itemIds: BulkAssignableItem[],
+): Promise<AssignContentToCohortResult> {
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { success: false, error: "Не выбрана группа." };
+  }
+
+  const normalized = itemIds
+    .map((it) => ({ id: it.id.trim(), type: it.type }))
+    .filter((it) => it.id.length > 0);
+
+  if (normalized.length === 0) {
+    return { success: true };
+  }
+
+  const ownership = await validateTeacherOwnsCohort(cid);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const supabase = await createClient();
+  const lessonIds = normalized.map((x) => x.id);
+  const { error: deleteLessonsError } = await supabase
+    .from("cohort_assignments")
+    .delete()
+    .eq("cohort_id", cid)
+    .in("lesson_id", lessonIds);
+
+  if (deleteLessonsError) {
+    return {
+      success: false,
+      error: deleteLessonsError.message || "Не удалось снять назначения уроков.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cid}`);
+  return { success: true };
 }

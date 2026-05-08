@@ -6,6 +6,7 @@ export type LearnLessonNav = {
   type: Database["public"]["Enums"]["lesson_type"];
   order_index: number;
   is_published: boolean;
+  test_id: string | null;
 };
 
 export type LearnModuleNav = {

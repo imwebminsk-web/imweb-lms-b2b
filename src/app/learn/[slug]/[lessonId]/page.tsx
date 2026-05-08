@@ -42,7 +42,7 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
     );
   }
 
-  const course = await fetchPublishedCourseForLearn(decodedSlug);
+  const course = await fetchPublishedCourseForLearn(decodedSlug, user.id);
   if (!course) {
     notFound();
   }

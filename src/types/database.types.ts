@@ -156,6 +156,58 @@ export type Database = {
           },
         ]
       }
+      cohort_assignments: {
+        Row: {
+          cohort_id: string
+          created_at: string
+          due_date: string | null
+          id: string
+          is_required: boolean
+          lesson_id: string | null
+          test_id: string | null
+        }
+        Insert: {
+          cohort_id: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_required?: boolean
+          lesson_id?: string | null
+          test_id?: string | null
+        }
+        Update: {
+          cohort_id?: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_required?: boolean
+          lesson_id?: string | null
+          test_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_assignments_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_assignments_lesson_id_fkey"
+            columns: ["lesson_id"]
+            isOneToOne: false
+            referencedRelation: "lessons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cohort_assignments_test_id_fkey"
+            columns: ["test_id"]
+            isOneToOne: false
+            referencedRelation: "tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       enrollments: {
         Row: {
           cohort_id: string | null
@@ -539,6 +591,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_cohort_student_emails: {
+        Args: {
+          p_cohort_id: string
+        }
+        Returns: {
+          email: string | null
+          full_name: string | null
+          user_id: string
+        }[]
+      }
       join_cohort_by_pin: {
         Args: {
           p_pin: string

@@ -12,7 +12,10 @@ export type LearnCourseCurriculum = {
 };
 
 export const fetchPublishedCourseForLearn = cache(
-  async (decodedSlug: string): Promise<LearnCourseCurriculum | null> => {
+  async (
+    decodedSlug: string,
+    studentId: string,
+  ): Promise<LearnCourseCurriculum | null> => {
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("courses")
@@ -30,7 +33,8 @@ export const fetchPublishedCourseForLearn = cache(
             title,
             type,
             order_index,
-            is_published
+            is_published,
+            test_id
           )
         )
       `,
@@ -44,6 +48,63 @@ export const fetchPublishedCourseForLearn = cache(
       return null;
     }
 
-    return data as LearnCourseCurriculum | null;
+    const course = data as LearnCourseCurriculum | null;
+    if (!course) {
+      return null;
+    }
+
+    const { data: enrollment, error: enrollmentError } = await supabase
+      .from("enrollments")
+      .select("cohort_id")
+      .eq("user_id", studentId)
+      .eq("course_id", course.id)
+      .maybeSingle();
+
+    if (enrollmentError) {
+      console.error("[fetchPublishedCourseForLearn] enrollments", enrollmentError.message);
+      return course;
+    }
+
+    const cohortId = enrollment?.cohort_id ?? null;
+    if (!cohortId) {
+      return course;
+    }
+
+    const { data: assignments, error: assignmentsError } = await supabase
+      .from("cohort_assignments")
+      .select("lesson_id")
+      .eq("cohort_id", cohortId);
+
+    if (assignmentsError) {
+      console.error(
+        "[fetchPublishedCourseForLearn] cohort_assignments",
+        assignmentsError.message,
+      );
+      return course;
+    }
+
+    if (!assignments || assignments.length === 0) {
+      return {
+        ...course,
+        modules:
+          course.modules?.map((m) => ({
+            ...m,
+            lessons: [],
+          })) ?? [],
+      };
+    }
+
+    const assignedLessonIds = new Set(
+      assignments.map((a) => a.lesson_id).filter((v): v is string => Boolean(v)),
+    );
+
+    return {
+      ...course,
+      modules:
+        course.modules?.map((m) => ({
+          ...m,
+          lessons: m.lessons?.filter((l) => assignedLessonIds.has(l.id)) ?? [],
+        })) ?? [],
+    };
   },
 );

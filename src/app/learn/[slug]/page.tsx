@@ -33,7 +33,7 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
     );
   }
 
-  const course = await fetchPublishedCourseForLearn(decodedSlug);
+  const course = await fetchPublishedCourseForLearn(decodedSlug, user.id);
   if (!course) {
     notFound();
   }
