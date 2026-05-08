@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
+import { toast } from "sonner";
 
 import { resetTeacherAttemptAndRedirect } from "@/app/actions/attempt-actions";
-import { deleteTest } from "@/app/actions/test-actions";
+import { deleteTest, duplicateTest } from "@/app/actions/test-actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
+import { Copy, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
 
 type TestRowActionsProps = {
   testId: string;
@@ -36,10 +37,23 @@ export function TestRowActions({ testId }: TestRowActionsProps) {
     startTransition(async () => {
       const res = await deleteTest(testId);
       if (!res.success) {
-        window.alert(`Ошибка при удалении: ${res.error}`);
+        toast.error(`Ошибка при удалении: ${res.error}`);
         return;
       }
+      toast.success("Тест удален");
       router.refresh();
+    });
+  }
+
+  function handleDuplicate() {
+    startTransition(async () => {
+      const res = await duplicateTest(testId);
+      if (!res.success) {
+        toast.error(`Ошибка при копировании: ${res.error}`);
+        return;
+      }
+      toast.success("Копия теста создана");
+      router.push(`/dashboard/tests/${res.testId}/edit`);
     });
   }
 
@@ -79,6 +93,10 @@ export function TestRowActions({ testId }: TestRowActionsProps) {
               Пройти
             </button>
           </form>
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={pending} onClick={handleDuplicate}>
+          <Copy className="size-4" aria-hidden />
+          Копировать
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

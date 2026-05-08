@@ -563,6 +563,7 @@ export type Database = {
         Row: {
           created_at: string | null
           description: string | null
+          folder_name: string | null
           id: string
           is_published: boolean | null
           title: string
@@ -571,6 +572,7 @@ export type Database = {
         Insert: {
           created_at?: string | null
           description?: string | null
+          folder_name?: string | null
           id?: string
           is_published?: boolean | null
           title: string
@@ -579,6 +581,7 @@ export type Database = {
         Update: {
           created_at?: string | null
           description?: string | null
+          folder_name?: string | null
           id?: string
           is_published?: boolean | null
           title?: string

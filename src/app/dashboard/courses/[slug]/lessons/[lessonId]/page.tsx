@@ -115,14 +115,18 @@ export default async function LessonEditorPage({ params }: PageProps) {
 
   const { data: testsRows, error: testsError } = await supabase
     .from("tests")
-    .select("id, title")
+    .select("id, title, folder_name")
     .order("title", { ascending: true });
 
   if (testsError) {
     throw new Error(testsError.message);
   }
 
-  const tests = (testsRows ?? []).map((t) => ({ id: t.id, title: t.title }));
+  const tests = (testsRows ?? []).map((t) => ({
+    id: t.id,
+    title: t.title,
+    folder_name: t.folder_name,
+  }));
 
   const displayName =
     profile.full_name?.trim() ||

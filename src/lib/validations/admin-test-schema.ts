@@ -90,6 +90,7 @@ export const saveFullTestPayloadSchema = z
   .object({
     title: z.string().min(1, "Укажите название теста"),
     description: z.string().optional().nullable(),
+    folder_name: z.string().optional().nullable(),
     is_published: z.boolean().optional().default(true),
     questions: z
       .array(adminQuestionSchema)

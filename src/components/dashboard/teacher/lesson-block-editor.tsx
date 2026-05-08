@@ -45,7 +45,9 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -207,13 +209,37 @@ export function LessonBlockEditor({
   courseTitle: string;
   lesson: LessonBlockEditorLesson;
   blocks: LessonEditorBlockRow[];
-  tests: { id: string; title: string }[];
+  tests: { id: string; title: string; folder_name?: string | null }[];
 }) {
   const router = useRouter();
   const sorted = useMemo(
     () => [...blocks].sort((a, b) => a.order_index - b.order_index),
     [blocks],
   );
+  const groupedTests = useMemo(() => {
+    const grouped = tests.reduce(
+      (acc, test) => {
+        const normalized = test.folder_name?.trim();
+        const folder = normalized && normalized.length > 0 ? normalized : "Без папки";
+        const bucket = acc.get(folder) ?? [];
+        bucket.push(test);
+        acc.set(folder, bucket);
+        return acc;
+      },
+      new Map<string, typeof tests>(),
+    );
+
+    const entries = [...grouped.entries()].sort(([a], [b]) => {
+      if (a === "Без папки") return -1;
+      if (b === "Без папки") return 1;
+      return a.localeCompare(b, "ru");
+    });
+
+    return entries.map(([folderName, folderTests]) => ({
+      folderName,
+      tests: [...folderTests].sort((a, b) => a.title.localeCompare(b.title, "ru")),
+    }));
+  }, [tests]);
 
   const [metaState, metaAction, metaPending] = useActionState(
     updateLessonMeta,
@@ -494,10 +520,17 @@ export function LessonBlockEditor({
                           <SelectValue placeholder="Выберите тест…" />
                         </SelectTrigger>
                         <SelectContent>
-                          {tests.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>
-                              {t.title}
-                            </SelectItem>
+                          {groupedTests.map((group) => (
+                            <SelectGroup key={group.folderName}>
+                              <SelectLabel>
+                                {group.folderName} ({group.tests.length})
+                              </SelectLabel>
+                              {group.tests.map((t) => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.title}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           ))}
                         </SelectContent>
                       </Select>

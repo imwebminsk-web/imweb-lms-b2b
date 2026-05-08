@@ -198,7 +198,7 @@ export type SafeTestQuestion = Pick<
 
 export type TestWithQuestionsPayload = Pick<
   Tables<"tests">,
-  "id" | "title" | "description" | "created_at" | "is_published"
+  "id" | "title" | "description" | "folder_name" | "created_at" | "is_published"
 > & {
   questions: SafeTestQuestion[];
 };
@@ -207,7 +207,7 @@ export type SafeTestForClientPayload = TestWithQuestionsPayload;
 
 export type TestListItem = Pick<
   Tables<"tests">,
-  "id" | "title" | "description"
+  "id" | "title" | "description" | "folder_name"
 >;
 
 export type TestListUserStatus = "not_started" | "in_progress" | "completed";
@@ -221,6 +221,38 @@ export type TestListItemEnriched = TestListItem & {
   hasCompletedAttempt: boolean;
 };
 
+export async function getUniqueTestFolders(): Promise<
+  { success: true; data: string[] } | { success: false; error: string }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data, error } = await supabase
+    .from("tests")
+    .select("folder_name")
+    .eq("user_id", user.id);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  const uniqueFolders = Array.from(
+    new Set(
+      (data ?? [])
+        .map((row) => row.folder_name?.trim() ?? "")
+        .filter((name) => name.length > 0),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "ru"));
+
+  return { success: true, data: uniqueFolders };
+}
+
 /**
  * Список тестов и сводка по `student_attempts` для текущего пользователя.
  * Без входа: все тесты в статусе `not_started`, без баллов.
@@ -233,7 +265,7 @@ export async function getTests(): Promise<
 
   const { data: tests, error: testsError } = await supabase
     .from("tests")
-    .select("id, title, description")
+    .select("id, title, description, folder_name")
     .order("created_at", { ascending: false });
 
   if (testsError) {
@@ -410,6 +442,177 @@ export async function deleteTest(
   }
 }
 
+export async function duplicateTest(
+  testId: string,
+): Promise<{ success: true; testId: string } | { success: false; error: string }> {
+  const forbiddenMessage =
+    "Доступ запрещен. Тесты могут дублировать только преподаватели или администраторы.";
+
+  const idResult = testIdSchema.safeParse(testId);
+  if (!idResult.success) {
+    return {
+      success: false,
+      error:
+        idResult.error.issues[0]?.message ?? "Некорректный ID теста",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Требуется войти в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profileError || !profile) {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  if (profile.role !== "admin" && profile.role !== "teacher") {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  const tid = idResult.data;
+  const { data: sourceTest, error: sourceError } = await supabase
+    .from("tests")
+    .select(
+      `
+      id,
+      title,
+      description,
+      folder_name,
+      user_id,
+      questions (
+        id,
+        content,
+        order_index,
+        type,
+        options ( id, content, order_index, is_correct )
+      )
+    `,
+    )
+    .eq("id", tid)
+    .single();
+
+  if (sourceError || !sourceTest) {
+    return {
+      success: false,
+      error:
+        sourceError?.code === "PGRST116"
+          ? "Тест не найден"
+          : (sourceError?.message ?? "Тест не найден"),
+    };
+  }
+
+  if (profile.role !== "admin" && sourceTest.user_id !== user.id) {
+    return {
+      success: false,
+      error: "Вы можете копировать только свои тесты.",
+    };
+  }
+
+  const cloneTitle = `${sourceTest.title} - копия`;
+  const { data: insertedTest, error: insertTestError } = await supabase
+    .from("tests")
+    .insert({
+      title: cloneTitle,
+      description: sourceTest.description ?? null,
+      folder_name: sourceTest.folder_name?.trim() ? sourceTest.folder_name.trim() : null,
+      is_published: false,
+      user_id: user.id,
+    })
+    .select("id")
+    .single();
+
+  if (insertTestError || !insertedTest) {
+    return {
+      success: false,
+      error: insertTestError?.message ?? "Не удалось создать копию теста",
+    };
+  }
+
+  const clonedTestId = insertedTest.id;
+  const sourceQuestions = [...(sourceTest.questions ?? [])].sort(
+    (a, b) => a.order_index - b.order_index,
+  );
+
+  if (sourceQuestions.length > 0) {
+    const questionInsertRows: Database["public"]["Tables"]["questions"]["Insert"][] =
+      sourceQuestions.map((question) => ({
+        test_id: clonedTestId,
+        content: question.content,
+        order_index: question.order_index,
+        type: question.type,
+      }));
+
+    const { data: insertedQuestions, error: insertQuestionsError } = await supabase
+      .from("questions")
+      .insert(questionInsertRows)
+      .select("id, order_index");
+
+    if (insertQuestionsError || !insertedQuestions) {
+      await rollbackCreatedTest(supabase, clonedTestId, user.id);
+      return {
+        success: false,
+        error: insertQuestionsError?.message ?? "Не удалось скопировать вопросы",
+      };
+    }
+
+    const sourceSortedByOrder = [...sourceQuestions].sort(
+      (a, b) => a.order_index - b.order_index,
+    );
+    const insertedSortedByOrder = [...insertedQuestions].sort(
+      (a, b) => a.order_index - b.order_index,
+    );
+    const oldToNewQuestionId = new Map<string, string>();
+    for (let i = 0; i < sourceSortedByOrder.length; i += 1) {
+      const oldId = sourceSortedByOrder[i]?.id;
+      const newId = insertedSortedByOrder[i]?.id;
+      if (oldId && newId) {
+        oldToNewQuestionId.set(oldId, newId);
+      }
+    }
+
+    const optionRows: Database["public"]["Tables"]["options"]["Insert"][] = sourceQuestions.flatMap(
+      (sourceQuestion) => {
+      const newQuestionId = oldToNewQuestionId.get(sourceQuestion.id);
+      if (!newQuestionId) return [];
+      return [...(sourceQuestion.options ?? [])]
+        .sort((a, b) => a.order_index - b.order_index)
+        .map((option) => ({
+          question_id: newQuestionId,
+          content: option.content,
+          order_index: option.order_index,
+          is_correct: Boolean(option.is_correct),
+        }));
+    });
+
+    if (optionRows.length > 0) {
+      const { error: insertOptionsError } = await supabase
+        .from("options")
+        .insert(optionRows);
+
+      if (insertOptionsError) {
+        await rollbackCreatedTest(supabase, clonedTestId, user.id);
+        return {
+          success: false,
+          error: insertOptionsError.message || "Не удалось скопировать варианты ответов",
+        };
+      }
+    }
+  }
+
+  revalidatePath("/dashboard/tests");
+  return { success: true, testId: clonedTestId };
+}
+
 /**
  * Загружает тест с вопросами и вариантами.
  * Для `options` запрашиваются только id, content, order_index — поле is_correct в ответ API не попадает.
@@ -440,6 +643,7 @@ export async function getTestWithQuestions(
       id,
       title,
       description,
+      folder_name,
       created_at,
       is_published,
       questions (
@@ -490,6 +694,7 @@ export async function getTestWithQuestions(
     id: data.id,
     title: data.title,
     description: data.description,
+    folder_name: data.folder_name,
     created_at: data.created_at,
     is_published: data.is_published,
     questions,
@@ -528,6 +733,7 @@ export async function getSafeTestForClient(
       id,
       title,
       description,
+      folder_name,
       created_at,
       is_published,
       questions (
@@ -581,6 +787,7 @@ export async function getSafeTestForClient(
       id: data.id,
       title: data.title,
       description: data.description,
+      folder_name: data.folder_name,
       created_at: data.created_at,
       is_published: data.is_published,
       questions,
@@ -1903,6 +2110,39 @@ async function insertQuestionsAndOptionsForTest(
   return { success: true };
 }
 
+function normalizeQuestionTypeForCompare(type: string | null): string {
+  if (type === "multiple") return "multiple_choice";
+  return type ?? "single_choice";
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return "null";
+  if (typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+}
+
+function buildQuestionSignature(questions: {
+  type: string | null;
+  content: Json;
+  options: { order_index: number; content: Json; is_correct: boolean | null }[];
+}[]): string[] {
+  return questions.map((question) => {
+    const optionsSignature = [...question.options]
+      .sort((a, b) => a.order_index - b.order_index)
+      .map((option) => ({
+        content: option.content,
+        is_correct: Boolean(option.is_correct),
+      }));
+    return `${normalizeQuestionTypeForCompare(question.type)}|${stableStringify(question.content)}|${stableStringify(optionsSignature)}`;
+  });
+}
+
 const attemptsBlockEditMessage =
   "Нельзя редактировать вопросы в тесте, который уже начали проходить студенты.";
 
@@ -1960,6 +2200,7 @@ export async function getTestDraftForEdit(
       id,
       title,
       description,
+      folder_name,
       user_id,
       questions (
         content,
@@ -1993,6 +2234,7 @@ export async function getTestDraftForEdit(
   const initialData: CreateTestFormInitialData = {
     title: data.title,
     description: data.description ?? "",
+    folderName: data.folder_name ?? "",
     questions,
   };
 
@@ -2050,10 +2292,22 @@ export async function updateFullTest(
   }
 
   const tid = idResult.data;
+  const d = parsed.data;
 
   const { data: testRow, error: testFetchErr } = await supabase
     .from("tests")
-    .select("id, user_id")
+    .select(
+      `
+      id,
+      user_id,
+      questions (
+        type,
+        content,
+        order_index,
+        options ( content, is_correct, order_index )
+      )
+    `,
+    )
     .eq("id", tid)
     .single();
 
@@ -2074,32 +2328,66 @@ export async function updateFullTest(
     };
   }
 
-  const { count: attemptCount, error: countErr } = await supabase
-    .from("student_attempts")
-    .select("id", { count: "exact", head: true })
-    .eq("test_id", tid);
+  const existingQuestions = [...(testRow.questions ?? [])]
+    .sort((a, b) => a.order_index - b.order_index)
+    .map((question) => ({
+      type: question.type,
+      content: question.content,
+      options: (question.options ?? []).map((option) => ({
+        order_index: option.order_index,
+        content: option.content,
+        is_correct: option.is_correct,
+      })),
+    }));
+  const incomingQuestions = d.questions.map((question) => ({
+    type: question.type,
+    content: question.content as Json,
+    options: question.options.map((option, index) => ({
+      order_index: index,
+      content: option.content as Json,
+      is_correct: option.is_correct,
+    })),
+  }));
+  const existingSignature = buildQuestionSignature(existingQuestions);
+  const incomingSignature = buildQuestionSignature(incomingQuestions);
+  const questionsAreChanging =
+    existingSignature.length !== incomingSignature.length ||
+    existingSignature.some((signature, index) => signature !== incomingSignature[index]);
 
-  if (countErr) {
-    return { success: false, error: countErr.message };
+  if (questionsAreChanging) {
+    const { count: attemptCount, error: countErr } = await supabase
+      .from("student_attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("test_id", tid)
+      .neq("student_id", user.id);
+
+    if (countErr) {
+      return { success: false, error: countErr.message };
+    }
+
+    if ((attemptCount ?? 0) > 0) {
+      return { success: false, error: attemptsBlockEditMessage };
+    }
   }
-
-  if ((attemptCount ?? 0) > 0) {
-    return { success: false, error: attemptsBlockEditMessage };
-  }
-
-  const d = parsed.data;
 
   const { error: updateTestErr } = await supabase
     .from("tests")
     .update({
       title: d.title,
       description: d.description ?? null,
+      folder_name: d.folder_name?.trim() ? d.folder_name.trim() : null,
       is_published: d.is_published ?? true,
     })
     .eq("id", tid);
 
   if (updateTestErr) {
     return { success: false, error: updateTestErr.message };
+  }
+
+  if (!questionsAreChanging) {
+    revalidatePath("/dashboard/tests");
+    revalidatePath(`/test/${tid}`);
+    return { success: true, testId: tid };
   }
 
   try {
@@ -2187,6 +2475,7 @@ export async function saveFullTest(
     .insert({
       title: d.title,
       description: d.description ?? null,
+      folder_name: d.folder_name?.trim() ? d.folder_name.trim() : null,
       is_published: d.is_published ?? true,
       user_id: user.id,
     })

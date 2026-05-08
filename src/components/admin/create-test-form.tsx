@@ -1,12 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, ChevronsUpDown } from "lucide-react";
 
-import { saveFullTest, updateFullTest } from "@/app/actions/test-actions";
+import {
+  getUniqueTestFolders,
+  saveFullTest,
+  updateFullTest,
+} from "@/app/actions/test-actions";
 import { FillInTheBlanksEditor } from "@/components/admin/questions/FillInTheBlanksEditor";
 import { ImageLabelingImageUploadField } from "@/components/admin/questions/ImageLabelingImageUploadField";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { saveFullTestPayloadSchema } from "@/lib/validations/admin-test-schema";
 import type {
   CreateTestFormInitialData,
@@ -23,6 +36,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { z } from "zod";
 import {
   Select,
@@ -134,11 +149,46 @@ export function CreateTestForm({
   const [description, setDescription] = useState(
     initialData?.description ?? "",
   );
+  const [folderName, setFolderName] = useState(initialData?.folderName ?? "");
+  const [folderComboboxOpen, setFolderComboboxOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
+  const [availableFolders, setAvailableFolders] = useState<string[]>([]);
   const [questions, setQuestions] = useState<QuestionField[]>(
     initialData?.questions?.length ? initialData.questions : [emptyQuestion()],
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFolders() {
+      const result = await getUniqueTestFolders();
+      if (cancelled) return;
+      if (!result.success) return;
+      setAvailableFolders(result.data);
+    }
+
+    void loadFolders();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredFolders = useMemo(() => {
+    const query = searchValue.trim().toLocaleLowerCase("ru");
+    if (!query) return availableFolders;
+    return availableFolders.filter((folder) =>
+      folder.toLocaleLowerCase("ru").includes(query),
+    );
+  }, [availableFolders, searchValue]);
+
+  const createCandidate = searchValue.trim();
+  const canCreateCandidate =
+    createCandidate.length > 0 &&
+    !availableFolders.some(
+      (folder) => folder.toLocaleLowerCase("ru") === createCandidate.toLocaleLowerCase("ru"),
+    );
 
   function updateQuestion(i: number, patch: Partial<QuestionField>) {
     setQuestions((prev) =>
@@ -350,6 +400,7 @@ export function CreateTestForm({
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
+      folder_name: folderName.trim() || null,
       is_published: true,
       questions: questions.map((q) => {
         if (isPuzzleQuestion(q)) {
@@ -441,6 +492,108 @@ export function CreateTestForm({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Кратко, для кого тест"
             />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="test-folder" className="text-sm font-medium">
+              Папка
+            </label>
+            <Popover
+              open={folderComboboxOpen}
+              onOpenChange={(nextOpen) => {
+                setFolderComboboxOpen(nextOpen);
+                if (nextOpen) {
+                  setSearchValue(folderName);
+                } else {
+                  setSearchValue("");
+                }
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  id="test-folder"
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={folderComboboxOpen}
+                  className="w-full justify-between font-normal"
+                >
+                  <span className={cn("truncate", !folderName.trim() && "text-muted-foreground")}>
+                    {folderName.trim() || "Без папки"}
+                  </span>
+                  <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-60" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                <Command>
+                  <CommandInput
+                    value={searchValue}
+                    onValueChange={setSearchValue}
+                    placeholder="Найти или создать папку..."
+                  />
+                  <CommandList>
+                    {filteredFolders.length === 0 && !canCreateCandidate ? (
+                      <CommandEmpty>Папки не найдены.</CommandEmpty>
+                    ) : null}
+                    <CommandGroup>
+                      {filteredFolders.map((folder) => (
+                        <CommandItem
+                          key={folder}
+                          onClick={() => {
+                            setFolderName(folder);
+                            setFolderComboboxOpen(false);
+                            setSearchValue("");
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "size-4",
+                              folderName === folder ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                          <span className="truncate">{folder}</span>
+                        </CommandItem>
+                      ))}
+                      {canCreateCandidate ? (
+                        <CommandItem
+                          onClick={() => {
+                            setFolderName(createCandidate);
+                            setAvailableFolders((prev) =>
+                              prev.some(
+                                (folder) =>
+                                  folder.toLocaleLowerCase("ru") ===
+                                  createCandidate.toLocaleLowerCase("ru"),
+                              )
+                                ? prev
+                                : [...prev, createCandidate].sort((a, b) =>
+                                    a.localeCompare(b, "ru"),
+                                  ),
+                            );
+                            setFolderComboboxOpen(false);
+                            setSearchValue("");
+                          }}
+                        >
+                          <Check className="size-4 opacity-0" />
+                          <span className="truncate">Создать "{createCandidate}"</span>
+                        </CommandItem>
+                      ) : null}
+                      <CommandItem
+                        onClick={() => {
+                          setFolderName("");
+                          setFolderComboboxOpen(false);
+                          setSearchValue("");
+                        }}
+                      >
+                        <Check className={cn("size-4", folderName.trim() ? "opacity-0" : "opacity-100")} />
+                        <span>Без папки</span>
+                      </CommandItem>
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+            <p className="text-muted-foreground text-xs">
+              Выберите существующую папку или создайте новую.
+            </p>
           </div>
         </CardContent>
       </Card>

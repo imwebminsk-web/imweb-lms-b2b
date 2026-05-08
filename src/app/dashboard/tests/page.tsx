@@ -3,6 +3,12 @@ import Link from "next/link";
 
 import { getTests } from "@/app/actions/test-actions";
 import { TestRowActions } from "@/components/admin/tests/TestRowActions";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -21,6 +27,24 @@ export const metadata: Metadata = {
 
 export default async function DashboardTestsPage() {
   const result = await getTests();
+  const groupedTests = result.success
+    ? result.data.reduce(
+        (acc, test) => {
+          const normalizedFolder = test.folder_name?.trim();
+          const folder = normalizedFolder && normalizedFolder.length > 0
+            ? normalizedFolder
+            : "Без папки";
+          const bucket = acc.get(folder) ?? [];
+          bucket.push(test);
+          acc.set(folder, bucket);
+          return acc;
+        },
+        new Map<string, typeof result.data>(),
+      )
+    : new Map<string, never[]>();
+  const folderGroups = [...groupedTests.entries()].sort(([a], [b]) =>
+    a.localeCompare(b, "ru"),
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 p-6">
@@ -77,32 +101,52 @@ export default async function DashboardTestsPage() {
           </CardFooter>
         </Card>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {result.data.map((test) => (
-            <li key={test.id}>
-              <Card className="flex flex-row items-center gap-4 p-4">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <p className="line-clamp-1 text-lg font-medium leading-snug">
-                    {test.title}
-                  </p>
-                  {test.description ? (
-                    <p className="text-muted-foreground line-clamp-1 text-sm">
-                      {test.description}
-                    </p>
-                  ) : (
-                    <p className="text-muted-foreground/70 line-clamp-1 text-sm italic">
-                      Без описания
-                    </p>
-                  )}
+        <Accordion type="multiple" className="space-y-3">
+          {folderGroups.map(([folderName, tests]) => (
+            <AccordionItem
+              key={folderName}
+              value={folderName}
+              className="rounded-lg border px-4"
+            >
+              <AccordionTrigger className="py-3">
+                <div className="flex items-center gap-2 text-left">
+                  <span className="font-medium">{folderName}</span>
                   <Badge variant="secondary" className="tabular-nums">
-                    Вопросов: {test.totalQuestions}
+                    {tests.length}
                   </Badge>
                 </div>
-                <TestRowActions testId={test.id} />
-              </Card>
-            </li>
+              </AccordionTrigger>
+              <AccordionContent className="pb-3">
+                <ul className="flex flex-col gap-3">
+                  {tests.map((test) => (
+                    <li key={test.id}>
+                      <Card className="flex flex-row items-center gap-4 p-4">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <p className="line-clamp-1 text-lg font-medium leading-snug">
+                            {test.title}
+                          </p>
+                          {test.description ? (
+                            <p className="text-muted-foreground line-clamp-1 text-sm">
+                              {test.description}
+                            </p>
+                          ) : (
+                            <p className="text-muted-foreground/70 line-clamp-1 text-sm italic">
+                              Без описания
+                            </p>
+                          )}
+                          <Badge variant="secondary" className="tabular-nums">
+                            Вопросов: {test.totalQuestions}
+                          </Badge>
+                        </div>
+                        <TestRowActions testId={test.id} />
+                      </Card>
+                    </li>
+                  ))}
+                </ul>
+              </AccordionContent>
+            </AccordionItem>
           ))}
-        </ul>
+        </Accordion>
       )}
     </main>
   );

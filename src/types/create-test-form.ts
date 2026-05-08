@@ -40,5 +40,6 @@ export type QuestionField =
 export type CreateTestFormInitialData = {
   title: string;
   description: string;
+  folderName: string;
   questions: QuestionField[];
 };
