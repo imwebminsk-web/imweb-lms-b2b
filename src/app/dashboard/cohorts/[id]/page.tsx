@@ -2,8 +2,12 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { CohortAssignmentManager } from "@/components/dashboard/teacher/cohorts/cohort-assignment-manager";
+import {
+  CohortGradebookTable,
+  type GradebookAssignmentCell,
+  type GradebookCell,
+} from "@/components/dashboard/teacher/cohorts/cohort-gradebook-table";
 import { CohortStatusToggle } from "@/components/dashboard/teacher/cohorts/cohort-status-toggle";
-import { ExportCsvButton } from "@/components/dashboard/teacher/cohorts/export-csv-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
+import type { Json } from "@/types/database.types";
 
 type CohortPageProps = {
   params: Promise<{ id: string }>;
@@ -52,11 +57,6 @@ type AttemptRow = {
   score: number | null;
 };
 
-type GradeCell = {
-  percent: number | null;
-  status: "passed" | "failed" | "not_started";
-};
-
 type CohortAssignmentRow = {
   lesson_id: string | null;
 };
@@ -70,24 +70,24 @@ function formatDateTime(iso: string): string {
   }).format(d);
 }
 
-function statusBadge(cell: GradeCell) {
-  if (cell.status === "not_started") {
-    return <Badge variant="secondary">Не начат</Badge>;
+const PASS_PERCENT = 60;
+
+function snippetFromAssignmentInstructions(content: Json): string {
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return "";
   }
-  if (cell.status === "passed") {
-    return (
-      <Badge
-        variant="outline"
-        className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-      >
-        Сдан
-      </Badge>
-    );
-  }
-  return <Badge variant="destructive">Не сдан</Badge>;
+  const instr = (content as Record<string, unknown>).instructions;
+  return typeof instr === "string" ? instr.trim() : "";
 }
 
-const PASS_PERCENT = 60;
+function assignmentColumnTitle(lessonTitle: string, content: Json): string {
+  const full = snippetFromAssignmentInstructions(content);
+  if (full) {
+    const clipped = full.slice(0, 48);
+    return `${lessonTitle}: ${clipped}${full.length > 48 ? "…" : ""}`;
+  }
+  return `${lessonTitle} · Задание`;
+}
 
 export default async function CohortDetailsPage({ params }: CohortPageProps) {
   const { id } = await params;
@@ -242,6 +242,104 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
   }
   const testIds = testsForGradebook.map((t) => t.id);
 
+  const lessonIdsForGradebookContent = lessons
+    .filter((l) => !hasAssignments || assignedLessonIds.has(l.id))
+    .map((l) => l.id);
+
+  const lessonById = new Map(lessons.map((l) => [l.id, l]));
+
+  const { data: assignmentBlockRowsRaw, error: assignmentBlocksError } =
+    lessonIdsForGradebookContent.length > 0
+      ? await supabase
+          .from("lesson_blocks")
+          .select("id, content, order_index, lesson_id")
+          .in("lesson_id", lessonIdsForGradebookContent)
+          .eq("type", "assignment")
+          .order("order_index", { ascending: true })
+      : { data: [], error: null };
+
+  if (assignmentBlocksError) {
+    console.error(
+      "[CohortDetailsPage] lesson_blocks assignment",
+      assignmentBlocksError.message,
+    );
+  }
+
+  type AssignmentBlockRow = {
+    id: string;
+    content: Json;
+    order_index: number;
+    lesson_id: string;
+  };
+
+  const assignmentBlockRows = (assignmentBlockRowsRaw ??
+    []) as AssignmentBlockRow[];
+
+  const assignmentsForGradebook = [...assignmentBlockRows]
+    .sort((a, b) => {
+      const la = lessonById.get(a.lesson_id);
+      const lb = lessonById.get(b.lesson_id);
+      const oa = la?.order_index ?? 0;
+      const ob = lb?.order_index ?? 0;
+      if (oa !== ob) return oa - ob;
+      if (a.lesson_id !== b.lesson_id) {
+        return String(a.lesson_id).localeCompare(String(b.lesson_id), "ru");
+      }
+      return a.order_index - b.order_index;
+    })
+    .map((block) => {
+      const lesson = lessonById.get(block.lesson_id);
+      const lessonTitle = lesson?.title?.trim() || "Урок";
+      return {
+        id: block.id,
+        title: assignmentColumnTitle(lessonTitle, block.content as Json),
+      };
+    });
+
+  const assignmentBlockIds = assignmentsForGradebook.map((b) => b.id);
+
+  const submissionsPromise =
+    studentIds.length > 0 && assignmentBlockIds.length > 0
+      ? supabase
+          .from("assignment_submissions")
+          .select("id, student_id, lesson_block_id, status, grade, updated_at")
+          .in("student_id", studentIds)
+          .in("lesson_block_id", assignmentBlockIds)
+      : Promise.resolve({ data: [], error: null });
+
+  const { data: submissionRowsRaw, error: submissionsError } =
+    await submissionsPromise;
+
+  if (submissionsError) {
+    console.error(
+      "[CohortDetailsPage] assignment_submissions",
+      submissionsError.message,
+    );
+  }
+
+  type SubmissionRow = {
+    id: string;
+    student_id: string;
+    lesson_block_id: string;
+    status: "pending" | "approved" | "rejected";
+    grade: number | null;
+    updated_at: string;
+  };
+
+  const submissionRows = (submissionRowsRaw ?? []) as SubmissionRow[];
+
+  const latestSubmissionByStudentBlock = new Map<string, SubmissionRow>();
+  for (const s of submissionRows) {
+    const key = `${s.student_id}:${s.lesson_block_id}`;
+    const prev = latestSubmissionByStudentBlock.get(key);
+    if (
+      !prev ||
+      new Date(s.updated_at).getTime() > new Date(prev.updated_at).getTime()
+    ) {
+      latestSubmissionByStudentBlock.set(key, s);
+    }
+  }
+
   const attemptsPromise =
     studentIds.length > 0 && testIds.length > 0
       ? supabase
@@ -293,7 +391,8 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     const meta = studentMetaByUserId.get(row.user_id);
     const studentName = meta?.full_name?.trim() || row.user_id;
     const studentEmail = meta?.email ?? "—";
-    const grades: Record<string, GradeCell> = {};
+    const grades: Record<string, GradebookCell> = {};
+    const assignmentCells: Record<string, GradebookAssignmentCell> = {};
 
     for (const test of testsForGradebook) {
       const best = bestPercentByStudentTest.get(`${row.user_id}:${test.id}`);
@@ -307,11 +406,31 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
       }
     }
 
+    for (const col of assignmentsForGradebook) {
+      const sub = latestSubmissionByStudentBlock.get(
+        `${row.user_id}:${col.id}`,
+      );
+      if (!sub) {
+        assignmentCells[col.id] = {
+          status: "not_started",
+          grade: null,
+          submissionId: null,
+        };
+      } else {
+        assignmentCells[col.id] = {
+          status: sub.status,
+          grade: sub.grade,
+          submissionId: sub.id,
+        };
+      }
+    }
+
     return {
       userId: row.user_id,
       name: studentName,
       email: studentEmail,
       grades,
+      assignmentCells,
     };
   });
 
@@ -461,88 +580,13 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
             </Table>
           </section>
 
-          <section className="rounded-xl border p-6 space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-xl font-semibold tracking-tight">Журнал оценок</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">
-                  Средний балл группы:{" "}
-                  {avgGroupPercent == null ? "—" : `${avgGroupPercent}%`}
-                </Badge>
-                <ExportCsvButton
-                  cohortId={cohort.id}
-                  testTitles={testsForGradebook.map((test) => test.title)}
-                  rows={gradebookRowsWithAverage.map((row) => ({
-                    studentName: row.name,
-                    email: row.email,
-                    scores: testsForGradebook.map(
-                      (test) => row.grades[test.id]?.percent ?? null,
-                    ),
-                    averageScore: row.averageScore,
-                  }))}
-                />
-              </div>
-            </div>
-
-            {testsForGradebook.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                В курсе пока нет тестов, привязанных к урокам.
-              </p>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="min-w-[220px]">Ученик</TableHead>
-                      {testsForGradebook.map((test) => (
-                        <TableHead key={test.id} className="min-w-[210px]">
-                          {test.title}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {gradebookRowsWithAverage.length === 0 ? (
-                      <TableRow>
-                        <TableCell
-                          colSpan={testsForGradebook.length + 1}
-                          className="text-muted-foreground text-center"
-                        >
-                          Нет студентов для отображения журнала.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      gradebookRowsWithAverage.map((row) => (
-                        <TableRow key={row.userId}>
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{row.name}</span>
-                              <span className="text-muted-foreground text-xs">
-                                {row.email}
-                              </span>
-                            </div>
-                          </TableCell>
-                          {testsForGradebook.map((test) => {
-                            const cell = row.grades[test.id];
-                            return (
-                              <TableCell key={test.id}>
-                                <div className="flex flex-col gap-1">
-                                  <span className="text-sm">
-                                    {cell.percent == null ? "—" : `${cell.percent}%`}
-                                  </span>
-                                  {statusBadge(cell)}
-                                </div>
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </section>
+          <CohortGradebookTable
+            cohortId={cohort.id}
+            tests={testsForGradebook}
+            assignments={assignmentsForGradebook}
+            rows={gradebookRowsWithAverage}
+            avgGroupPercent={avgGroupPercent}
+          />
         </main>
       </div>
     </>

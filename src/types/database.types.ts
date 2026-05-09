@@ -454,6 +454,50 @@ export type Database = {
           },
         ]
       }
+      assignment_submissions: {
+        Row: {
+          content: string
+          created_at: string
+          grade: number | null
+          id: string
+          lesson_block_id: string
+          status: Database["public"]["Enums"]["submission_status"]
+          student_id: string
+          teacher_comment: string | null
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          grade?: number | null
+          id?: string
+          lesson_block_id: string
+          status?: Database["public"]["Enums"]["submission_status"]
+          student_id: string
+          teacher_comment?: string | null
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          grade?: number | null
+          id?: string
+          lesson_block_id?: string
+          status?: Database["public"]["Enums"]["submission_status"]
+          student_id?: string
+          teacher_comment?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assignment_submissions_lesson_block_id_fkey"
+            columns: ["lesson_block_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_blocks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       options: {
         Row: {
           content: Json
@@ -613,6 +657,7 @@ export type Database = {
     }
     Enums: {
       attempt_status: "in_progress" | "completed"
+      submission_status: "pending" | "approved" | "rejected"
       course_level:
         | "0"
         | "A1"
@@ -763,6 +808,7 @@ export const Constants = {
   public: {
     Enums: {
       attempt_status: ["in_progress", "completed"],
+      submission_status: ["pending", "approved", "rejected"],
       course_level: [
         "0",
         "A1",

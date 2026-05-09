@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 
+import { getStudentSubmission } from "@/app/actions/assignment-actions";
 import type { PlayerBlockRow } from "@/components/learn/lesson-block-renderer";
 import { PlayerLayout } from "@/components/learn/player-layout";
 import { createClient } from "@/lib/supabase/server";
@@ -81,6 +82,20 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
 
   const blocks = (blocksError ? [] : (blockRows ?? [])) as PlayerBlockRow[];
 
+  const assignmentSubmissionsByBlockId = Object.fromEntries(
+    await Promise.all(
+      blocks
+        .filter((b) => b.type === "assignment")
+        .map(
+          async (b) =>
+            [b.id, await getStudentSubmission(b.id)] as [
+              string,
+              Awaited<ReturnType<typeof getStudentSubmission>>,
+            ],
+        ),
+    ),
+  );
+
   return (
     <PlayerLayout
       courseSlug={course.slug}
@@ -95,6 +110,7 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
         test_id: lessonRow.test_id,
       }}
       blocks={blocks}
+      assignmentSubmissionsByBlockId={assignmentSubmissionsByBlockId}
     />
   );
 }

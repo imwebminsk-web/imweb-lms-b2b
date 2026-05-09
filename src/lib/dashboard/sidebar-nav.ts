@@ -56,7 +56,7 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
   return [
     {
       title: "Моё обучение",
-      url: "/dashboard",
+      url: "/dashboard/student",
       icon: GraduationCapIcon,
     },
     { title: "Каталог", url: "/", icon: BookOpenIcon },

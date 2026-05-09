@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 
+import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
 import { TestRunner } from "@/components/student/test-runner";
 import {
   Accordion,
@@ -40,6 +41,11 @@ type PlayerLayoutProps = {
   modules: LearnModuleNav[];
   lesson: PlayerLessonPayload;
   blocks: PlayerBlockRow[];
+  /** Сдачи по блокам type=assignment (ключ — id блока). */
+  assignmentSubmissionsByBlockId?: Record<
+    string,
+    AssignmentSubmissionRow | null
+  >;
 };
 
 function readVideoUrl(content: Json): string {
@@ -150,6 +156,7 @@ export function PlayerLayout({
   modules,
   lesson,
   blocks,
+  assignmentSubmissionsByBlockId = {},
 }: PlayerLayoutProps) {
   const sortedMods = useMemo(() => sortModules(modules), [modules]);
 
@@ -264,7 +271,14 @@ export function PlayerLayout({
                   key={block.id}
                   className="border-border/60 scroll-mt-24 border-b pb-10 last:border-0 last:pb-0"
                 >
-                  <LessonBlockRenderer block={block} />
+                  <LessonBlockRenderer
+                    block={block}
+                    initialAssignmentSubmission={
+                      block.type === "assignment"
+                        ? (assignmentSubmissionsByBlockId[block.id] ?? null)
+                        : null
+                    }
+                  />
                 </article>
               ))}
             </div>

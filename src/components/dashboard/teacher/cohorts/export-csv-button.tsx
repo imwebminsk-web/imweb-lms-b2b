@@ -7,13 +7,15 @@ import { Button } from "@/components/ui/button";
 type ExportCsvRow = {
   studentName: string;
   email: string;
-  scores: Array<number | null>;
+  /** Значения ячеек журнала по порядку колонок (проценты тестов и/или текстовые статусы заданий). */
+  scores: Array<number | null | string>;
   averageScore: number | null;
 };
 
 type ExportCsvButtonProps = {
   cohortId: string;
-  testTitles: string[];
+  /** Заголовки всех колонок журнала (тесты и задания) слева направо. */
+  columnTitles: string[];
   rows: ExportCsvRow[];
 };
 
@@ -24,21 +26,23 @@ function escapeCsvCell(value: string): string {
 
 export function ExportCsvButton({
   cohortId,
-  testTitles,
+  columnTitles,
   rows,
 }: ExportCsvButtonProps) {
   function handleExport() {
     const header = [
       "Ученик",
       "Email",
-      ...testTitles,
+      ...columnTitles,
       "Средний балл (%)",
     ];
 
     const body = rows.map((row) => [
       row.studentName,
       row.email,
-      ...row.scores.map((score) => (score == null ? "-" : String(score))),
+      ...row.scores.map((score) =>
+        score == null ? "-" : typeof score === "number" ? String(score) : score,
+      ),
       row.averageScore == null ? "-" : String(row.averageScore),
     ]);
 

@@ -1,5 +1,7 @@
 "use client";
 
+import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
+import { LessonAssignmentBlock } from "@/components/dashboard/student/lesson-assignment-block";
 import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { vimeoEmbedSrc } from "@/lib/learn/vimeo-embed";
 import type { Database, Json } from "@/types/database.types";
@@ -38,14 +40,6 @@ function readImageUrl(content: Json): string | null {
   return typeof u === "string" && u.trim() ? u.trim() : null;
 }
 
-function readInstructions(content: Json): string {
-  if (!content || typeof content !== "object" || Array.isArray(content)) {
-    return "";
-  }
-  const c = content as Record<string, unknown>;
-  return typeof c.instructions === "string" ? c.instructions.trim() : "";
-}
-
 function readTestId(content: Json): string {
   if (!content || typeof content !== "object" || Array.isArray(content)) {
     return "";
@@ -54,7 +48,13 @@ function readTestId(content: Json): string {
   return typeof c.test_id === "string" ? c.test_id.trim() : "";
 }
 
-export function LessonBlockRenderer({ block }: { block: PlayerBlockRow }) {
+export function LessonBlockRenderer({
+  block,
+  initialAssignmentSubmission = null,
+}: {
+  block: PlayerBlockRow;
+  initialAssignmentSubmission?: AssignmentSubmissionRow | null;
+}) {
   switch (block.type) {
     case "text": {
       const html = readHtml(block.content);
@@ -132,21 +132,11 @@ export function LessonBlockRenderer({ block }: { block: PlayerBlockRow }) {
       );
     }
     case "assignment": {
-      const text = readInstructions(block.content);
-      if (!text) {
-        return (
-          <p className="text-muted-foreground text-sm">Задание без текста.</p>
-        );
-      }
       return (
-        <section className="rounded-xl border bg-card/40 p-4">
-          <h3 className="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-            Задание
-          </h3>
-          <div className="prose dark:prose-invert max-w-none">
-            <p className="whitespace-pre-wrap text-base leading-relaxed">{text}</p>
-          </div>
-        </section>
+        <LessonAssignmentBlock
+          block={block}
+          initialSubmission={initialAssignmentSubmission ?? null}
+        />
       );
     }
     case "quiz": {
