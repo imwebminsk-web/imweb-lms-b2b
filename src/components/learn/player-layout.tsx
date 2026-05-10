@@ -21,6 +21,7 @@ import {
   readTestId,
   type PlayerBlockRow,
 } from "@/components/learn/lesson-block-renderer";
+import { LessonNavigation } from "@/components/learn/lesson-navigation";
 import { TestRevealWrapper } from "@/components/learn/test-reveal-wrapper";
 import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { cn } from "@/lib/utils";
@@ -312,6 +313,12 @@ export function PlayerLayout({
               {lessonCompletion}
             </section>
           ) : null}
+
+          <LessonNavigation
+            courseSlug={courseSlug}
+            modules={modules}
+            currentLessonId={lesson.id}
+          />
         </div>
       </main>
     </div>
