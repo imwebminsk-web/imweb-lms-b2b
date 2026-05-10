@@ -174,8 +174,6 @@ export function PlayerLayout({
     return sortedMods[0]?.id ?? "";
   }, [sortedMods, activeLessonId]);
 
-  const coursePublicHref = `/courses/${encodeURIComponent(courseSlug)}`;
-
   return (
     <div className="bg-background flex min-h-screen flex-col lg:flex-row">
       <aside
@@ -184,7 +182,7 @@ export function PlayerLayout({
       >
         <div className="border-border shrink-0 space-y-3 border-b p-4">
           <Button variant="ghost" size="sm" className="h-8 px-2" asChild>
-            <Link href={coursePublicHref}>
+            <Link href="/dashboard">
               <ArrowLeft className="mr-1 size-4" aria-hidden />
               К курсу
             </Link>

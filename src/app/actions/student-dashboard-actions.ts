@@ -28,6 +28,8 @@ export type StudentProgressItem = {
   grade: number | null;
   courseId: string;
   courseSlug: string;
+  /** Название курса из enrollments / join к lessons — для UI без разбора строки title. */
+  courseTitle: string;
   lessonId: string;
   testId: string | null;
   lessonBlockId: string | null;
@@ -84,7 +86,7 @@ export async function getStudentProgress(
 
   const { data: enrollRows, error: enrollError } = await supabase
     .from("enrollments")
-    .select("course_id, courses(id, slug, title)")
+    .select("course_id, cohort_id, courses(id, slug, title)")
     .eq("user_id", parsed.data);
 
   if (enrollError) {
@@ -103,6 +105,51 @@ export async function getStudentProgress(
         title: course.title,
       });
     }
+  }
+
+  /** Для курса: если у когорты есть строки cohort_assignments с lesson_id — только эти уроки; иначе все опубликованные. */
+  const cohortIds = [
+    ...new Set(
+      (enrollRows ?? [])
+        .map((r) => r.cohort_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  const cohortToLessonIds = new Map<string, Set<string>>();
+  if (cohortIds.length > 0) {
+    const { data: assignRows, error: assignError } = await supabase
+      .from("cohort_assignments")
+      .select("cohort_id, lesson_id")
+      .in("cohort_id", cohortIds)
+      .not("lesson_id", "is", null);
+
+    if (assignError) {
+      return { success: false, error: assignError.message };
+    }
+
+    for (const row of assignRows ?? []) {
+      const cohId = row.cohort_id;
+      const lesId = row.lesson_id;
+      if (!lesId) continue;
+      let set = cohortToLessonIds.get(cohId);
+      if (!set) {
+        set = new Set();
+        cohortToLessonIds.set(cohId, set);
+      }
+      set.add(lesId);
+    }
+  }
+
+  const courseRestrictedLessonIds = new Map<string, Set<string>>();
+  for (const row of enrollRows ?? []) {
+    if (!row.cohort_id) continue;
+    const fromCohort = cohortToLessonIds.get(row.cohort_id);
+    if (!fromCohort || fromCohort.size === 0) continue;
+    const merged =
+      courseRestrictedLessonIds.get(row.course_id) ?? new Set<string>();
+    for (const lid of fromCohort) merged.add(lid);
+    courseRestrictedLessonIds.set(row.course_id, merged);
   }
 
   const courseIds = [...courseById.keys()];
@@ -141,10 +188,14 @@ export async function getStudentProgress(
       course_id: string;
       courses: { id: string; slug: string; title: string } | null;
     };
+    const cid = mod?.course_id ?? "";
+    const restricted = courseRestrictedLessonIds.get(cid);
+    if (restricted && restricted.size > 0 && !restricted.has(row.id)) {
+      continue;
+    }
     const course = mod?.courses;
     const slug = course?.slug ?? courseById.get(mod.course_id)?.slug ?? "";
     const title = course?.title ?? courseById.get(mod.course_id)?.title ?? "";
-    const cid = mod?.course_id ?? "";
     lessonsFlat.push({
       id: row.id,
       title: row.title,
@@ -351,6 +402,7 @@ export async function getStudentProgress(
         grade: null,
         courseId: lesson.courseId,
         courseSlug: lesson.courseSlug,
+        courseTitle: lesson.courseTitle,
         lessonId: lesson.id,
         testId: tid,
         lessonBlockId: null,
@@ -383,6 +435,7 @@ export async function getStudentProgress(
         grade,
         courseId: lesson.courseId,
         courseSlug: lesson.courseSlug,
+        courseTitle: lesson.courseTitle,
         lessonId: lesson.id,
         testId: null,
         lessonBlockId: block.id,

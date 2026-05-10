@@ -67,7 +67,9 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
-        <NavSecondary items={navSecondary} className="mt-auto" />
+        {role !== "student" ? (
+          <NavSecondary items={navSecondary} className="mt-auto" />
+        ) : null}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
