@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { submitAssignment } from "@/app/actions/assignment-actions";
 import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
+import { AssignmentSheetLayout } from "@/components/dashboard/assignment-sheet-layout";
 import type { PlayerBlockRow } from "@/components/learn/lesson-block-renderer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,25 +21,16 @@ function readInstructions(content: Json): string {
   return typeof c.instructions === "string" ? c.instructions.trim() : "";
 }
 
-function SubmittedAnswerReadonly({ content }: { content: string }) {
-  return (
-    <div className="border-border bg-muted/30 rounded-lg border p-3">
-      <p className="text-muted-foreground mb-1 text-xs font-medium uppercase">
-        Ваш ответ
-      </p>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed">{content}</p>
-    </div>
-  );
-}
-
 type LessonAssignmentBlockProps = {
   block: PlayerBlockRow;
   initialSubmission: AssignmentSubmissionRow | null;
+  lessonTitle: string;
 };
 
 export function LessonAssignmentBlock({
   block,
   initialSubmission,
+  lessonTitle,
 }: LessonAssignmentBlockProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -79,65 +71,55 @@ export function LessonAssignmentBlock({
     });
   }, [block.id, draft, pathname, router, submission?.status]);
 
-  return (
-    <section className="space-y-4 rounded-xl border bg-card/40 p-4">
-      <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-        Задание
-      </h3>
+  const hasReviewableSubmission =
+    submission &&
+    (submission.status === "pending" ||
+      submission.status === "approved" ||
+      submission.status === "rejected");
 
-      {instructions ? (
-        <div className="prose dark:prose-invert max-w-none">
-          <p className="whitespace-pre-wrap text-base leading-relaxed">
-            {instructions}
-          </p>
-        </div>
+  return (
+    <section className="space-y-6 rounded-xl border border-border bg-card/40 p-4">
+      {hasReviewableSubmission ? (
+        <AssignmentSheetLayout
+          isTeacher={false}
+          lessonTitle={lessonTitle}
+          assignmentText={instructions}
+          studentAnswer={submission.content}
+          status={submission.status}
+          storedGrade={submission.grade}
+          teacherComment={submission.teacher_comment}
+        />
       ) : (
-        <p className="text-muted-foreground text-sm">Задание без текста.</p>
+        <>
+          <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            Задание
+          </h3>
+          {instructions ? (
+            <div className="text-muted-foreground rounded-md bg-muted p-4 text-sm leading-relaxed">
+              <p className="whitespace-pre-wrap">{instructions}</p>
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">Задание без текста.</p>
+          )}
+        </>
       )}
 
       {submission?.status === "pending" ? (
-        <>
-          <SubmittedAnswerReadonly content={submission.content} />
-          <Alert variant="warning">
-            <AlertTitle>Ответ на проверке</AlertTitle>
-            <AlertDescription>
-              Преподаватель ещё не проверил вашу работу. Редактирование
-              недоступно.
-            </AlertDescription>
-          </Alert>
-        </>
-      ) : null}
-
-      {submission?.status === "approved" ? (
-        <>
-          <SubmittedAnswerReadonly content={submission.content} />
-          <Alert variant="success">
-            <AlertTitle>Задание принято</AlertTitle>
-            <AlertDescription className="text-emerald-950 dark:text-emerald-50 space-y-2">
-              {submission.grade != null ? (
-                <p>
-                  <span className="font-medium">Оценка:</span> {submission.grade}
-                </p>
-              ) : null}
-              {submission.teacher_comment ? (
-                <p className="whitespace-pre-wrap">{submission.teacher_comment}</p>
-              ) : null}
-              {submission.grade == null && !submission.teacher_comment ? (
-                <p>Работа зачтена.</p>
-              ) : null}
-            </AlertDescription>
-          </Alert>
-        </>
+        <Alert variant="warning">
+          <AlertTitle>Ответ на проверке</AlertTitle>
+          <AlertDescription>
+            Преподаватель ещё не проверил вашу работу. Редактирование недоступно.
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       {submission?.status === "rejected" ? (
         <>
           <Alert variant="destructive">
-            <AlertTitle>Задание возвращено на доработку</AlertTitle>
-            <AlertDescription className="text-destructive whitespace-pre-wrap">
-              {submission.teacher_comment?.trim()
-                ? submission.teacher_comment
-                : "Комментарий преподавателя не указан."}
+            <AlertTitle>Нужна доработка</AlertTitle>
+            <AlertDescription>
+              Комментарий преподавателя указан в сводке выше. Исправьте ответ и
+              отправьте снова.
             </AlertDescription>
           </Alert>
           <Textarea

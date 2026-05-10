@@ -284,6 +284,7 @@ export function PlayerLayout({
                 >
                   <LessonBlockRenderer
                     block={block}
+                    lessonTitle={lesson.title}
                     initialAssignmentSubmission={
                       block.type === "assignment"
                         ? (assignmentSubmissionsByBlockId[block.id] ?? null)

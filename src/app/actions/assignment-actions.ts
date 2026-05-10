@@ -176,18 +176,24 @@ export async function submitAssignment(
   revalidatePath(pathname);
 }
 
-export type SubmissionForReviewPayload = {
-  submission: AssignmentSubmissionRow;
-  instructions: string;
+export type AssignmentSheetPayload = {
+  /** Последняя сдача по блоку или null, если ученик ещё не отправил. */
+  submission: AssignmentSubmissionRow | null;
+  lessonTitle: string;
+  /** Текст задания (инструкция из блока). */
+  assignmentText: string;
 };
 
+/** Алиас для совместимости с прежним названием. */
+export type SubmissionForReviewPayload = AssignmentSheetPayload;
+
 /**
- * Данные сдачи для панели проверки преподавателем (инструкции из блока урока).
+ * Данные сдачи для шторки задания (преподаватель или владелец сдачи — ученик).
  */
 export async function getSubmissionForReview(
   submissionId: string,
 ): Promise<
-  | { success: true; data: SubmissionForReviewPayload }
+  | { success: true; data: AssignmentSheetPayload }
   | { success: false; error: string }
 > {
   const parsed = submissionIdSchema.safeParse(submissionId);
@@ -217,14 +223,10 @@ export async function getSubmissionForReview(
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
-    return { success: false, error: "Недостаточно прав" };
-  }
-
   const { data: row, error: rowError } = await supabase
     .from("assignment_submissions")
     .select(
-      "*, lesson_blocks!inner ( content )",
+      "*, lesson_blocks!inner ( content, lessons!inner ( title ) )",
     )
     .eq("id", parsed.data)
     .maybeSingle();
@@ -233,25 +235,41 @@ export async function getSubmissionForReview(
     return { success: false, error: "Сдача не найдена" };
   }
 
-  const courseTeacherId = await getCourseTeacherIdForLessonBlock(
-    supabase,
-    row.lesson_block_id,
-  );
+  if (profile.role === "student") {
+    if (row.student_id !== user.id) {
+      return { success: false, error: "Нет доступа к этой сдаче" };
+    }
+  } else if (profile.role === "teacher" || profile.role === "admin") {
+    const courseTeacherId = await getCourseTeacherIdForLessonBlock(
+      supabase,
+      row.lesson_block_id,
+    );
 
-  if (!courseTeacherId) {
-    return { success: false, error: "Не удалось определить курс задания" };
-  }
+    if (!courseTeacherId) {
+      return { success: false, error: "Не удалось определить курс задания" };
+    }
 
-  if (profile.role !== "admin" && courseTeacherId !== user.id) {
-    return { success: false, error: "Нет доступа к этой сдаче" };
+    if (profile.role !== "admin" && courseTeacherId !== user.id) {
+      return { success: false, error: "Нет доступа к этой сдаче" };
+    }
+  } else {
+    return { success: false, error: "Недостаточно прав" };
   }
 
   const rowWithBlock = row as AssignmentSubmissionRow & {
     lesson_blocks: {
       content: Database["public"]["Tables"]["lesson_blocks"]["Row"]["content"];
+      lessons:
+        | { title: string | null }
+        | { title: string | null }[]
+        | null;
     };
   };
-  const instructions = readAssignmentInstructionsFromJson(
+  const lessonRel = Array.isArray(rowWithBlock.lesson_blocks.lessons)
+    ? rowWithBlock.lesson_blocks.lessons[0]
+    : rowWithBlock.lesson_blocks.lessons;
+  const lessonTitle = lessonRel?.title?.trim() || "Урок";
+  const assignmentText = readAssignmentInstructionsFromJson(
     rowWithBlock.lesson_blocks.content,
   );
   const { lesson_blocks: _nested, ...submission } = rowWithBlock;
@@ -260,7 +278,113 @@ export async function getSubmissionForReview(
     success: true,
     data: {
       submission: submission as AssignmentSubmissionRow,
-      instructions,
+      lessonTitle,
+      assignmentText,
+    },
+  };
+}
+
+/**
+ * Данные для шторки задания по блоку и ученику (последняя сдача или «не начато»).
+ */
+export async function getSubmissionForReviewByLessonBlock(
+  lessonBlockId: string,
+  studentId: string,
+): Promise<
+  { success: true; data: AssignmentSheetPayload } | { success: false; error: string }
+> {
+  const blockParsed = lessonBlockIdSchema.safeParse(lessonBlockId);
+  const studentParsed = z.string().uuid("Некорректный ID ученика").safeParse(studentId);
+  if (!blockParsed.success) {
+    return {
+      success: false,
+      error: blockParsed.error.issues[0]?.message ?? "Некорректный ID блока",
+    };
+  }
+  if (!studentParsed.success) {
+    return {
+      success: false,
+      error: studentParsed.error.issues[0]?.message ?? "Некорректный ID",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { success: false, error: "Профиль не найден" };
+  }
+
+  if (profile.role === "student") {
+    if (studentParsed.data !== user.id) {
+      return { success: false, error: "Нет доступа" };
+    }
+  } else if (profile.role === "teacher" || profile.role === "admin") {
+    const courseTeacherId = await getCourseTeacherIdForLessonBlock(
+      supabase,
+      blockParsed.data,
+    );
+    if (!courseTeacherId) {
+      return { success: false, error: "Не удалось определить курс задания" };
+    }
+    if (profile.role !== "admin" && courseTeacherId !== user.id) {
+      return { success: false, error: "Нет доступа к этому заданию" };
+    }
+  } else {
+    return { success: false, error: "Недостаточно прав" };
+  }
+
+  const { data: blockRow, error: blockErr } = await supabase
+    .from("lesson_blocks")
+    .select("id, type, content, lessons!inner ( title )")
+    .eq("id", blockParsed.data)
+    .maybeSingle();
+
+  if (blockErr || !blockRow || blockRow.type !== "assignment") {
+    return { success: false, error: "Блок задания не найден" };
+  }
+
+  const nested = blockRow as {
+    content: Database["public"]["Tables"]["lesson_blocks"]["Row"]["content"];
+    lessons: { title: string | null } | { title: string | null }[] | null;
+  };
+  const lessonRel = Array.isArray(nested.lessons)
+    ? nested.lessons[0]
+    : nested.lessons;
+  const lessonTitle = lessonRel?.title?.trim() || "Урок";
+  const assignmentText = readAssignmentInstructionsFromJson(nested.content);
+
+  const { data: subRow, error: subErr } = await supabase
+    .from("assignment_submissions")
+    .select("*")
+    .eq("lesson_block_id", blockParsed.data)
+    .eq("student_id", studentParsed.data)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (subErr) {
+    return { success: false, error: subErr.message };
+  }
+
+  return {
+    success: true,
+    data: {
+      submission: (subRow as AssignmentSubmissionRow | null) ?? null,
+      lessonTitle,
+      assignmentText,
     },
   };
 }
@@ -337,10 +461,10 @@ export async function reviewSubmission(
   if (status === "rejected") {
     gradeOut = null;
   } else if (gradeOut != null) {
-    if (!Number.isInteger(gradeOut) || gradeOut < 0 || gradeOut > 100) {
+    if (!Number.isInteger(gradeOut) || gradeOut < 0 || gradeOut > 10) {
       return {
         success: false,
-        error: "Оценка должна быть целым числом от 0 до 100 или пустой",
+        error: "Оценка должна быть целым числом от 0 до 10 или пустой",
       };
     }
   }

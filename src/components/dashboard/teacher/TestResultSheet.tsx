@@ -1,13 +1,21 @@
 "use client";
 
 import { Loader2Icon } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 
 import {
   getBestTestAttemptDetails,
+  overrideTestAttemptGrade,
   type GradebookBestAttemptDetails,
 } from "@/app/actions/gradebook-actions";
+import { QuizResultView } from "@/components/quiz/QuizResultView";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Sheet,
   SheetContent,
@@ -15,17 +23,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-
-function isClassicChoice(type: string | null): boolean {
-  return (
-    type === "single_choice" ||
-    type === "multiple_choice" ||
-    type === "multiple" ||
-    type === "single"
-  );
-}
+import { buildReviewMaps } from "@/lib/learn/build-review-maps";
 
 type TestResultSheetProps = {
   isOpen: boolean;
@@ -34,6 +32,8 @@ type TestResultSheetProps = {
   testId: string;
   studentName: string;
   testTitle: string;
+  /** Показать блок ручной корректировки балла (только для преподавателя). */
+  isTeacher?: boolean;
 };
 
 export function TestResultSheet({
@@ -43,23 +43,29 @@ export function TestResultSheet({
   testId,
   studentName,
   testTitle,
+  isTeacher = false,
 }: TestResultSheetProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<GradebookBestAttemptDetails | null>(
     null,
   );
+  const [overrideGrade, setOverrideGrade] = useState("");
 
-  useEffect(() => {
-    if (!isOpen || !studentId || !testId) {
+  const reviewMaps = useMemo(() => {
+    if (!details?.attemptId || !details.resultSummary) return null;
+    return buildReviewMaps(details.reviewAnswers, details.questions);
+  }, [details]);
+
+  const loadDetails = useCallback(() => {
+    if (!studentId || !testId) {
       setDetails(null);
       setError(null);
       return;
     }
-
     setError(null);
     setDetails(null);
-
     startTransition(() => {
       void (async () => {
         const res = await getBestTestAttemptDetails(studentId, testId);
@@ -70,17 +76,67 @@ export function TestResultSheet({
         setDetails(res.data);
       })();
     });
-  }, [isOpen, studentId, testId]);
+  }, [studentId, testId]);
+
+  useEffect(() => {
+    if (!isOpen || !studentId || !testId) {
+      setDetails(null);
+      setError(null);
+      setOverrideGrade("");
+      return;
+    }
+    loadDetails();
+  }, [isOpen, studentId, testId, loadDetails]);
+
+  useEffect(() => {
+    if (details?.grade10 !== null && details?.grade10 !== undefined) {
+      setOverrideGrade(String(details.grade10));
+    } else {
+      setOverrideGrade("");
+    }
+  }, [details?.attemptId, details?.grade10]);
+
+  function handleSaveOverride() {
+    if (!details?.attemptId) return;
+    const n = Number(overrideGrade);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 10) {
+      toast.error("Введите целое число от 0 до 10");
+      return;
+    }
+    startTransition(() => {
+      void (async () => {
+        const res = await overrideTestAttemptGrade(details.attemptId!, n);
+        if (!res.success) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success("Оценка обновлена");
+        router.refresh();
+        const again = await getBestTestAttemptDetails(studentId, testId);
+        if (!again.success) {
+          setError(again.error);
+          return;
+        }
+        setDetails(again.data);
+      })();
+    });
+  }
+
+  const displayTitle = details?.testTitle?.trim() || testTitle;
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-lg">
-        <SheetHeader className="border-border shrink-0 border-b pb-4 text-left">
-          <SheetTitle className="pr-8">{testTitle}</SheetTitle>
+      <SheetContent
+        side="right"
+        className="w-full max-w-none overflow-y-auto sm:gap-0"
+        style={{ minWidth: "min(90vw, 1000px)" }}
+      >
+        <SheetHeader className="border-border shrink-0 border-b px-1 pb-4 text-left sm:px-2">
+          <SheetTitle className="pr-8">{displayTitle}</SheetTitle>
           <SheetDescription>Ученик: {studentName}</SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-4 p-4">
+        <div className="flex flex-1 flex-col gap-4 p-4 sm:gap-6 sm:p-6">
           {isPending && !error && details === null ? (
             <div className="text-muted-foreground flex items-center gap-2 py-8">
               <Loader2Icon className="size-5 animate-spin" aria-hidden />
@@ -104,95 +160,64 @@ export function TestResultSheet({
             </Alert>
           ) : null}
 
-          {details?.attemptId ? (
-            <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-              <Badge variant="secondary">
-                Балл: {details.score ?? "—"} / {details.totalQuestions}
-              </Badge>
-              {details.percent != null ? (
-                <Badge variant="outline">{details.percent}%</Badge>
-              ) : null}
-            </div>
-          ) : null}
-
-          {details?.questions.map((q, idx) => (
-            <section
-              key={q.questionId}
-              className="border-border space-y-3 rounded-xl border p-4"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="text-muted-foreground text-xs font-medium">
-                  Вопрос {idx + 1}
-                  {q.type ? ` · ${q.type}` : ""}
-                </p>
-                {q.questionCorrect === true ? (
-                  <Badge
-                    variant="outline"
-                    className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-                  >
-                    Верно
-                  </Badge>
-                ) : q.questionCorrect === false ? (
-                  <Badge variant="destructive">Неверно</Badge>
-                ) : null}
-              </div>
-              <p className="text-sm leading-relaxed font-medium">{q.questionText}</p>
-
-              {isClassicChoice(q.type) && q.options.length > 0 ? (
-                <ul className="flex flex-col gap-2">
-                  {q.options.map((opt) => {
-                    const showCorrectMissed = opt.isCorrect && !opt.isPicked;
-                    return (
-                      <li
-                        key={opt.id}
-                        className={cn(
-                          "rounded-lg border px-3 py-2 text-sm",
-                          opt.isPicked && opt.isCorrect &&
-                            "border-emerald-500/50 bg-emerald-500/10 text-emerald-950 dark:text-emerald-100",
-                          opt.isPicked && !opt.isCorrect &&
-                            "border-destructive/50 bg-destructive/10 text-destructive",
-                          !opt.isPicked && opt.isCorrect &&
-                            "border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-50",
-                          !opt.isPicked && !opt.isCorrect &&
-                            "border-border bg-muted/30 text-muted-foreground",
-                        )}
-                      >
-                        <span>{opt.label}</span>
-                        {opt.isPicked && opt.isCorrect ? (
-                          <span className="mt-1 block text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                            Ваш ответ — верно
-                          </span>
-                        ) : null}
-                        {opt.isPicked && !opt.isCorrect ? (
-                          <span className="mt-1 block text-xs font-medium">
-                            Ваш ответ — неверно
-                          </span>
-                        ) : null}
-                        {showCorrectMissed ? (
-                          <span className="mt-1 block text-xs font-medium text-amber-800 dark:text-amber-200">
-                            Правильный вариант (не выбран)
-                          </span>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : q.nonChoiceAnswerSummary ? (
-                <div className="bg-muted/40 rounded-md p-3">
-                  <p className="text-muted-foreground mb-1 text-xs font-medium uppercase">
-                    Ответ (данные)
-                  </p>
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">
-                    {q.nonChoiceAnswerSummary}
-                  </pre>
+          {details?.attemptId && details.resultSummary && reviewMaps != null ? (
+            <>
+              {details.grade10 !== null ? (
+                <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
+                  <Badge variant="outline">Оценка: {details.grade10} / 10</Badge>
                 </div>
-              ) : (
-                <p className="text-muted-foreground text-xs">
-                  Для этого типа вопроса детальный разбор в журнале пока упрощён.
-                </p>
-              )}
-            </section>
-          ))}
+              ) : null}
+
+              {isTeacher ? (
+                <section className="border-border space-y-3 rounded-xl border p-4">
+                  <h3 className="text-sm font-semibold">
+                    Скорректировать оценку (0–10)
+                  </h3>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="override-grade-10">Балл</Label>
+                      <Input
+                        id="override-grade-10"
+                        type="number"
+                        min={0}
+                        max={10}
+                        step={1}
+                        inputMode="numeric"
+                        className="w-24"
+                        value={overrideGrade}
+                        onChange={(e) => setOverrideGrade(e.target.value)}
+                        disabled={isPending}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSaveOverride}
+                      disabled={isPending}
+                    >
+                      Сохранить
+                    </Button>
+                  </div>
+                </section>
+              ) : null}
+
+              <QuizResultView
+                showTestMeta
+                testTitle={displayTitle}
+                testDescription={details.testDescription}
+                questions={details.questions}
+                result={details.resultSummary}
+                reviewRowsByQuestionId={reviewMaps.reviewRowsByQuestionId}
+                reviewCorrectIdsByQuestionId={
+                  reviewMaps.reviewCorrectIdsByQuestionId
+                }
+                reviewFillByQuestionId={reviewMaps.reviewFillByQuestionId}
+                reviewAnswersByQuestionId={
+                  reviewMaps.reviewAnswersByQuestionId
+                }
+              />
+            </>
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>

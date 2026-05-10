@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import type { StudentProgressItem } from "@/app/actions/student-dashboard-actions";
+import { ProgressStatusBadge } from "@/components/learn/progress-status-badge";
+import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
 import { TestResultSheet } from "@/components/dashboard/teacher/TestResultSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,44 +40,6 @@ export type CourseHubClientProps = {
   userId: string;
   userDisplayName: string;
 };
-
-function statusBadge(status: StudentProgressItem["status"]) {
-  switch (status) {
-    case "passed":
-      return (
-        <Badge
-          variant="outline"
-          className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-        >
-          Сдан
-        </Badge>
-      );
-    case "failed":
-      return <Badge variant="destructive">Не сдан</Badge>;
-    case "pending":
-      return (
-        <Badge
-          variant="outline"
-          className="border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
-        >
-          На проверке
-        </Badge>
-      );
-    case "approved":
-      return (
-        <Badge
-          variant="outline"
-          className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-        >
-          Принято
-        </Badge>
-      );
-    case "rejected":
-      return <Badge variant="destructive">На доработку</Badge>;
-    default:
-      return <Badge variant="secondary">Не начато</Badge>;
-  }
-}
 
 function typeBadge(type: StudentProgressItem["type"]) {
   if (type === "test") {
@@ -117,6 +81,10 @@ export function CourseHubClient({
   userId,
   userDisplayName,
 }: CourseHubClientProps) {
+  const [selectedAssignment, setSelectedAssignment] = useState<{
+    lessonBlockId: string;
+  } | null>(null);
+
   const completedSet = useMemo(
     () => new Set(completedLessonIds),
     [completedLessonIds],
@@ -228,11 +196,14 @@ export function CourseHubClient({
           </TabsContent>
 
           <TabsContent value="progress" className="mt-0">
+            <p className="text-muted-foreground mb-4 text-sm">
+              Нажмите на строку с тестом или заданием, чтобы открыть подробности.
+            </p>
             <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[200px]">Название</TableHead>
+                    <TableHead className="min-w-[200px]">Урок</TableHead>
                     <TableHead className="w-[100px]">Тип</TableHead>
                     <TableHead className="w-[140px]">Статус</TableHead>
                     <TableHead className="w-[100px]">Оценка</TableHead>
@@ -251,34 +222,36 @@ export function CourseHubClient({
                     </TableRow>
                   ) : (
                     courseProgress.map((item) => {
-                      const learnHref = `/learn/${encodeURIComponent(item.courseSlug)}/${item.lessonId}`;
                       const scoreLabel =
-                        item.type === "test"
-                          ? item.scorePercent == null
-                            ? "—"
-                            : `${item.scorePercent}%`
-                          : item.grade != null
-                            ? String(item.grade)
-                            : item.status === "approved"
-                              ? "—"
-                              : "—";
+                        item.grade10 == null ? "—" : String(item.grade10);
 
                       if (item.type === "assignment") {
+                        const blockId = item.lessonBlockId;
                         return (
                           <TableRow key={item.id}>
                             <TableCell>
-                              <Link
-                                href={learnHref}
-                                className="text-primary font-medium hover:underline"
-                              >
-                                {item.title}
-                              </Link>
-                              <p className="text-muted-foreground mt-1 text-xs">
-                                Перейти к уроку для ответа или доработки
-                              </p>
+                              {blockId ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedAssignment({
+                                      lessonBlockId: blockId,
+                                    })
+                                  }
+                                  className={cn(
+                                    "text-primary cursor-pointer text-left font-medium hover:underline",
+                                  )}
+                                >
+                                  {item.title}
+                                </button>
+                              ) : (
+                                <span className="font-medium">{item.title}</span>
+                              )}
                             </TableCell>
                             <TableCell>{typeBadge(item.type)}</TableCell>
-                            <TableCell>{statusBadge(item.status)}</TableCell>
+                            <TableCell>
+                              <ProgressStatusBadge item={item} />
+                            </TableCell>
                             <TableCell className="text-sm">
                               {scoreLabel}
                             </TableCell>
@@ -286,13 +259,10 @@ export function CourseHubClient({
                         );
                       }
 
-                      const openSheet =
-                        item.hasCompletedTestAttempt && item.testId != null;
-
                       return (
                         <TableRow key={item.id}>
                           <TableCell>
-                            {openSheet ? (
+                            {item.testId ? (
                               <button
                                 type="button"
                                 onClick={() =>
@@ -312,14 +282,11 @@ export function CourseHubClient({
                             ) : (
                               <span className="font-medium">{item.title}</span>
                             )}
-                            {openSheet ? (
-                              <p className="text-muted-foreground mt-1 text-xs">
-                                Нажмите, чтобы открыть разбор попытки
-                              </p>
-                            ) : null}
                           </TableCell>
                           <TableCell>{typeBadge(item.type)}</TableCell>
-                          <TableCell>{statusBadge(item.status)}</TableCell>
+                          <TableCell>
+                            <ProgressStatusBadge item={item} />
+                          </TableCell>
                           <TableCell className="text-sm">{scoreLabel}</TableCell>
                         </TableRow>
                       );
@@ -342,6 +309,20 @@ export function CourseHubClient({
         studentName={selectedTest?.studentName ?? ""}
         testTitle={selectedTest?.testTitle ?? ""}
       />
+
+      {selectedAssignment ? (
+        <AssignmentReviewSheet
+          isOpen
+          onOpenChange={(open) => {
+            if (!open) setSelectedAssignment(null);
+          }}
+          fetchMode="lessonBlock"
+          lessonBlockId={selectedAssignment.lessonBlockId}
+          studentId={userId}
+          studentName={userDisplayName}
+          isTeacher={false}
+        />
+      ) : null}
     </>
   );
 }

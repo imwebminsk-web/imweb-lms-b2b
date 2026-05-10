@@ -2,30 +2,39 @@
 
 import { z } from "zod";
 
+import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database.types";
 
 const studentIdSchema = z.string().uuid("Некорректный ID пользователя");
 
-const PASS_PERCENT = 60;
+/** Нормализует оценку из БД (0–10 или устаревшие 0–100) в балл 0–10. */
+function assignmentGradeToGrade10(grade: number): number {
+  if (grade >= 0 && grade <= 10) {
+    return Math.round(grade);
+  }
+  if (grade > 10 && grade <= 100) {
+    return Math.min(10, Math.max(0, Math.round((grade / 100) * 10)));
+  }
+  return Math.min(10, Math.max(0, Math.round(grade)));
+}
 
+/** Для `type: "test"`: завершённая попытка / только черновик / нет попыток. Для задания — статус сдачи. */
 export type StudentProgressStatus =
-  | "passed"
-  | "failed"
+  | "completed"
+  | "in_progress"
+  | "not_started"
   | "pending"
   | "approved"
-  | "rejected"
-  | "not_started";
+  | "rejected";
 
 export type StudentProgressItem = {
   id: string;
   type: "test" | "assignment";
   title: string;
   status: StudentProgressStatus;
-  /** Процент по лучшей завершённой попытке теста; null если нет завершённой попытки. */
-  scorePercent: number | null;
-  /** Оценка за задание (после проверки). */
-  grade: number | null;
+  /** Балл 0–10: тест — по лучшей завершённой попытке; задание — после принятия (из оценки преподавателя). */
+  grade10: number | null;
   courseId: string;
   courseSlug: string;
   /** Название курса из enrollments / join к lessons — для UI без разбора строки title. */
@@ -33,6 +42,8 @@ export type StudentProgressItem = {
   lessonId: string;
   testId: string | null;
   lessonBlockId: string | null;
+  /** Последняя сдача по блоку задания (для шторки). */
+  assignmentSubmissionId: string | null;
   /** Есть завершённая попытка — можно открыть разбор (TestResultSheet). */
   hasCompletedTestAttempt: boolean;
 };
@@ -197,8 +208,319 @@ function fullAssignmentInstructions(content: Json): string {
   return typeof instr === "string" ? instr.trim() : "";
 }
 
+const cohortIdSchema = z.string().uuid("Некорректный ID группы");
+
+async function fetchStudentProgressItemsForUserId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  studentUserId: string,
+): Promise<
+  { success: true; items: StudentProgressItem[] } | { success: false; error: string }
+> {
+  const loaded = await loadEnrolledPublishedLessonsForStudent(
+    supabase,
+    studentUserId,
+  );
+  if (!loaded.ok) {
+    return { success: false, error: loaded.error };
+  }
+
+  const { courseById, lessonsFlat } = loaded;
+  const courseIds = [...courseById.keys()];
+  if (courseIds.length === 0) {
+    return { success: true, items: [] };
+  }
+
+  const lessonIds = lessonsFlat.map((l) => l.id);
+
+  const { data: blockRowsRaw, error: blocksError } =
+    lessonIds.length > 0
+      ? await supabase
+          .from("lesson_blocks")
+          .select("id, lesson_id, order_index, type, content")
+          .in("lesson_id", lessonIds)
+          .in("type", ["assignment", "quiz"])
+          .order("order_index", { ascending: true })
+      : { data: [], error: null };
+
+  if (blocksError) {
+    return { success: false, error: blocksError.message };
+  }
+
+  type BlockRow = {
+    id: string;
+    lesson_id: string;
+    order_index: number;
+    type: string;
+    content: Json;
+  };
+
+  const allBlockRows = (blockRowsRaw ?? []) as BlockRow[];
+  const assignmentBlocks = allBlockRows.filter((b) => b.type === "assignment");
+
+  const testIdSet = new Set<string>();
+  for (const l of lessonsFlat) {
+    if (l.test_id) testIdSet.add(l.test_id);
+  }
+  for (const b of allBlockRows) {
+    if (b.type !== "quiz") continue;
+    const tid = parseTestIdFromQuizBlockContent(b.content);
+    if (tid) testIdSet.add(tid);
+  }
+  const testIds = [...testIdSet];
+
+  // Всегда фильтруем попытки по ID ученика (не по сессии преподавателя):
+  // getStudentProgress / getStudentProgressForTeacher передают сюда UUID студента.
+  const attemptsPromise =
+    testIds.length > 0
+      ? supabase
+          .from("student_attempts")
+          .select("id, test_id, score, status, completed_at, started_at")
+          .eq("student_id", studentUserId)
+          .in("test_id", testIds)
+      : Promise.resolve({ data: [], error: null });
+
+  const questionsPromise =
+    testIds.length > 0
+      ? supabase.from("questions").select("test_id").in("test_id", testIds)
+      : Promise.resolve({ data: [], error: null });
+
+  const [{ data: attemptRowsRaw, error: attemptsErr }, { data: questionRows, error: questionsErr }] =
+    await Promise.all([attemptsPromise, questionsPromise]);
+  if (attemptsErr || questionsErr) {
+    return {
+      success: false,
+      error: attemptsErr?.message ?? questionsErr?.message ?? "Ошибка",
+    };
+  }
+
+  const questionCountByTest = new Map<string, number>();
+  for (const q of questionRows ?? []) {
+    const prev = questionCountByTest.get(q.test_id) ?? 0;
+    questionCountByTest.set(q.test_id, prev + 1);
+  }
+
+  const bestGrade10ByTest = new Map<string, number>();
+  const hasCompletedByTest = new Set<string>();
+  const hasInProgressByTest = new Set<string>();
+
+  for (const a of attemptRowsRaw ?? []) {
+    if (a.status === "completed") {
+      hasCompletedByTest.add(a.test_id);
+      const total = questionCountByTest.get(a.test_id) ?? 0;
+      if (total > 0) {
+        const rawScore = a.score ?? 0;
+        const g10 = Math.max(
+          0,
+          Math.min(10, Math.round((rawScore / total) * 10)),
+        );
+        const key = a.test_id;
+        const prev = bestGrade10ByTest.get(key);
+        if (prev == null || g10 > prev) {
+          bestGrade10ByTest.set(key, g10);
+        }
+      }
+    }
+    if (a.status === "in_progress") {
+      hasInProgressByTest.add(a.test_id);
+    }
+  }
+
+  type AssignmentBlockRow = {
+    id: string;
+    lesson_id: string;
+    order_index: number;
+    content: Json;
+  };
+
+  const blockIds = assignmentBlocks.map((b) => b.id);
+
+  const latestSubmissionByBlock = new Map<
+    string,
+    { id: string; status: StudentProgressStatus; grade: number | null }
+  >();
+
+  if (blockIds.length > 0) {
+    const { data: subRows, error: subErr } = await supabase
+      .from("assignment_submissions")
+      .select("id, lesson_block_id, status, grade, updated_at")
+      .eq("student_id", studentUserId)
+      .in("lesson_block_id", blockIds);
+
+    if (subErr) {
+      return { success: false, error: subErr.message };
+    }
+
+    const latestRowByBlock = new Map<
+      string,
+      {
+        id: string;
+        status: StudentProgressStatus;
+        grade: number | null;
+        updated_at: string;
+      }
+    >();
+    for (const s of subRows ?? []) {
+      const prev = latestRowByBlock.get(s.lesson_block_id);
+      if (
+        !prev ||
+        new Date(s.updated_at).getTime() > new Date(prev.updated_at).getTime()
+      ) {
+        latestRowByBlock.set(s.lesson_block_id, {
+          id: s.id,
+          status: s.status as StudentProgressStatus,
+          grade: s.grade,
+          updated_at: s.updated_at,
+        });
+      }
+    }
+    for (const [blockId, row] of latestRowByBlock) {
+      latestSubmissionByBlock.set(blockId, {
+        id: row.id,
+        status: row.status,
+        grade: row.grade,
+      });
+    }
+  }
+
+  const blocksByLesson = new Map<string, AssignmentBlockRow[]>();
+  for (const b of assignmentBlocks) {
+    const row: AssignmentBlockRow = {
+      id: b.id,
+      lesson_id: b.lesson_id,
+      order_index: b.order_index,
+      content: b.content,
+    };
+    const list = blocksByLesson.get(b.lesson_id) ?? [];
+    list.push(row);
+    blocksByLesson.set(b.lesson_id, list);
+  }
+  for (const [, list] of blocksByLesson) {
+    list.sort((a, b) => a.order_index - b.order_index);
+  }
+
+  type QuizBlockForLesson = { id: string; order_index: number; testId: string };
+  const quizBlocksByLesson = new Map<string, QuizBlockForLesson[]>();
+  for (const b of allBlockRows) {
+    if (b.type !== "quiz") continue;
+    const tid = parseTestIdFromQuizBlockContent(b.content);
+    if (!tid) continue;
+    const list = quizBlocksByLesson.get(b.lesson_id) ?? [];
+    list.push({ id: b.id, order_index: b.order_index, testId: tid });
+    quizBlocksByLesson.set(b.lesson_id, list);
+  }
+  for (const [, list] of quizBlocksByLesson) {
+    list.sort((a, b) => a.order_index - b.order_index);
+  }
+
+  const items: StudentProgressItem[] = [];
+
+  for (const lesson of lessonsFlat) {
+    const seenTestIdsForLesson = new Set<string>();
+
+    if (lesson.test_id) {
+      seenTestIdsForLesson.add(lesson.test_id);
+      const tid = lesson.test_id;
+      const title = lesson.title.trim() || "Урок";
+
+      let status: StudentProgressStatus = "not_started";
+      let grade10: number | null = null;
+      const hasCompleted = hasCompletedByTest.has(tid);
+
+      if (hasCompleted) {
+        grade10 = bestGrade10ByTest.get(tid) ?? null;
+        status = "completed";
+      } else if (hasInProgressByTest.has(tid)) {
+        status = "in_progress";
+      }
+
+      items.push({
+        id: `test-${lesson.id}-${tid}`,
+        type: "test",
+        title,
+        status,
+        grade10,
+        courseId: lesson.courseId,
+        courseSlug: lesson.courseSlug,
+        courseTitle: lesson.courseTitle,
+        lessonId: lesson.id,
+        testId: tid,
+        lessonBlockId: null,
+        assignmentSubmissionId: null,
+        hasCompletedTestAttempt: hasCompleted,
+      });
+    }
+
+    for (const qb of quizBlocksByLesson.get(lesson.id) ?? []) {
+      if (seenTestIdsForLesson.has(qb.testId)) continue;
+      seenTestIdsForLesson.add(qb.testId);
+      const tid = qb.testId;
+      const title = lesson.title.trim() || "Урок";
+
+      let status: StudentProgressStatus = "not_started";
+      let grade10: number | null = null;
+      const hasCompleted = hasCompletedByTest.has(tid);
+
+      if (hasCompleted) {
+        grade10 = bestGrade10ByTest.get(tid) ?? null;
+        status = "completed";
+      } else if (hasInProgressByTest.has(tid)) {
+        status = "in_progress";
+      }
+
+      items.push({
+        id: `test-${lesson.id}-block-${qb.id}-${tid}`,
+        type: "test",
+        title,
+        status,
+        grade10,
+        courseId: lesson.courseId,
+        courseSlug: lesson.courseSlug,
+        courseTitle: lesson.courseTitle,
+        lessonId: lesson.id,
+        testId: tid,
+        lessonBlockId: qb.id,
+        assignmentSubmissionId: null,
+        hasCompletedTestAttempt: hasCompleted,
+      });
+    }
+
+    const blocks = blocksByLesson.get(lesson.id) ?? [];
+    for (const block of blocks) {
+      const sub = latestSubmissionByBlock.get(block.id);
+      const title = lesson.title.trim() || "Урок";
+
+      let status: StudentProgressStatus = "not_started";
+      let grade10: number | null = null;
+      if (sub) {
+        status = sub.status;
+        if (sub.status === "approved" && sub.grade != null) {
+          grade10 = assignmentGradeToGrade10(sub.grade);
+        }
+      }
+
+      items.push({
+        id: `assignment-${lesson.id}-${block.id}`,
+        type: "assignment",
+        title,
+        status,
+        grade10,
+        courseId: lesson.courseId,
+        courseSlug: lesson.courseSlug,
+        courseTitle: lesson.courseTitle,
+        lessonId: lesson.id,
+        testId: null,
+        lessonBlockId: block.id,
+        assignmentSubmissionId: sub?.id ?? null,
+        hasCompletedTestAttempt: false,
+      });
+    }
+  }
+
+  return { success: true, items };
+}
+
 /**
- * Прогресс ученика по курсам из записей на курс (enrollments): тесты уроков и блоки assignment.
+ * Прогресс ученика (сам ученик или админ).
  */
 export async function getStudentProgress(
   studentId: string,
@@ -236,248 +558,118 @@ export async function getStudentProgress(
     return { success: false, error: "Нет доступа к чужому прогрессу" };
   }
 
-  const loaded = await loadEnrolledPublishedLessonsForStudent(
-    supabase,
-    parsed.data,
-  );
-  if (!loaded.ok) {
-    return { success: false, error: loaded.error };
-  }
+  return fetchStudentProgressItemsForUserId(supabase, parsed.data);
+}
 
-  const { courseById, lessonsFlat } = loaded;
-  const courseIds = [...courseById.keys()];
-  if (courseIds.length === 0) {
-    return { success: true, items: [] };
-  }
+export type StudentProgressForTeacherResult =
+  | {
+      success: true;
+      items: StudentProgressItem[];
+      courseId: string;
+      courseTitle: string;
+      courseSlug: string;
+      cohortName: string;
+    }
+  | { success: false; error: string };
 
-  const lessonIds = lessonsFlat.map((l) => l.id);
-
-  const testIds = [
-    ...new Set(lessonsFlat.map((l) => l.test_id).filter((v): v is string => Boolean(v))),
-  ];
-
-  const blocksPromise =
-    lessonIds.length > 0
-      ? supabase
-          .from("lesson_blocks")
-          .select("id, lesson_id, order_index, type, content")
-          .in("lesson_id", lessonIds)
-          .eq("type", "assignment")
-          .order("order_index", { ascending: true })
-      : Promise.resolve({ data: [], error: null });
-
-  const testsPromise =
-    testIds.length > 0
-      ? supabase.from("tests").select("id, title").in("id", testIds)
-      : Promise.resolve({ data: [], error: null });
-
-  const attemptsPromise =
-    testIds.length > 0
-      ? supabase
-          .from("student_attempts")
-          .select("id, test_id, score, status, completed_at, started_at")
-          .eq("student_id", parsed.data)
-          .in("test_id", testIds)
-      : Promise.resolve({ data: [], error: null });
-
-  const questionsPromise =
-    testIds.length > 0
-      ? supabase.from("questions").select("test_id").in("test_id", testIds)
-      : Promise.resolve({ data: [], error: null });
-
-  const [
-    { data: blockRowsRaw, error: blocksError },
-    { data: testTitleRows, error: testsErr },
-    { data: attemptRowsRaw, error: attemptsErr },
-    { data: questionRows, error: questionsErr },
-  ] = await Promise.all([
-    blocksPromise,
-    testsPromise,
-    attemptsPromise,
-    questionsPromise,
-  ]);
-
-  if (blocksError) {
-    return { success: false, error: blocksError.message };
-  }
-  if (testsErr || attemptsErr || questionsErr) {
+/**
+ * Прогресс ученика для преподавателя: только если ученик в группе и курс принадлежит преподавателю.
+ * Возвращает строки только по курсу этой группы (как вкладка «Успеваемость» у ученика на курсе).
+ */
+export async function getStudentProgressForTeacher(
+  studentId: string,
+  cohortId: string,
+): Promise<StudentProgressForTeacherResult> {
+  const parsedStudent = studentIdSchema.safeParse(studentId);
+  const parsedCohort = cohortIdSchema.safeParse(cohortId);
+  if (!parsedStudent.success) {
     return {
       success: false,
-      error: testsErr?.message ?? attemptsErr?.message ?? questionsErr?.message ?? "Ошибка",
+      error: parsedStudent.error.issues[0]?.message ?? "Некорректный ID",
+    };
+  }
+  if (!parsedCohort.success) {
+    return {
+      success: false,
+      error: parsedCohort.error.issues[0]?.message ?? "Некорректный ID группы",
     };
   }
 
-  const testTitleById = new Map<string, string>();
-  for (const t of testTitleRows ?? []) {
-    testTitleById.set(t.id, t.title);
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
   }
 
-  const questionCountByTest = new Map<string, number>();
-  for (const q of questionRows ?? []) {
-    const prev = questionCountByTest.get(q.test_id) ?? 0;
-    questionCountByTest.set(q.test_id, prev + 1);
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { success: false, error: "Профиль не найден" };
   }
 
-  const attempts = attemptRowsRaw ?? [];
-  const bestPercentByTest = new Map<string, number>();
-  const hasCompletedByTest = new Set<string>();
-  const hasInProgressByTest = new Set<string>();
-
-  for (const a of attemptRowsRaw ?? []) {
-    if (a.status === "completed") {
-      hasCompletedByTest.add(a.test_id);
-      const total = questionCountByTest.get(a.test_id) ?? 0;
-      if (total > 0) {
-        const rawScore = a.score ?? 0;
-        const percent = Math.max(
-          0,
-          Math.min(100, Math.round((rawScore / total) * 100)),
-        );
-        const key = a.test_id;
-        const prev = bestPercentByTest.get(key);
-        if (prev == null || percent > prev) {
-          bestPercentByTest.set(key, percent);
-        }
-      }
-    }
-    if (a.status === "in_progress") {
-      hasInProgressByTest.add(a.test_id);
-    }
+  if (profile.role !== "teacher" && profile.role !== "admin") {
+    return { success: false, error: "Нет доступа" };
   }
 
-  type BlockRow = {
-    id: string;
-    lesson_id: string;
-    order_index: number;
-    content: Json;
+  const { data: cohort, error: cohortError } = await supabase
+    .from("cohorts")
+    .select("id, name, course_id, courses(id, title, slug, teacher_id)")
+    .eq("id", parsedCohort.data)
+    .maybeSingle();
+
+  if (cohortError || !cohort) {
+    return { success: false, error: "Группа не найдена" };
+  }
+
+  const courseRel = Array.isArray(cohort.courses) ? cohort.courses[0] : cohort.courses;
+  if (!courseRel?.id) {
+    return { success: false, error: "Курс не найден" };
+  }
+
+  if (courseRel.teacher_id !== user.id) {
+    return { success: false, error: "Нет доступа к журналу этой группы" };
+  }
+
+  const { data: enrollment, error: enrollError } = await supabase
+    .from("enrollments")
+    .select("id")
+    .eq("cohort_id", parsedCohort.data)
+    .eq("user_id", parsedStudent.data)
+    .maybeSingle();
+
+  if (enrollError) {
+    return { success: false, error: enrollError.message };
+  }
+  if (!enrollment) {
+    return { success: false, error: "Ученик не записан в эту группу" };
+  }
+
+  const progress = await fetchStudentProgressItemsForUserId(
+    supabase,
+    parsedStudent.data,
+  );
+  if (!progress.success) {
+    return progress;
+  }
+
+  const courseId = cohort.course_id;
+  const items = progress.items.filter((i) => i.courseId === courseId);
+
+  return {
+    success: true,
+    items,
+    courseId,
+    courseTitle: courseRel.title ?? "",
+    courseSlug: courseRel.slug ?? "",
+    cohortName: cohort.name ?? "",
   };
-
-  const assignmentBlocks = (blockRowsRaw ?? []) as BlockRow[];
-  const blockIds = assignmentBlocks.map((b) => b.id);
-
-  const latestSubmissionByBlock = new Map<
-    string,
-    { status: StudentProgressStatus; grade: number | null }
-  >();
-
-  if (blockIds.length > 0) {
-    const { data: subRows, error: subErr } = await supabase
-      .from("assignment_submissions")
-      .select("lesson_block_id, status, grade, updated_at")
-      .eq("student_id", parsed.data)
-      .in("lesson_block_id", blockIds);
-
-    if (subErr) {
-      return { success: false, error: subErr.message };
-    }
-
-    const latestRowByBlock = new Map<
-      string,
-      { status: StudentProgressStatus; grade: number | null; updated_at: string }
-    >();
-    for (const s of subRows ?? []) {
-      const prev = latestRowByBlock.get(s.lesson_block_id);
-      if (
-        !prev ||
-        new Date(s.updated_at).getTime() > new Date(prev.updated_at).getTime()
-      ) {
-        latestRowByBlock.set(s.lesson_block_id, {
-          status: s.status as StudentProgressStatus,
-          grade: s.grade,
-          updated_at: s.updated_at,
-        });
-      }
-    }
-    for (const [blockId, row] of latestRowByBlock) {
-      latestSubmissionByBlock.set(blockId, {
-        status: row.status,
-        grade: row.grade,
-      });
-    }
-  }
-
-  const blocksByLesson = new Map<string, BlockRow[]>();
-  for (const b of assignmentBlocks) {
-    const list = blocksByLesson.get(b.lesson_id) ?? [];
-    list.push(b);
-    blocksByLesson.set(b.lesson_id, list);
-  }
-  for (const [, list] of blocksByLesson) {
-    list.sort((a, b) => a.order_index - b.order_index);
-  }
-
-  const items: StudentProgressItem[] = [];
-
-  for (const lesson of lessonsFlat) {
-    if (lesson.test_id) {
-      const tid = lesson.test_id;
-      const testTitle = testTitleById.get(tid) ?? "Тест";
-      const title = `${lesson.courseTitle} · ${lesson.title} · ${testTitle}`;
-
-      let status: StudentProgressStatus = "not_started";
-      let scorePercent: number | null = null;
-      const hasCompleted = hasCompletedByTest.has(tid);
-
-      if (hasCompleted) {
-        scorePercent = bestPercentByTest.get(tid) ?? null;
-        const p = scorePercent ?? 0;
-        status = p >= PASS_PERCENT ? "passed" : "failed";
-      } else if (hasInProgressByTest.has(tid)) {
-        status = "pending";
-      }
-
-      items.push({
-        id: `test-${lesson.id}-${tid}`,
-        type: "test",
-        title,
-        status,
-        scorePercent,
-        grade: null,
-        courseId: lesson.courseId,
-        courseSlug: lesson.courseSlug,
-        courseTitle: lesson.courseTitle,
-        lessonId: lesson.id,
-        testId: tid,
-        lessonBlockId: null,
-        hasCompletedTestAttempt: hasCompleted,
-      });
-    }
-
-    const blocks = blocksByLesson.get(lesson.id) ?? [];
-    for (const block of blocks) {
-      const sub = latestSubmissionByBlock.get(block.id);
-      const instrFull = fullAssignmentInstructions(block.content);
-      const clip = instrFull.slice(0, 40);
-      const title = instrFull
-        ? `${lesson.courseTitle} · ${lesson.title} · ${clip}${instrFull.length > 40 ? "…" : ""}`
-        : `${lesson.courseTitle} · ${lesson.title} · Задание`;
-
-      let status: StudentProgressStatus = "not_started";
-      let grade: number | null = null;
-      if (sub) {
-        status = sub.status;
-        grade = sub.grade;
-      }
-
-      items.push({
-        id: `assignment-${lesson.id}-${block.id}`,
-        type: "assignment",
-        title,
-        status,
-        scorePercent: null,
-        grade,
-        courseId: lesson.courseId,
-        courseSlug: lesson.courseSlug,
-        courseTitle: lesson.courseTitle,
-        lessonId: lesson.id,
-        testId: null,
-        lessonBlockId: block.id,
-        hasCompletedTestAttempt: false,
-      });
-    }
-  }
-
-  return { success: true, items };
 }
 
 /**

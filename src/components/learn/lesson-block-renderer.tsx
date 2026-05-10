@@ -52,9 +52,12 @@ export function readTestId(content: Json): string {
 export function LessonBlockRenderer({
   block,
   initialAssignmentSubmission = null,
+  lessonTitle = "",
 }: {
   block: PlayerBlockRow;
   initialAssignmentSubmission?: AssignmentSubmissionRow | null;
+  /** Заголовок урока — для блока «Задание» в единой вёрстке. */
+  lessonTitle?: string;
 }) {
   switch (block.type) {
     case "text": {
@@ -137,6 +140,7 @@ export function LessonBlockRenderer({
         <LessonAssignmentBlock
           block={block}
           initialSubmission={initialAssignmentSubmission ?? null}
+          lessonTitle={lessonTitle.trim() || "Урок"}
         />
       );
     }
