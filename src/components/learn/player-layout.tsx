@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 
 import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
 import { TestRunner } from "@/components/student/test-runner";
@@ -46,6 +46,8 @@ type PlayerLayoutProps = {
     string,
     AssignmentSubmissionRow | null
   >;
+  /** Блок под контентом урока (например кнопка «Завершить урок»). */
+  lessonCompletion?: ReactNode;
 };
 
 function readVideoUrl(content: Json): string {
@@ -157,6 +159,7 @@ export function PlayerLayout({
   lesson,
   blocks,
   assignmentSubmissionsByBlockId = {},
+  lessonCompletion,
 }: PlayerLayoutProps) {
   const sortedMods = useMemo(() => sortModules(modules), [modules]);
 
@@ -293,6 +296,14 @@ export function PlayerLayout({
                 </p>
               </div>
               <TestRunner testId={lesson.test_id} />
+            </section>
+          ) : null}
+          {lessonCompletion ? (
+            <section className="border-border/60 space-y-3 border-t pt-8">
+              <h2 className="text-lg font-semibold tracking-tight">
+                Прогресс по уроку
+              </h2>
+              {lessonCompletion}
             </section>
           ) : null}
         </div>

@@ -1,7 +1,9 @@
 import { notFound, redirect } from "next/navigation";
 
 import { getStudentSubmission } from "@/app/actions/assignment-actions";
+import { getLessonCompletionStatus } from "@/app/actions/lesson-completion-actions";
 import type { PlayerBlockRow } from "@/components/learn/lesson-block-renderer";
+import { LessonCompletionButton } from "@/components/learn/lesson-completion-button";
 import { PlayerLayout } from "@/components/learn/player-layout";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -96,6 +98,9 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
     ),
   );
 
+  const isLessonCompleted = await getLessonCompletionStatus(lessonRow.id);
+  const learnPathname = `/learn/${slugParam}/${lessonId}`;
+
   return (
     <PlayerLayout
       courseSlug={course.slug}
@@ -111,6 +116,13 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
       }}
       blocks={blocks}
       assignmentSubmissionsByBlockId={assignmentSubmissionsByBlockId}
+      lessonCompletion={
+        <LessonCompletionButton
+          lessonId={lessonRow.id}
+          initialIsCompleted={isLessonCompleted}
+          pathname={learnPathname}
+        />
+      }
     />
   );
 }

@@ -1,9 +1,13 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
+import { getStudentProgress } from "@/app/actions/student-dashboard-actions";
+import { CourseHubClient } from "@/components/learn/course-hub-client";
 import { createClient } from "@/lib/supabase/server";
-import { getFirstPublishedLessonId } from "@/lib/learn/curriculum-order";
+import {
+  publishedLessonsSorted,
+  sortModules,
+  type LearnModuleNav,
+} from "@/lib/learn/curriculum-order";
 import { fetchPublishedCourseForLearn } from "@/lib/learn/fetch-published-course";
 
 type PageProps = {
@@ -18,6 +22,16 @@ function decodeSlugParam(slug: string): string {
   }
 }
 
+function collectPublishedLessonIds(modules: LearnModuleNav[]): string[] {
+  const ids: string[] = [];
+  for (const mod of modules) {
+    for (const l of publishedLessonsSorted(mod.lessons)) {
+      ids.push(l.id);
+    }
+  }
+  return ids;
+}
+
 export default async function LearnCourseEntryPage({ params }: PageProps) {
   const { slug: slugParam } = await params;
   const decodedSlug = decodeSlugParam(slugParam);
@@ -28,9 +42,7 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(
-      `/login?next=${encodeURIComponent(`/learn/${slugParam}`)}`,
-    );
+    redirect(`/login?next=${encodeURIComponent(`/learn/${slugParam}`)}`);
   }
 
   const course = await fetchPublishedCourseForLearn(decodedSlug, user.id);
@@ -38,23 +50,59 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
     notFound();
   }
 
-  const firstId = getFirstPublishedLessonId(course.modules);
-  if (firstId) {
-    redirect(`/learn/${encodeURIComponent(course.slug)}/${firstId}`);
+  const modulesSorted = sortModules(course.modules ?? []);
+  const lessonIds = collectPublishedLessonIds(modulesSorted);
+
+  let completedLessonIds: string[] = [];
+  if (lessonIds.length > 0) {
+    const { data: compRows, error: compError } = await supabase
+      .from("lesson_completions")
+      .select("lesson_id")
+      .eq("student_id", user.id)
+      .in("lesson_id", lessonIds);
+
+    if (compError) {
+      console.error("[LearnCourseEntryPage] lesson_completions", compError.message);
+    } else {
+      completedLessonIds = [
+        ...new Set(
+          (compRows ?? [])
+            .map((r) => r.lesson_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+    }
   }
 
+  const progressRes = await getStudentProgress(user.id);
+  if (!progressRes.success) {
+    throw new Error(progressRes.error);
+  }
+  const courseProgress = progressRes.items.filter(
+    (p) => p.courseSlug === decodedSlug,
+  );
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const displayName =
+    profile?.full_name?.trim() ||
+    user.email?.split("@")[0] ||
+    "Студент";
+
   return (
-    <main className="bg-background flex min-h-screen flex-col items-center justify-center gap-4 p-8 text-center">
-      <h1 className="text-xl font-semibold tracking-tight">Курс пуст</h1>
-      <p className="text-muted-foreground max-w-md text-sm">
-        В этом курсе пока нет опубликованных уроков. Загляните позже или
-        вернитесь на страницу курса.
-      </p>
-      <Button asChild variant="secondary">
-        <Link href={`/courses/${encodeURIComponent(course.slug)}`}>
-          На страницу курса
-        </Link>
-      </Button>
-    </main>
+    <div className="container mx-auto max-w-4xl py-8">
+      <CourseHubClient
+        course={course}
+        modules={modulesSorted}
+        completedLessonIds={completedLessonIds}
+        courseProgress={courseProgress}
+        userId={user.id}
+        userDisplayName={displayName}
+      />
+    </div>
   );
 }
