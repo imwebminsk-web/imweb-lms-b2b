@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
 
 import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
-import { TestRunner } from "@/components/student/test-runner";
 import {
   Accordion,
   AccordionContent,
@@ -17,7 +16,12 @@ import {
   sortModules,
   type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
-import { LessonBlockRenderer, type PlayerBlockRow } from "@/components/learn/lesson-block-renderer";
+import {
+  LessonBlockRenderer,
+  readTestId,
+  type PlayerBlockRow,
+} from "@/components/learn/lesson-block-renderer";
+import { TestRevealWrapper } from "@/components/learn/test-reveal-wrapper";
 import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { cn } from "@/lib/utils";
 import type { Database, Json } from "@/types/database.types";
@@ -139,11 +143,7 @@ function LessonMainContent({ lesson }: { lesson: PlayerLessonPayload }) {
     }
     case "quiz":
     case "test":
-      return (
-        <p className="text-muted-foreground rounded-xl border border-dashed p-8 text-center text-sm leading-relaxed">
-          Тестирование скоро появится
-        </p>
-      );
+      return null;
     default: {
       const _exhaustive: never = lesson.type;
       return _exhaustive;
@@ -166,6 +166,15 @@ export function PlayerLayout({
   const sortedBlocks = useMemo(
     () => [...blocks].sort((a, b) => a.order_index - b.order_index),
     [blocks],
+  );
+
+  const blockTestIds = useMemo(
+    () =>
+      sortedBlocks
+        .filter((b) => b.type === "quiz")
+        .map((b) => readTestId(b.content))
+        .filter((id): id is string => Boolean(id)),
+    [sortedBlocks],
   );
 
   const defaultAccordion = useMemo(() => {
@@ -286,17 +295,14 @@ export function PlayerLayout({
           ) : (
             <LessonMainContent lesson={lesson} />
           )}
-          {lesson.test_id ? (
-            <section className="space-y-5 pt-2">
+          {lesson.test_id && !blockTestIds.includes(lesson.test_id) ? (
+            <div className="space-y-4 pt-2">
               <Separator />
-              <div className="space-y-2">
-                <h2 className="text-2xl font-bold tracking-tight">Проверка знаний</h2>
-                <p className="text-muted-foreground text-sm">
-                  Пройдите тест после изучения материала урока.
-                </p>
-              </div>
-              <TestRunner testId={lesson.test_id} />
-            </section>
+              <TestRevealWrapper
+                testId={lesson.test_id}
+                title="Итоговый тест по уроку"
+              />
+            </div>
           ) : null}
           {lessonCompletion ? (
             <section className="border-border/60 space-y-3 border-t pt-8">

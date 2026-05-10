@@ -73,7 +73,8 @@ export const fetchPublishedCourseForLearn = cache(
     const { data: assignments, error: assignmentsError } = await supabase
       .from("cohort_assignments")
       .select("lesson_id")
-      .eq("cohort_id", cohortId);
+      .eq("cohort_id", cohortId)
+      .not("lesson_id", "is", null);
 
     if (assignmentsError) {
       console.error(
@@ -83,20 +84,15 @@ export const fetchPublishedCourseForLearn = cache(
       return course;
     }
 
-    if (!assignments || assignments.length === 0) {
-      return {
-        ...course,
-        modules:
-          course.modules?.map((m) => ({
-            ...m,
-            lessons: [],
-          })) ?? [],
-      };
-    }
-
     const assignedLessonIds = new Set(
-      assignments.map((a) => a.lesson_id).filter((v): v is string => Boolean(v)),
+      (assignments ?? [])
+        .map((a) => a.lesson_id)
+        .filter((v): v is string => Boolean(v)),
     );
+
+    if (assignedLessonIds.size === 0) {
+      return course;
+    }
 
     return {
       ...course,

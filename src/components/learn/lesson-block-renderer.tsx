@@ -2,6 +2,7 @@
 
 import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
 import { LessonAssignmentBlock } from "@/components/dashboard/student/lesson-assignment-block";
+import { TestRevealWrapper } from "@/components/learn/test-reveal-wrapper";
 import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { vimeoEmbedSrc } from "@/lib/learn/vimeo-embed";
 import type { Database, Json } from "@/types/database.types";
@@ -40,7 +41,7 @@ function readImageUrl(content: Json): string | null {
   return typeof u === "string" && u.trim() ? u.trim() : null;
 }
 
-function readTestId(content: Json): string {
+export function readTestId(content: Json): string {
   if (!content || typeof content !== "object" || Array.isArray(content)) {
     return "";
   }
@@ -149,12 +150,9 @@ export function LessonBlockRenderer({
         );
       }
       return (
-        <p className="text-muted-foreground rounded-xl border border-dashed p-8 text-center text-sm leading-relaxed">
-          Тестирование скоро появится
-          <span className="mt-2 block font-mono text-xs opacity-70">
-            test_id: {testId}
-          </span>
-        </p>
+        <div className="my-8">
+          <TestRevealWrapper testId={testId} title="Тест к блоку" />
+        </div>
       );
     }
     default: {

@@ -28,7 +28,7 @@ import {
   type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle } from "lucide-react";
 
 export type CourseHubClientProps = {
   course: LearnCourseCurriculum;
@@ -138,6 +138,16 @@ export function CourseHubClient({
     <>
       <div className="space-y-6">
         <header className="space-y-4">
+          <Button
+            variant="ghost"
+            asChild
+            className="-ml-4 mb-2 w-fit text-muted-foreground hover:text-foreground"
+          >
+            <Link href="/dashboard" className="inline-flex items-center">
+              <ArrowLeft className="mr-2 h-4 w-4" aria-hidden />
+              На дашборд
+            </Link>
+          </Button>
           <div className="space-y-1">
             <h1 className="text-3xl font-semibold tracking-tight">
               {course.title}

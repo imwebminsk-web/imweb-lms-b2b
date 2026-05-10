@@ -37,6 +37,158 @@ export type StudentProgressItem = {
   hasCompletedTestAttempt: boolean;
 };
 
+type CourseRef = { id: string; slug: string; title: string };
+
+/** Опубликованный урок курса студента с учётом когорты (как в getStudentProgress). */
+type EnrolledLessonRow = {
+  id: string;
+  title: string;
+  order_index: number;
+  test_id: string | null;
+  moduleOrder: number;
+  courseId: string;
+  courseSlug: string;
+  courseTitle: string;
+};
+
+export type StudentDashboardCourseSummary = {
+  id: string;
+  slug: string;
+  title: string;
+  totalLessons: number;
+  completedLessons: number;
+};
+
+async function loadEnrolledPublishedLessonsForStudent(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  studentUserId: string,
+): Promise<
+  | { ok: false; error: string }
+  | { ok: true; courseById: Map<string, CourseRef>; lessonsFlat: EnrolledLessonRow[] }
+> {
+  const { data: enrollRows, error: enrollError } = await supabase
+    .from("enrollments")
+    .select("course_id, cohort_id, courses(id, slug, title)")
+    .eq("user_id", studentUserId);
+
+  if (enrollError) {
+    return { ok: false, error: enrollError.message };
+  }
+
+  const courseById = new Map<string, CourseRef>();
+  for (const row of enrollRows ?? []) {
+    const c = row.courses as CourseRef | CourseRef[] | null;
+    const course = Array.isArray(c) ? c[0] : c;
+    if (course?.id) {
+      courseById.set(course.id, {
+        id: course.id,
+        slug: course.slug,
+        title: course.title,
+      });
+    }
+  }
+
+  const courseIds = [...courseById.keys()];
+  if (courseIds.length === 0) {
+    return { ok: true, courseById, lessonsFlat: [] };
+  }
+
+  const cohortIds = [
+    ...new Set(
+      (enrollRows ?? [])
+        .map((r) => r.cohort_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+
+  const cohortToLessonIds = new Map<string, Set<string>>();
+  if (cohortIds.length > 0) {
+    const { data: assignRows, error: assignError } = await supabase
+      .from("cohort_assignments")
+      .select("cohort_id, lesson_id")
+      .in("cohort_id", cohortIds)
+      .not("lesson_id", "is", null);
+
+    if (assignError) {
+      return { ok: false, error: assignError.message };
+    }
+
+    for (const row of assignRows ?? []) {
+      const cohId = row.cohort_id;
+      const lesId = row.lesson_id;
+      if (!lesId) continue;
+      let set = cohortToLessonIds.get(cohId);
+      if (!set) {
+        set = new Set();
+        cohortToLessonIds.set(cohId, set);
+      }
+      set.add(lesId);
+    }
+  }
+
+  const courseRestrictedLessonIds = new Map<string, Set<string>>();
+  for (const row of enrollRows ?? []) {
+    if (!row.cohort_id) continue;
+    const fromCohort = cohortToLessonIds.get(row.cohort_id);
+    if (!fromCohort || fromCohort.size === 0) continue;
+    const merged =
+      courseRestrictedLessonIds.get(row.course_id) ?? new Set<string>();
+    for (const lid of fromCohort) merged.add(lid);
+    courseRestrictedLessonIds.set(row.course_id, merged);
+  }
+
+  const { data: lessonRowsRaw, error: lessonsError } = await supabase
+    .from("lessons")
+    .select(
+      "id, title, order_index, test_id, is_published, module_id, modules!inner(id, order_index, course_id, courses!inner(id, slug, title))",
+    )
+    .in("modules.course_id", courseIds)
+    .eq("is_published", true)
+    .order("order_index", { ascending: true });
+
+  if (lessonsError) {
+    return { ok: false, error: lessonsError.message };
+  }
+
+  const lessonsFlat: EnrolledLessonRow[] = [];
+  for (const row of lessonRowsRaw ?? []) {
+    const mod = row.modules as unknown as {
+      order_index: number;
+      course_id: string;
+      courses: { id: string; slug: string; title: string } | null;
+    };
+    const cid = mod?.course_id ?? "";
+    const restricted = courseRestrictedLessonIds.get(cid);
+    if (restricted && restricted.size > 0 && !restricted.has(row.id)) {
+      continue;
+    }
+    const course = mod?.courses;
+    const slug = course?.slug ?? courseById.get(mod.course_id)?.slug ?? "";
+    const title = course?.title ?? courseById.get(mod.course_id)?.title ?? "";
+    lessonsFlat.push({
+      id: row.id,
+      title: row.title,
+      order_index: row.order_index,
+      test_id: row.test_id,
+      moduleOrder: mod?.order_index ?? 0,
+      courseId: cid,
+      courseSlug: slug,
+      courseTitle: title,
+    });
+  }
+
+  lessonsFlat.sort((a, b) => {
+    if (a.courseId !== b.courseId) {
+      return a.courseTitle.localeCompare(b.courseTitle, "ru");
+    }
+    if (a.moduleOrder !== b.moduleOrder) return a.moduleOrder - b.moduleOrder;
+    if (a.order_index !== b.order_index) return a.order_index - b.order_index;
+    return a.id.localeCompare(b.id);
+  });
+
+  return { ok: true, courseById, lessonsFlat };
+}
+
 function fullAssignmentInstructions(content: Json): string {
   if (!content || typeof content !== "object" || Array.isArray(content)) {
     return "";
@@ -84,138 +236,19 @@ export async function getStudentProgress(
     return { success: false, error: "Нет доступа к чужому прогрессу" };
   }
 
-  const { data: enrollRows, error: enrollError } = await supabase
-    .from("enrollments")
-    .select("course_id, cohort_id, courses(id, slug, title)")
-    .eq("user_id", parsed.data);
-
-  if (enrollError) {
-    return { success: false, error: enrollError.message };
+  const loaded = await loadEnrolledPublishedLessonsForStudent(
+    supabase,
+    parsed.data,
+  );
+  if (!loaded.ok) {
+    return { success: false, error: loaded.error };
   }
 
-  type CourseRef = { id: string; slug: string; title: string };
-  const courseById = new Map<string, CourseRef>();
-  for (const row of enrollRows ?? []) {
-    const c = row.courses as CourseRef | CourseRef[] | null;
-    const course = Array.isArray(c) ? c[0] : c;
-    if (course?.id) {
-      courseById.set(course.id, {
-        id: course.id,
-        slug: course.slug,
-        title: course.title,
-      });
-    }
-  }
-
-  /** Для курса: если у когорты есть строки cohort_assignments с lesson_id — только эти уроки; иначе все опубликованные. */
-  const cohortIds = [
-    ...new Set(
-      (enrollRows ?? [])
-        .map((r) => r.cohort_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ];
-
-  const cohortToLessonIds = new Map<string, Set<string>>();
-  if (cohortIds.length > 0) {
-    const { data: assignRows, error: assignError } = await supabase
-      .from("cohort_assignments")
-      .select("cohort_id, lesson_id")
-      .in("cohort_id", cohortIds)
-      .not("lesson_id", "is", null);
-
-    if (assignError) {
-      return { success: false, error: assignError.message };
-    }
-
-    for (const row of assignRows ?? []) {
-      const cohId = row.cohort_id;
-      const lesId = row.lesson_id;
-      if (!lesId) continue;
-      let set = cohortToLessonIds.get(cohId);
-      if (!set) {
-        set = new Set();
-        cohortToLessonIds.set(cohId, set);
-      }
-      set.add(lesId);
-    }
-  }
-
-  const courseRestrictedLessonIds = new Map<string, Set<string>>();
-  for (const row of enrollRows ?? []) {
-    if (!row.cohort_id) continue;
-    const fromCohort = cohortToLessonIds.get(row.cohort_id);
-    if (!fromCohort || fromCohort.size === 0) continue;
-    const merged =
-      courseRestrictedLessonIds.get(row.course_id) ?? new Set<string>();
-    for (const lid of fromCohort) merged.add(lid);
-    courseRestrictedLessonIds.set(row.course_id, merged);
-  }
-
+  const { courseById, lessonsFlat } = loaded;
   const courseIds = [...courseById.keys()];
   if (courseIds.length === 0) {
     return { success: true, items: [] };
   }
-
-  const { data: lessonRowsRaw, error: lessonsError } = await supabase
-    .from("lessons")
-    .select(
-      "id, title, order_index, test_id, is_published, module_id, modules!inner(id, order_index, course_id, courses!inner(id, slug, title))",
-    )
-    .in("modules.course_id", courseIds)
-    .eq("is_published", true)
-    .order("order_index", { ascending: true });
-
-  if (lessonsError) {
-    return { success: false, error: lessonsError.message };
-  }
-
-  type LessonFlat = {
-    id: string;
-    title: string;
-    order_index: number;
-    test_id: string | null;
-    moduleOrder: number;
-    courseId: string;
-    courseSlug: string;
-    courseTitle: string;
-  };
-
-  const lessonsFlat: LessonFlat[] = [];
-  for (const row of lessonRowsRaw ?? []) {
-    const mod = row.modules as unknown as {
-      order_index: number;
-      course_id: string;
-      courses: { id: string; slug: string; title: string } | null;
-    };
-    const cid = mod?.course_id ?? "";
-    const restricted = courseRestrictedLessonIds.get(cid);
-    if (restricted && restricted.size > 0 && !restricted.has(row.id)) {
-      continue;
-    }
-    const course = mod?.courses;
-    const slug = course?.slug ?? courseById.get(mod.course_id)?.slug ?? "";
-    const title = course?.title ?? courseById.get(mod.course_id)?.title ?? "";
-    lessonsFlat.push({
-      id: row.id,
-      title: row.title,
-      order_index: row.order_index,
-      test_id: row.test_id,
-      moduleOrder: mod?.order_index ?? 0,
-      courseId: cid,
-      courseSlug: slug,
-      courseTitle: title,
-    });
-  }
-
-  lessonsFlat.sort((a, b) => {
-    if (a.courseId !== b.courseId) {
-      return a.courseTitle.localeCompare(b.courseTitle, "ru");
-    }
-    if (a.moduleOrder !== b.moduleOrder) return a.moduleOrder - b.moduleOrder;
-    if (a.order_index !== b.order_index) return a.order_index - b.order_index;
-    return a.id.localeCompare(b.id);
-  });
 
   const lessonIds = lessonsFlat.map((l) => l.id);
 
@@ -445,4 +478,100 @@ export async function getStudentProgress(
   }
 
   return { success: true, items };
+}
+
+/**
+ * Сводка по курсам студента: сколько опубликованных (и разрешённых когортой) уроков и сколько отмечено в lesson_completions.
+ */
+export async function getStudentDashboardCourses(
+  studentId: string,
+): Promise<
+  | { success: true; courses: StudentDashboardCourseSummary[] }
+  | { success: false; error: string }
+> {
+  const parsed = studentIdSchema.safeParse(studentId);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Некорректный ID",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { success: false, error: "Профиль не найден" };
+  }
+
+  if (profile.role !== "admin" && user.id !== parsed.data) {
+    return { success: false, error: "Нет доступа к чужим данным" };
+  }
+
+  const loaded = await loadEnrolledPublishedLessonsForStudent(
+    supabase,
+    parsed.data,
+  );
+  if (!loaded.ok) {
+    return { success: false, error: loaded.error };
+  }
+
+  const { courseById, lessonsFlat } = loaded;
+
+  const idsByCourse = new Map<string, string[]>();
+  for (const l of lessonsFlat) {
+    const arr = idsByCourse.get(l.courseId) ?? [];
+    arr.push(l.id);
+    idsByCourse.set(l.courseId, arr);
+  }
+
+  const allLessonIds = lessonsFlat.map((l) => l.id);
+  const completedSet = new Set<string>();
+  if (allLessonIds.length > 0) {
+    const { data: compRows, error: compError } = await supabase
+      .from("lesson_completions")
+      .select("lesson_id")
+      .eq("student_id", parsed.data)
+      .in("lesson_id", allLessonIds);
+
+    if (compError) {
+      return { success: false, error: compError.message };
+    }
+
+    for (const row of compRows ?? []) {
+      if (row.lesson_id) {
+        completedSet.add(row.lesson_id);
+      }
+    }
+  }
+
+  const courses: StudentDashboardCourseSummary[] = [];
+  for (const [courseId, ref] of courseById) {
+    const ids = idsByCourse.get(courseId) ?? [];
+    const totalLessons = ids.length;
+    const completedLessons = ids.filter((id) => completedSet.has(id)).length;
+    courses.push({
+      id: courseId,
+      slug: ref.slug,
+      title: ref.title,
+      totalLessons,
+      completedLessons,
+    });
+  }
+
+  courses.sort((a, b) => a.title.localeCompare(b.title, "ru"));
+
+  return { success: true, courses };
 }
