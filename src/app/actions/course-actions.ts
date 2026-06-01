@@ -466,7 +466,6 @@ export async function updateCourse(
       target_audience,
       delivery_format,
       language,
-      difficulty_level: null,
       promotional_images,
       duration_value: durationValue,
       duration_unit,

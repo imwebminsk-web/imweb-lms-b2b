@@ -6,3 +6,10 @@ export type DashboardSectionCard = {
   footerTitle: string;
   footerHint: string;
 };
+
+export type TeacherDashboardMetrics = {
+  totalCourses: number;
+  totalCohorts: number;
+  totalStudents: number;
+  pendingReviews: number;
+};

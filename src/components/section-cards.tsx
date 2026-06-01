@@ -1,6 +1,17 @@
-import { TrendingDownIcon, TrendingUpIcon } from "lucide-react"
+import {
+  BookOpenIcon,
+  ClipboardListIcon,
+  LayersIcon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+  UsersIcon,
+  type LucideIcon,
+} from "lucide-react"
 
-import type { DashboardSectionCard } from "@/lib/dashboard/section-card"
+import type {
+  DashboardSectionCard,
+  TeacherDashboardMetrics,
+} from "@/lib/dashboard/section-card"
 import { Badge } from "@/components/ui/badge"
 import {
   Card,
@@ -10,7 +21,64 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 
-export function SectionCards({ cards }: { cards: DashboardSectionCard[] }) {
+const TEACHER_METRIC_CARDS: {
+  key: keyof TeacherDashboardMetrics
+  label: string
+  description: string
+  icon: LucideIcon
+}[] = [
+  {
+    key: "pendingReviews",
+    label: "На проверке",
+    description: "Ожидают проверки",
+    icon: ClipboardListIcon,
+  },
+  {
+    key: "totalStudents",
+    label: "Ученики",
+    description: "Всего учеников",
+    icon: UsersIcon,
+  },
+  {
+    key: "totalCohorts",
+    label: "Активные группы",
+    description: "Текущие потоки",
+    icon: LayersIcon,
+  },
+  {
+    key: "totalCourses",
+    label: "Всего курсов",
+    description: "Черновики и опубликованные",
+    icon: BookOpenIcon,
+  },
+]
+
+function TeacherMetricCards({ metrics }: { metrics: TeacherDashboardMetrics }) {
+  return (
+    <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
+      {TEACHER_METRIC_CARDS.map(({ key, label, description, icon: Icon }) => (
+        <Card key={key} className="@container/card">
+          <CardHeader className="relative">
+            <CardDescription>{label}</CardDescription>
+            <CardTitle className="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
+              {metrics[key]}
+            </CardTitle>
+            <div className="absolute right-4 top-4">
+              <div className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-lg border">
+                <Icon className="size-4" aria-hidden />
+              </div>
+            </div>
+          </CardHeader>
+          <CardFooter className="text-muted-foreground text-sm">
+            {description}
+          </CardFooter>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function DefaultSectionCards({ cards }: { cards: DashboardSectionCard[] }) {
   return (
     <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
       {cards.map((card) => (
@@ -49,4 +117,18 @@ export function SectionCards({ cards }: { cards: DashboardSectionCard[] }) {
       ))}
     </div>
   )
+}
+
+export function SectionCards({
+  cards,
+  teacherMetrics,
+}: {
+  cards: DashboardSectionCard[]
+  teacherMetrics?: TeacherDashboardMetrics
+}) {
+  if (teacherMetrics) {
+    return <TeacherMetricCards metrics={teacherMetrics} />
+  }
+
+  return <DefaultSectionCards cards={cards} />
 }

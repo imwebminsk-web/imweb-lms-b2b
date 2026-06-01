@@ -1,12 +1,12 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  BarChartIcon,
   BookOpenIcon,
+  CheckSquare,
   DollarSignIcon,
-  FilePlusIcon,
   FileQuestionMarkIcon,
   GraduationCapIcon,
   LifeBuoyIcon,
+  Users,
   UsersIcon,
 } from "lucide-react";
 
@@ -36,21 +36,8 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
     return [
       { title: "Мои курсы", url: "/dashboard/courses", icon: BookOpenIcon },
       { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
-      {
-        title: "Тесты",
-        url: "/dashboard/tests",
-        icon: FileQuestionMarkIcon,
-      },
-      {
-        title: "Создать урок",
-        url: "/dashboard/tests/create",
-        icon: FilePlusIcon,
-      },
-      {
-        title: "Аналитика учеников",
-        url: "/dashboard",
-        icon: BarChartIcon,
-      },
+      { title: "Ученики", url: "/dashboard/students", icon: Users },
+      { title: "Тесты", url: "/dashboard/tests", icon: CheckSquare },
     ];
   }
   return [

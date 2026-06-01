@@ -6,6 +6,7 @@ import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
 import { CohortAssignmentManager } from "@/components/dashboard/teacher/cohorts/cohort-assignment-manager";
 import { CohortStatusToggle } from "@/components/dashboard/teacher/cohorts/cohort-status-toggle";
 import { MatrixGradebook } from "@/components/dashboard/teacher/cohorts/matrix-gradebook";
+import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -291,6 +292,12 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
               </TableBody>
             </Table>
           </section>
+
+          <CohortChat
+            cohortId={cohort.id}
+            currentUserId={user.id}
+            teacherId={courseRel.teacher_id}
+          />
         </main>
       </div>
     </>

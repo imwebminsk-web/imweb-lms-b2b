@@ -17,10 +17,10 @@ function sanitizeNext(raw: string | undefined): string {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; returnTo?: string }>;
 }) {
-  const { next } = await searchParams;
-  const redirectTo = sanitizeNext(next);
+  const params = await searchParams;
+  const redirectTo = sanitizeNext(params.returnTo ?? params.next);
 
   return (
     <WithSiteHeader>

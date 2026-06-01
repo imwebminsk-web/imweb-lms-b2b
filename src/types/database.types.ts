@@ -21,15 +21,12 @@ export type Database = {
           created_at: string
           description: string | null
           detailed_description: string | null
-          difficulty_level: string | null
           delivery_format: string | null
           duration_unit: string | null
           duration_value: number | null
           has_certificate: boolean
           id: string
           image_url: string | null
-          images_gallery: Json
-          languages: string[]
           level: Database["public"]["Enums"]["course_level"] | null
           marketing_audience: string | null
           language: string | null
@@ -41,7 +38,6 @@ export type Database = {
           status: Database["public"]["Enums"]["course_status"]
           target_audience: Database["public"]["Enums"]["target_audience"]
           teacher_id: string
-          thumbnail_url: string | null
           title: string
           video_url: string | null
           vimeo_url: string | null
@@ -53,15 +49,12 @@ export type Database = {
           created_at?: string
           description?: string | null
           detailed_description?: string | null
-          difficulty_level?: string | null
           delivery_format?: string | null
           duration_unit?: string | null
           duration_value?: number | null
           has_certificate?: boolean
           id?: string
           image_url?: string | null
-          images_gallery?: Json
-          languages?: string[]
           level?: Database["public"]["Enums"]["course_level"] | null
           marketing_audience?: string | null
           language?: string | null
@@ -73,7 +66,6 @@ export type Database = {
           status?: Database["public"]["Enums"]["course_status"]
           target_audience?: Database["public"]["Enums"]["target_audience"]
           teacher_id: string
-          thumbnail_url?: string | null
           title: string
           video_url?: string | null
           vimeo_url?: string | null
@@ -85,15 +77,12 @@ export type Database = {
           created_at?: string
           description?: string | null
           detailed_description?: string | null
-          difficulty_level?: string | null
           delivery_format?: string | null
           duration_unit?: string | null
           duration_value?: number | null
           has_certificate?: boolean
           id?: string
           image_url?: string | null
-          images_gallery?: Json
-          languages?: string[]
           level?: Database["public"]["Enums"]["course_level"] | null
           marketing_audience?: string | null
           language?: string | null
@@ -105,7 +94,6 @@ export type Database = {
           status?: Database["public"]["Enums"]["course_status"]
           target_audience?: Database["public"]["Enums"]["target_audience"]
           teacher_id?: string
-          thumbnail_url?: string | null
           title?: string
           video_url?: string | null
           vimeo_url?: string | null
@@ -204,6 +192,38 @@ export type Database = {
             columns: ["test_id"]
             isOneToOne: false
             referencedRelation: "tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cohort_messages: {
+        Row: {
+          cohort_id: string
+          content: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          cohort_id: string
+          content: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          cohort_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cohort_messages_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
             referencedColumns: ["id"]
           },
         ]
@@ -674,6 +694,15 @@ export type Database = {
         Returns: {
           email: string | null
           full_name: string | null
+          user_id: string
+        }[]
+      }
+      get_users_emails: {
+        Args: {
+          p_user_ids: string[]
+        }
+        Returns: {
+          email: string | null
           user_id: string
         }[]
       }

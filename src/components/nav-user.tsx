@@ -1,18 +1,19 @@
-"use client"
+"use client";
 
+import Link from "next/link";
 import {
-  BellIcon,
-  CreditCardIcon,
+  GlobeIcon,
   LogOutIcon,
   MoreVerticalIcon,
   UserCircleIcon,
-} from "lucide-react"
+} from "lucide-react";
 
+import { signOut } from "@/app/actions/auth-actions";
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from "@/components/ui/avatar"
+} from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,26 +22,24 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@/components/ui/sidebar"
-
-import { signOut } from "@/app/actions/auth-actions"
+} from "@/components/ui/sidebar";
 
 export function NavUser({
   user,
 }: {
   user: {
-    name: string
-    email: string
-    avatar: string
-  }
+    name: string;
+    email: string;
+    avatar: string;
+  };
 }) {
-  const { isMobile } = useSidebar()
+  const { isMobile } = useSidebar();
 
   return (
     <SidebarMenu>
@@ -57,7 +56,7 @@ export function NavUser({
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
-                <span className="truncate text-xs text-muted-foreground">
+                <span className="text-muted-foreground truncate text-xs">
                   {user.email}
                 </span>
               </div>
@@ -78,7 +77,7 @@ export function NavUser({
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="text-muted-foreground truncate text-xs">
                     {user.email}
                   </span>
                 </div>
@@ -86,17 +85,17 @@ export function NavUser({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <UserCircleIcon />
-                Аккаунт
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/settings">
+                  <UserCircleIcon />
+                  Аккаунт
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCardIcon />
-                Оплата
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <BellIcon />
-                Уведомления
+              <DropdownMenuItem asChild>
+                <Link href="/">
+                  <GlobeIcon />
+                  На сайт
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
@@ -112,5 +111,5 @@ export function NavUser({
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }

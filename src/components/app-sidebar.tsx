@@ -2,15 +2,9 @@
 
 import * as React from "react"
 import Link from "next/link"
-import {
-  ArrowUpCircleIcon,
-  HelpCircleIcon,
-  SearchIcon,
-  SettingsIcon,
-} from "lucide-react"
+import { ArrowUpCircleIcon } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import {
   getSidebarNavForRole,
@@ -42,12 +36,6 @@ export function AppSidebar({
 }) {
   const navMain = getSidebarNavForRole(role)
 
-  const navSecondary = [
-    { title: "Настройки", url: "/dashboard/tests", icon: SettingsIcon },
-    { title: "Помощь", url: "/", icon: HelpCircleIcon },
-    { title: "Поиск", url: "/", icon: SearchIcon },
-  ]
-
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -67,9 +55,6 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
-        {role !== "student" ? (
-          <NavSecondary items={navSecondary} className="mt-auto" />
-        ) : null}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />

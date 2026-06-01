@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import { BookOpen } from "lucide-react";
 
 import {
   CourseCurriculumAccordion,
@@ -50,6 +51,7 @@ type CourseRow = Pick<
   | "duration_unit"
   | "has_certificate"
   | "start_date"
+  | "start_date_type"
   | "level"
   | "promotional_images"
 > & {
@@ -190,6 +192,49 @@ function buildCurriculumPreview(
     }));
 }
 
+/** Русская форма слова по числу: 1 модуль, 2 модуля, 5 модулей. */
+function pluralRu(
+  count: number,
+  one: string,
+  few: string,
+  many: string,
+): string {
+  const mod100 = Math.abs(count) % 100;
+  const mod10 = mod100 % 10;
+  if (mod100 > 10 && mod100 < 20) {
+    return many;
+  }
+  if (mod10 > 1 && mod10 < 5) {
+    return few;
+  }
+  if (mod10 === 1) {
+    return one;
+  }
+  return many;
+}
+
+function formatModuleCount(count: number): string {
+  return `${count} ${pluralRu(count, "модуль", "модуля", "модулей")}`;
+}
+
+function formatLessonCount(count: number): string {
+  return `${count} ${pluralRu(count, "урок", "урока", "уроков")}`;
+}
+
+function countPublishedCourseStats(raw: CourseRow["modules"]): {
+  totalModules: number;
+  totalLessons: number;
+} {
+  const modules = raw ?? [];
+  const totalModules = modules.length;
+  const totalLessons = modules.reduce(
+    (sum, mod) =>
+      sum + (mod.lessons ?? []).filter((lesson) => lesson.is_published).length,
+    0,
+  );
+  return { totalModules, totalLessons };
+}
+
 const getPublishedCourseBySlug = cache(
   async (decodedSlug: string): Promise<CourseRow | null> => {
     const supabase = await createClient();
@@ -216,6 +261,7 @@ const getPublishedCourseBySlug = cache(
         duration_unit,
         has_certificate,
         start_date,
+        start_date_type,
         level,
         promotional_images,
         modules (
@@ -275,6 +321,10 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
   }
 
   const curriculum = buildCurriculumPreview(course.modules);
+  const { totalModules, totalLessons } = countPublishedCourseStats(
+    course.modules,
+  );
+  const programStatsLabel = `${formatModuleCount(totalModules)} • ${formatLessonCount(totalLessons)}`;
   const hasYouTubeUrl = (course.youtube_url?.trim()?.length ?? 0) > 0;
   const hasVimeoUrl = (course.vimeo_url?.trim()?.length ?? 0) > 0;
   const hasSelfHostedVideo = (course.video_url?.trim()?.length ?? 0) > 0;
@@ -290,7 +340,15 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
     course.duration_value,
     course.duration_unit,
   );
-  const startLabel = formatStartDate(course.start_date);
+  const startLabel =
+    course.start_date_type === "on_demand"
+      ? "В любое время"
+      : formatStartDate(course.start_date);
+  const showStartDate = course.start_date_type === "on_demand" || startLabel != null;
+  const showVideoSection =
+    (hasYouTubeUrl && youtubeSrc != null) ||
+    (hasVimeoUrl && vimeoSrc != null) ||
+    hasSelfHostedVideo;
   const detailedHtml = course.detailed_description?.trim() ?? "";
   const galleryUrls = (course.promotional_images ?? []).filter(
     (u) => typeof u === "string" && u.trim().length > 0,
@@ -388,6 +446,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
             )}
           </section>
 
+          {showVideoSection ? (
           <section aria-label="Превью курса" className="space-y-3">
             <h2 className="mb-8 text-2xl font-bold tracking-tight text-foreground md:text-3xl">
               Видео
@@ -432,6 +491,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
               ) : null}
             </div>
           </section>
+          ) : null}
 
           {galleryUrls.length > 0 ? (
             <section aria-label="Галерея курса" className="space-y-3">
@@ -489,6 +549,16 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
               <p className="text-3xl font-semibold tabular-nums">{priceLabel}</p>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="flex items-start gap-2 text-sm">
+                <BookOpen
+                  className="text-muted-foreground mt-0.5 size-4 shrink-0"
+                  aria-hidden
+                />
+                <span className="text-base font-semibold text-foreground">
+                  {programStatsLabel}
+                </span>
+              </div>
+              <Separator />
               <div className="text-sm">
                 <span className="text-sm font-medium text-muted-foreground">
                   Длительность:{" "}
@@ -497,7 +567,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
                   {durationLabel || "Не указана"}
                 </span>
               </div>
-              {startLabel ? (
+              {showStartDate ? (
                 <>
                   <Separator />
                   <div className="text-sm">
@@ -519,7 +589,11 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
             </CardContent>
             <CardFooter className="flex flex-col gap-2">
               <Button className="w-full" size="lg" asChild>
-                <Link href="/login">Присоединиться</Link>
+                <Link
+                  href={`/login?returnTo=${encodeURIComponent(`/courses/${course.slug}`)}`}
+                >
+                  Присоединиться
+                </Link>
               </Button>
               <p className="text-muted-foreground text-center text-xs">
                 После входа вы сможете начать обучение.

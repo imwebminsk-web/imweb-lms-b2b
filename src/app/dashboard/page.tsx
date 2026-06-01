@@ -5,8 +5,9 @@ import {
   getStudentDashboardCourses,
   getStudentProgress,
 } from "@/app/actions/student-dashboard-actions";
-import { ChartAreaInteractive } from "@/components/chart-area-interactive";
 import { DataTable } from "@/components/data-table";
+import { ActivityFeedWidget } from "@/components/dashboard/teacher/activity-feed-widget";
+import { PendingReviewsWidget } from "@/components/dashboard/teacher/pending-reviews-widget";
 import { JoinCohortForm } from "@/components/dashboard/student/join-cohort-form";
 import { SectionCards } from "@/components/section-cards";
 import { SiteHeader } from "@/components/site-header";
@@ -188,11 +189,20 @@ export default async function Page() {
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-            <SectionCards cards={payload.sectionCards} />
-            <div className="px-4 lg:px-6">
-              <ChartAreaInteractive />
-            </div>
-            <DataTable data={payload.tableRows} />
+            <SectionCards
+              cards={payload.sectionCards}
+              teacherMetrics={payload.teacherMetrics}
+            />
+            {profile.role === "teacher" ? (
+              <>
+                <PendingReviewsWidget
+                  reviews={payload.pendingReviews ?? []}
+                />
+                <ActivityFeedWidget events={payload.activityEvents ?? []} />
+              </>
+            ) : (
+              <DataTable data={payload.tableRows} />
+            )}
           </div>
         </div>
       </div>
