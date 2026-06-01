@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
+import type { StudentProgressStatus } from "@/app/actions/student-dashboard-actions";
 import type { AttemptResult, SafeTestQuestion } from "@/app/actions/test-actions";
+import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { createClient } from "@/lib/supabase/server";
 import type { ReviewAnswerRow } from "@/lib/learn/build-review-maps";
 import type { Json } from "@/types/database.types";
@@ -331,4 +334,446 @@ export async function overrideTestAttemptGrade(
   revalidatePath("/dashboard");
   revalidatePath("/learn");
   return { success: true };
+}
+
+export type MatrixGradebookColumn = {
+  id: string;
+  type: "test" | "assignment";
+  title: string;
+  lessonTitle: string;
+  lessonId: string;
+  testId?: string;
+  blockId?: string;
+};
+
+export type MatrixGradebookStudent = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+export type MatrixGradebookCell = {
+  studentId: string;
+  columnId: string;
+  status: StudentProgressStatus;
+  grade10: number | null;
+  testId: string | null;
+  blockId: string | null;
+  attemptId: string | null;
+  submissionId: string | null;
+};
+
+export type MatrixGradebookData = {
+  students: MatrixGradebookStudent[];
+  columns: MatrixGradebookColumn[];
+  cells: Record<string, MatrixGradebookCell>;
+};
+
+const cohortIdSchema = z.string().uuid("Некорректный ID группы");
+
+function assignmentGradeToGrade10(grade: number): number {
+  if (grade >= 0 && grade <= 10) {
+    return Math.round(grade);
+  }
+  if (grade > 10 && grade <= 100) {
+    return Math.min(10, Math.max(0, Math.round((grade / 100) * 10)));
+  }
+  return Math.min(10, Math.max(0, Math.round(grade)));
+}
+
+function matrixCellKey(studentId: string, columnId: string): string {
+  return `${studentId}:${columnId}`;
+}
+
+/**
+ * Сводная матрица успеваемости группы: ученики × тесты/задания курса.
+ */
+export async function getMatrixGradebookData(
+  cohortId: string,
+): Promise<
+  | { success: true; data: MatrixGradebookData }
+  | { success: false; error: string }
+> {
+  const parsedCohort = cohortIdSchema.safeParse(cohortId.trim());
+  if (!parsedCohort.success) {
+    return {
+      success: false,
+      error: parsedCohort.error.issues[0]?.message ?? "Некорректный ID группы",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { success: false, error: "Профиль не найден" };
+  }
+
+  if (profile.role !== "teacher" && profile.role !== "admin") {
+    return { success: false, error: "Нет доступа" };
+  }
+
+  const { data: cohort, error: cohortError } = await supabase
+    .from("cohorts")
+    .select("id, course_id, courses(id, teacher_id)")
+    .eq("id", parsedCohort.data)
+    .maybeSingle();
+
+  if (cohortError || !cohort) {
+    return { success: false, error: "Группа не найдена" };
+  }
+
+  const courseRel = Array.isArray(cohort.courses) ? cohort.courses[0] : cohort.courses;
+  if (!courseRel?.id) {
+    return { success: false, error: "Курс не найден" };
+  }
+
+  if (courseRel.teacher_id !== user.id) {
+    return { success: false, error: "Нет доступа к журналу этой группы" };
+  }
+
+  const courseId = cohort.course_id;
+
+  const [
+    { data: enrollmentsData, error: enrollmentsError },
+    { data: emailRowsRaw, error: emailsError },
+    { data: assignmentRowsRaw, error: assignmentsError },
+  ] = await Promise.all([
+    supabase
+      .from("enrollments")
+      .select("user_id")
+      .eq("cohort_id", parsedCohort.data)
+      .order("enrolled_at", { ascending: false }),
+    supabase.rpc("get_cohort_student_emails", { p_cohort_id: parsedCohort.data }),
+    supabase
+      .from("cohort_assignments")
+      .select("lesson_id")
+      .eq("cohort_id", parsedCohort.data),
+  ]);
+
+  if (enrollmentsError) {
+    return { success: false, error: enrollmentsError.message };
+  }
+  if (emailsError) {
+    console.error("[getMatrixGradebookData] emails", emailsError.message);
+  }
+  if (assignmentsError) {
+    return { success: false, error: assignmentsError.message };
+  }
+
+  const studentIds = (enrollmentsData ?? []).map((e) => e.user_id);
+  const assignedLessonIds = new Set(
+    (assignmentRowsRaw ?? [])
+      .map((r) => r.lesson_id)
+      .filter((v): v is string => Boolean(v)),
+  );
+
+  type EmailRow = { user_id: string; email: string | null; full_name: string | null };
+  const emailByUserId = new Map<string, EmailRow>();
+  for (const row of (emailRowsRaw ?? []) as EmailRow[]) {
+    emailByUserId.set(row.user_id, row);
+  }
+
+  const profileNameByUserId = new Map<string, string | null>();
+  if (studentIds.length > 0) {
+    const { data: profileRows } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", studentIds);
+    for (const p of profileRows ?? []) {
+      profileNameByUserId.set(p.id, p.full_name);
+    }
+  }
+
+  const students: MatrixGradebookStudent[] = studentIds.map((sid) => {
+    const emailRow = emailByUserId.get(sid);
+    const email = emailRow?.email?.trim() || "—";
+    const fullName = profileNameByUserId.get(sid) ?? emailRow?.full_name ?? null;
+    return {
+      id: sid,
+      name: resolveStudentDisplayName(
+        fullName,
+        email === "—" ? null : email,
+        sid,
+      ),
+      email,
+    };
+  });
+
+  const { data: lessonRowsRaw, error: lessonsError } = await supabase
+    .from("lessons")
+    .select(
+      "id, title, order_index, test_id, is_published, modules!inner(id, order_index, course_id)",
+    )
+    .eq("modules.course_id", courseId)
+    .eq("is_published", true)
+    .order("order_index", { ascending: true });
+
+  if (lessonsError) {
+    return { success: false, error: lessonsError.message };
+  }
+
+  type LessonRow = {
+    id: string;
+    title: string;
+    order_index: number;
+    test_id: string | null;
+    modules: { order_index: number } | { order_index: number }[];
+  };
+
+  const lessonsFiltered = ((lessonRowsRaw ?? []) as LessonRow[]).filter((lesson) => {
+    if (assignedLessonIds.size === 0) return true;
+    return assignedLessonIds.has(lesson.id);
+  });
+
+  lessonsFiltered.sort((a, b) => {
+    const modA = Array.isArray(a.modules) ? a.modules[0] : a.modules;
+    const modB = Array.isArray(b.modules) ? b.modules[0] : b.modules;
+    const mo = (modA?.order_index ?? 0) - (modB?.order_index ?? 0);
+    if (mo !== 0) return mo;
+    return a.order_index - b.order_index;
+  });
+
+  const lessonIds = lessonsFiltered.map((l) => l.id);
+
+  const { data: blockRowsRaw, error: blocksError } =
+    lessonIds.length > 0
+      ? await supabase
+          .from("lesson_blocks")
+          .select("id, lesson_id, order_index, type, content")
+          .in("lesson_id", lessonIds)
+          .in("type", ["assignment", "quiz"])
+          .order("order_index", { ascending: true })
+      : { data: [], error: null };
+
+  if (blocksError) {
+    return { success: false, error: blocksError.message };
+  }
+
+  type BlockRow = {
+    id: string;
+    lesson_id: string;
+    order_index: number;
+    type: string;
+    content: Json;
+  };
+
+  const allBlocks = (blockRowsRaw ?? []) as BlockRow[];
+  const blocksByLesson = new Map<string, BlockRow[]>();
+  for (const b of allBlocks) {
+    const list = blocksByLesson.get(b.lesson_id) ?? [];
+    list.push(b);
+    blocksByLesson.set(b.lesson_id, list);
+  }
+
+  const columns: MatrixGradebookColumn[] = [];
+  const testIdSet = new Set<string>();
+  const assignmentBlockIds: string[] = [];
+
+  for (const lesson of lessonsFiltered) {
+    const lessonTitle = lesson.title.trim() || "Урок";
+    const seenTests = new Set<string>();
+
+    if (lesson.test_id) {
+      seenTests.add(lesson.test_id);
+      testIdSet.add(lesson.test_id);
+      columns.push({
+        id: `test-${lesson.id}-${lesson.test_id}`,
+        type: "test",
+        title: "Тест",
+        lessonTitle,
+        lessonId: lesson.id,
+        testId: lesson.test_id,
+      });
+    }
+
+    for (const block of blocksByLesson.get(lesson.id) ?? []) {
+      if (block.type === "quiz") {
+        const tid = parseTestIdFromQuizBlockContent(block.content);
+        if (!tid || seenTests.has(tid)) continue;
+        seenTests.add(tid);
+        testIdSet.add(tid);
+        columns.push({
+          id: `test-${lesson.id}-block-${block.id}-${tid}`,
+          type: "test",
+          title: "Тест",
+          lessonTitle,
+          lessonId: lesson.id,
+          testId: tid,
+          blockId: block.id,
+        });
+      } else if (block.type === "assignment") {
+        assignmentBlockIds.push(block.id);
+        columns.push({
+          id: `assignment-${lesson.id}-${block.id}`,
+          type: "assignment",
+          title: "Задание",
+          lessonTitle,
+          lessonId: lesson.id,
+          blockId: block.id,
+        });
+      }
+    }
+  }
+
+  const testIds = [...testIdSet];
+  const cells: Record<string, MatrixGradebookCell> = {};
+
+  for (const student of students) {
+    for (const col of columns) {
+      cells[matrixCellKey(student.id, col.id)] = {
+        studentId: student.id,
+        columnId: col.id,
+        status: "not_started",
+        grade10: null,
+        testId: col.testId ?? null,
+        blockId: col.blockId ?? null,
+        attemptId: null,
+        submissionId: null,
+      };
+    }
+  }
+
+  if (studentIds.length === 0 || columns.length === 0) {
+    return { success: true, data: { students, columns, cells } };
+  }
+
+  const questionCountByTest = new Map<string, number>();
+  if (testIds.length > 0) {
+    const { data: questionRows, error: questionsErr } = await supabase
+      .from("questions")
+      .select("test_id")
+      .in("test_id", testIds);
+    if (questionsErr) {
+      return { success: false, error: questionsErr.message };
+    }
+    for (const q of questionRows ?? []) {
+      questionCountByTest.set(q.test_id, (questionCountByTest.get(q.test_id) ?? 0) + 1);
+    }
+  }
+
+  if (testIds.length > 0) {
+    const { data: attemptRows, error: attemptsErr } = await supabase
+      .from("student_attempts")
+      .select("id, student_id, test_id, score, status, completed_at")
+      .in("student_id", studentIds)
+      .in("test_id", testIds);
+
+    if (attemptsErr) {
+      return { success: false, error: attemptsErr.message };
+    }
+
+    type BestCompleted = { grade10: number; attemptId: string };
+    const bestCompleted = new Map<string, BestCompleted>();
+    const inProgressKeys = new Set<string>();
+
+    for (const a of attemptRows ?? []) {
+      const matchingCols = columns.filter(
+        (c) => c.type === "test" && c.testId === a.test_id,
+      );
+      for (const col of matchingCols) {
+        const cellKey = matrixCellKey(a.student_id, col.id);
+
+        if (a.status === "completed") {
+          const total = questionCountByTest.get(a.test_id) ?? 0;
+          const g10 =
+            total > 0
+              ? Math.max(
+                  0,
+                  Math.min(10, Math.round(((a.score ?? 0) / total) * 10)),
+                )
+              : null;
+          if (g10 == null) continue;
+          const prev = bestCompleted.get(cellKey);
+          if (!prev || g10 > prev.grade10) {
+            bestCompleted.set(cellKey, { grade10: g10, attemptId: a.id });
+          }
+        } else if (a.status === "in_progress") {
+          inProgressKeys.add(cellKey);
+        }
+      }
+    }
+
+    for (const [cellKey, best] of bestCompleted) {
+      const cell = cells[cellKey];
+      if (!cell) continue;
+      cell.status = "completed";
+      cell.grade10 = best.grade10;
+      cell.attemptId = best.attemptId;
+    }
+
+    for (const cellKey of inProgressKeys) {
+      const cell = cells[cellKey];
+      if (!cell || cell.status === "completed") continue;
+      cell.status = "in_progress";
+    }
+  }
+
+  if (assignmentBlockIds.length > 0) {
+    const { data: subRows, error: subErr } = await supabase
+      .from("assignment_submissions")
+      .select("id, student_id, lesson_block_id, status, grade, updated_at")
+      .in("student_id", studentIds)
+      .in("lesson_block_id", assignmentBlockIds);
+
+    if (subErr) {
+      return { success: false, error: subErr.message };
+    }
+
+    const latestByStudentBlock = new Map<
+      string,
+      {
+        id: string;
+        status: StudentProgressStatus;
+        grade: number | null;
+        updated_at: string;
+      }
+    >();
+
+    for (const s of subRows ?? []) {
+      const mapKey = `${s.student_id}:${s.lesson_block_id}`;
+      const prev = latestByStudentBlock.get(mapKey);
+      if (
+        !prev ||
+        new Date(s.updated_at).getTime() > new Date(prev.updated_at).getTime()
+      ) {
+        latestByStudentBlock.set(mapKey, {
+          id: s.id,
+          status: s.status as StudentProgressStatus,
+          grade: s.grade,
+          updated_at: s.updated_at,
+        });
+      }
+    }
+
+    for (const col of columns) {
+      if (col.type !== "assignment" || !col.blockId) continue;
+      for (const student of students) {
+        const mapKey = `${student.id}:${col.blockId}`;
+        const sub = latestByStudentBlock.get(mapKey);
+        const cellKey = matrixCellKey(student.id, col.id);
+        const cell = cells[cellKey];
+        if (!cell || !sub) continue;
+        cell.status = sub.status;
+        cell.submissionId = sub.id;
+        if (sub.status === "approved" && sub.grade != null) {
+          cell.grade10 = assignmentGradeToGrade10(sub.grade);
+        }
+      }
+    }
+  }
+
+  return { success: true, data: { students, columns, cells } };
 }

@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { getCohortStudents } from "@/app/actions/cohort-actions";
+import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
 import { CohortAssignmentManager } from "@/components/dashboard/teacher/cohorts/cohort-assignment-manager";
 import { CohortStatusToggle } from "@/components/dashboard/teacher/cohorts/cohort-status-toggle";
+import { MatrixGradebook } from "@/components/dashboard/teacher/cohorts/matrix-gradebook";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,18 +21,6 @@ import { createClient } from "@/lib/supabase/server";
 
 type CohortPageProps = {
   params: Promise<{ id: string }>;
-};
-
-type EnrollmentRow = {
-  id: string;
-  user_id: string;
-  enrolled_at: string;
-};
-
-type CohortStudentEmailRow = {
-  user_id: string;
-  email: string | null;
-  full_name: string | null;
 };
 
 type LessonWithTestRow = {
@@ -108,35 +99,12 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     redirect("/dashboard/cohorts");
   }
 
-  const [{ data: enrollmentsData, error: enrollmentsError }, { data: emailRowsRaw, error: emailsError }] =
-    await Promise.all([
-      supabase
-        .from("enrollments")
-        .select("id, user_id, enrolled_at")
-        .eq("cohort_id", cohort.id)
-        .order("enrolled_at", { ascending: false }),
-      supabase.rpc("get_cohort_student_emails", { p_cohort_id: cohort.id }),
-    ]);
+  const [studentsRes, matrixRes] = await Promise.all([
+    getCohortStudents(cohort.id),
+    getMatrixGradebookData(cohort.id),
+  ]);
 
-  if (enrollmentsError) {
-    console.error("[CohortDetailsPage] enrollments", enrollmentsError.message);
-  }
-  if (emailsError) {
-    console.error("[CohortDetailsPage] emails", emailsError.message);
-  }
-
-  const enrollments = (enrollmentsData ?? []) as EnrollmentRow[];
-  const emailRows = (emailRowsRaw ?? []) as CohortStudentEmailRow[];
-  const studentMetaByUserId = new Map<
-    string,
-    { email: string; full_name: string | null }
-  >();
-  for (const row of emailRows) {
-    studentMetaByUserId.set(row.user_id, {
-      email: row.email ?? "—",
-      full_name: row.full_name,
-    });
-  }
+  const cohortStudents = studentsRes.success ? studentsRes.students : [];
 
   const { data: lessonsRaw, error: lessonsError } = await supabase
     .from("lessons")
@@ -203,7 +171,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     <>
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col">
-        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
+        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
           <div className="flex items-center">
             <Button asChild variant="outline">
               <Link href="/dashboard/cohorts">Назад к группам</Link>
@@ -249,6 +217,27 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
 
           <section className="rounded-xl border overflow-hidden">
             <div className="border-b px-6 py-4">
+              <h2 className="text-lg font-semibold tracking-tight">
+                Сводный журнал
+              </h2>
+              <p className="text-muted-foreground text-sm">
+                Ученики в строках, тесты и задания в колонках. Нажмите на ячейку,
+                чтобы открыть разбор.
+              </p>
+            </div>
+            <div className="p-4">
+              {matrixRes.success ? (
+                <MatrixGradebook data={matrixRes.data} />
+              ) : (
+                <p className="text-destructive text-sm" role="alert">
+                  {matrixRes.error}
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-xl border overflow-hidden">
+            <div className="border-b px-6 py-4">
               <h2 className="text-lg font-semibold tracking-tight">Ученики</h2>
               <p className="text-muted-foreground text-sm">
                 Откройте журнал по каждому ученику — таблица успеваемости по курсу группы.
@@ -265,44 +254,39 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {enrollments.length === 0 ? (
+                {cohortStudents.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-muted-foreground text-center">
                       В этой группе пока нет учеников.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  enrollments.map((row) => {
-                    const meta = studentMetaByUserId.get(row.user_id);
-                    const studentName = meta?.full_name?.trim() || row.user_id;
-                    const studentEmail = meta?.email ?? "—";
-                    return (
-                      <TableRow key={row.id}>
-                        <TableCell className="font-medium">{studentName}</TableCell>
-                        <TableCell className="text-muted-foreground">{studentEmail}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDateTime(row.enrolled_at)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                  cohortStudents.map((row) => (
+                    <TableRow key={row.enrollmentId}>
+                      <TableCell className="font-medium">{row.name}</TableCell>
+                      <TableCell className="text-muted-foreground">{row.email}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatDateTime(row.enrolledAt)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                        >
+                          Активен
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild size="sm" variant="secondary">
+                          <Link
+                            href={`/dashboard/cohorts/${cohort.id}/student/${row.userId}`}
                           >
-                            Активен
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button asChild size="sm" variant="secondary">
-                            <Link
-                              href={`/dashboard/cohorts/${cohort.id}/student/${row.user_id}`}
-                            >
-                              Журнал
-                            </Link>
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
+                            Журнал
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
                 )}
               </TableBody>
             </Table>

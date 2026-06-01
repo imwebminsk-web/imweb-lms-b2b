@@ -5,6 +5,7 @@ import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
 const PIN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const PIN_LENGTH = 6;
@@ -437,4 +438,97 @@ export async function bulkUnassignContentFromCohort(
   revalidatePath("/dashboard/cohorts");
   revalidatePath(`/dashboard/cohorts/${cid}`);
   return { success: true };
+}
+
+export type CohortStudentRow = {
+  enrollmentId: string;
+  userId: string;
+  name: string;
+  email: string;
+  enrolledAt: string;
+};
+
+/**
+ * Ученики группы с корректными именами (profiles + email fallback).
+ * Доступно владельцу курса группы.
+ */
+export async function getCohortStudents(
+  cohortId: string,
+): Promise<
+  | { success: true; students: CohortStudentRow[] }
+  | { success: false; error: string }
+> {
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { success: false, error: "Не указана группа." };
+  }
+
+  const ownership = await validateTeacherOwnsCohort(cid);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const supabase = await createClient();
+
+  const [{ data: enrollmentsData, error: enrollmentsError }, { data: emailRowsRaw, error: emailsError }] =
+    await Promise.all([
+      supabase
+        .from("enrollments")
+        .select("id, user_id, enrolled_at")
+        .eq("cohort_id", cid)
+        .order("enrolled_at", { ascending: false }),
+      supabase.rpc("get_cohort_student_emails", { p_cohort_id: cid }),
+    ]);
+
+  if (enrollmentsError) {
+    return { success: false, error: enrollmentsError.message };
+  }
+  if (emailsError) {
+    console.error("[getCohortStudents] emails rpc", emailsError.message);
+  }
+
+  const enrollments = enrollmentsData ?? [];
+  const userIds = enrollments.map((e) => e.user_id);
+
+  const profileNameByUserId = new Map<string, string | null>();
+  if (userIds.length > 0) {
+    const { data: profileRows, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", userIds);
+
+    if (profilesError) {
+      console.error("[getCohortStudents] profiles", profilesError.message);
+    } else {
+      for (const p of profileRows ?? []) {
+        profileNameByUserId.set(p.id, p.full_name);
+      }
+    }
+  }
+
+  type EmailRow = { user_id: string; email: string | null; full_name: string | null };
+  const emailByUserId = new Map<string, EmailRow>();
+  for (const row of (emailRowsRaw ?? []) as EmailRow[]) {
+    emailByUserId.set(row.user_id, row);
+  }
+
+  const students: CohortStudentRow[] = enrollments.map((row) => {
+    const emailRow = emailByUserId.get(row.user_id);
+    const email = emailRow?.email?.trim() || "—";
+    const fullName =
+      profileNameByUserId.get(row.user_id) ?? emailRow?.full_name ?? null;
+    return {
+      enrollmentId: row.id,
+      userId: row.user_id,
+      name: resolveStudentDisplayName(
+        fullName,
+        email === "—" ? null : email,
+        row.user_id,
+      ),
+      email,
+      enrolledAt: row.enrolled_at,
+    };
+  });
+
+  return { success: true, students };
 }

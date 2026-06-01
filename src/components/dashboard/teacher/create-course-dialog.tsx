@@ -57,7 +57,7 @@ function CreateCourseDialogInner({
           </DialogDescription>
         </DialogHeader>
         <Form action={formAction} className="gap-4">
-          <div className="grid gap-2">
+          <div className="space-y-2">
             <Label htmlFor="course-title">Название</Label>
             <Input
               id="course-title"
@@ -68,7 +68,21 @@ function CreateCourseDialogInner({
               disabled={isPending}
             />
           </div>
-          <div className="grid gap-2">
+          <div className="space-y-2">
+            <Label htmlFor="slug">URL курса (slug) — опционально</Label>
+            <Input
+              id="slug"
+              name="slug"
+              maxLength={120}
+              placeholder="english-for-beginners"
+              disabled={isPending}
+            />
+            <p className="text-muted-foreground text-xs">
+              Оставьте пустым для автогенерации из названия. Только латинские
+              буквы, цифры и дефис.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="course-description">Описание</Label>
             <Textarea
               id="course-description"

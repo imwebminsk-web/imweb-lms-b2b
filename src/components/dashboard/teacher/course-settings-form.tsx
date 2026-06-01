@@ -230,6 +230,44 @@ export function CourseSettingsForm({
         value={JSON.stringify(promotionalImages)}
       />
 
+      <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold">Название и адрес курса</h3>
+          <p className="text-muted-foreground text-sm">
+            Заголовок курса и URL для страниц в личном кабинете и каталоге.
+          </p>
+        </div>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="course-edit-title">Название</Label>
+            <Input
+              id="course-edit-title"
+              name="title"
+              required
+              maxLength={200}
+              defaultValue={course.title}
+              disabled={isPending}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="slug">URL курса (slug)</Label>
+            <Input
+              id="slug"
+              name="slug"
+              required
+              maxLength={120}
+              defaultValue={course.slug}
+              disabled={isPending}
+              placeholder="english-for-beginners"
+            />
+            <p className="text-xs text-destructive">
+              Внимание: изменение URL сделает старые ссылки на курс
+              недействительными.
+            </p>
+          </div>
+        </div>
+      </div>
+
       <Accordion
         type="multiple"
         defaultValue={["basic", "media", "landing", "audience", "catalog", "schedule"]}
@@ -248,17 +286,6 @@ export function CourseSettingsForm({
                 </p>
               </div>
               <div className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="course-edit-title">Название</Label>
-                  <Input
-                    id="course-edit-title"
-                    name="title"
-                    required
-                    maxLength={200}
-                    defaultValue={course.title}
-                    disabled={isPending}
-                  />
-                </div>
                 <div className="grid gap-2">
                   <Label htmlFor="course-edit-category">Категория</Label>
                   <Input

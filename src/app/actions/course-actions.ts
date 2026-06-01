@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -127,6 +128,19 @@ function baseSlugFromTitle(title: string): string {
   return replaced || "course";
 }
 
+/** Нормализация slug из ручного ввода: lowercase, только a-z, 0-9 и дефисы. */
+function sanitizeSlug(raw: string): string {
+  const normalized = raw
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "");
+  return normalized
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export async function createCourse(
   _prev: CreateCourseState,
   formData: FormData,
@@ -134,6 +148,7 @@ export async function createCourse(
   const title = String(formData.get("title") ?? "").trim();
   const descriptionRaw = String(formData.get("description") ?? "").trim();
   const priceRaw = String(formData.get("price") ?? "").trim();
+  const rawSlug = String(formData.get("slug") ?? "").trim();
 
   if (!title) {
     return { error: "Укажите название курса." };
@@ -169,7 +184,10 @@ export async function createCourse(
     };
   }
 
-  const base = baseSlugFromTitle(title);
+  const base =
+    rawSlug.length > 0
+      ? sanitizeSlug(rawSlug) || baseSlugFromTitle(title)
+      : baseSlugFromTitle(title);
   let slug = base;
   let suffix = 0;
   const maxAttempts = 50;
@@ -229,6 +247,7 @@ export async function updateCourse(
 ): Promise<UpdateCourseState> {
   const id = String(formData.get("id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
+  const rawSlug = String(formData.get("slug") ?? "").trim();
   const categoryRaw = String(formData.get("category") ?? "").trim();
   const descriptionRaw = String(formData.get("description") ?? "").trim();
   const detailedDescriptionRaw = String(
@@ -261,6 +280,11 @@ export async function updateCourse(
 
   if (!title) {
     return { error: "Укажите название курса." };
+  }
+
+  const newSlug = sanitizeSlug(rawSlug);
+  if (!newSlug) {
+    return { error: "URL курса не может быть пустым." };
   }
 
   const priceNum = Number(priceRaw);
@@ -377,6 +401,20 @@ export async function updateCourse(
     return { error: "Нет прав на изменение этого курса." };
   }
 
+  const slugChanged = newSlug !== existing.slug;
+
+  if (slugChanged) {
+    const { data: taken } = await supabase
+      .from("courses")
+      .select("id")
+      .eq("slug", newSlug)
+      .maybeSingle();
+
+    if (taken) {
+      return { error: "Этот URL уже занят другим курсом." };
+    }
+  }
+
   const description = descriptionRaw.length > 0 ? descriptionRaw : null;
   const category = categoryRaw.length > 0 ? categoryRaw : null;
   const detailed_description =
@@ -414,6 +452,7 @@ export async function updateCourse(
     .from("courses")
     .update({
       title,
+      slug: newSlug,
       category,
       description,
       detailed_description,
@@ -449,6 +488,13 @@ export async function updateCourse(
   revalidatePath("/dashboard");
   revalidatePath("/");
   revalidatePath(`/courses/${encodeURIComponent(existing.slug)}`);
+
+  if (slugChanged) {
+    revalidatePath(`/dashboard/courses/${newSlug}`);
+    revalidatePath(`/courses/${encodeURIComponent(newSlug)}`);
+    redirect(`/dashboard/courses/${newSlug}`);
+  }
+
   return { success: true };
 }
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import { getStudentProgressForTeacher } from "@/app/actions/student-dashboard-actions";
 import { TeacherStudentProgressTable } from "@/components/dashboard/teacher/cohorts/teacher-student-progress-table";
 import { Button } from "@/components/ui/button";
@@ -72,11 +73,11 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
     (r) => r.user_id === studentIdTrim,
   );
 
-  const studentName =
-    studentProfile?.full_name?.trim() ||
-    emailRow?.full_name?.trim() ||
-    emailRow?.email?.trim() ||
-    studentIdTrim;
+  const studentName = resolveStudentDisplayName(
+    studentProfile?.full_name ?? emailRow?.full_name,
+    emailRow?.email,
+    studentIdTrim,
+  );
 
   const displayName =
     profile.full_name?.trim() ||
