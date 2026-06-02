@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
+import { getPendingReviewCounts } from "@/app/actions/grading-actions";
 import {
   CohortsList,
   type CohortListRow,
@@ -69,6 +71,13 @@ export default async function DashboardCohortsPage() {
     cohortRows = (cohortsData ?? []) as CohortListRow[];
   }
 
+  const [unreadRes, pendingRes] = await Promise.all([
+    getUnreadCounts(),
+    getPendingReviewCounts(),
+  ]);
+  const unreadMap = unreadRes.success ? unreadRes.counts : {};
+  const pendingMap = pendingRes.success ? pendingRes.counts : {};
+
   const displayName =
     profile.full_name?.trim() ||
     user.email?.split("@")[0] ||
@@ -96,7 +105,11 @@ export default async function DashboardCohortsPage() {
             </p>
           ) : null}
 
-          <CohortsList cohorts={cohortRows} />
+          <CohortsList
+            cohorts={cohortRows}
+            unreadMap={unreadMap}
+            pendingMap={pendingMap}
+          />
         </main>
       </div>
     </>

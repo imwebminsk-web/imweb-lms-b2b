@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
+import { getPendingReviewCounts } from "@/app/actions/grading-actions";
 import { getCohortStudents } from "@/app/actions/cohort-actions";
 import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
+import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
+import { TeacherCohortTabs } from "@/components/dashboard/cohorts/teacher-cohort-tabs";
 import { CohortAssignmentManager } from "@/components/dashboard/teacher/cohorts/cohort-assignment-manager";
 import { CohortStatusToggle } from "@/components/dashboard/teacher/cohorts/cohort-status-toggle";
 import { MatrixGradebook } from "@/components/dashboard/teacher/cohorts/matrix-gradebook";
-import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,12 +103,18 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     redirect("/dashboard/cohorts");
   }
 
-  const [studentsRes, matrixRes] = await Promise.all([
+  const [studentsRes, matrixRes, unreadRes, pendingRes] = await Promise.all([
     getCohortStudents(cohort.id),
     getMatrixGradebookData(cohort.id),
+    getUnreadCounts(),
+    getPendingReviewCounts(),
   ]);
 
   const cohortStudents = studentsRes.success ? studentsRes.students : [];
+  const unreadMap = unreadRes.success ? unreadRes.counts : {};
+  const unreadCount = unreadMap[cohort.id] ?? 0;
+  const pendingMap = pendingRes.success ? pendingRes.counts : {};
+  const pendingReviewCount = pendingMap[cohort.id] ?? 0;
 
   const { data: lessonsRaw, error: lessonsError } = await supabase
     .from("lessons")
@@ -168,6 +177,138 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     user.email?.split("@")[0] ||
     "Пользователь";
 
+  const managementNode = (
+    <>
+      <section className="rounded-xl border p-6 space-y-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{cohort.name}</h1>
+            <p className="text-muted-foreground text-sm">
+              Курс: {courseRel.title}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className="font-mono text-sm tracking-widest">
+                PIN: {cohort.pin_code}
+              </Badge>
+              {cohort.is_active ? (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                >
+                  Набор открыт
+                </Badge>
+              ) : (
+                <Badge variant="secondary">Набор приостановлен</Badge>
+              )}
+            </div>
+          </div>
+
+          <CohortStatusToggle cohortId={cohort.id} isActive={cohort.is_active} />
+        </div>
+      </section>
+
+      <section className="rounded-xl border p-6 space-y-4">
+        <h2 className="text-xl font-semibold tracking-tight">Управление контентом</h2>
+        <CohortAssignmentManager
+          cohortId={cohort.id}
+          modules={lessonsForManager}
+          assignedLessonIds={[...assignedLessonIds]}
+        />
+      </section>
+    </>
+  );
+
+  const journalNode = (
+    <>
+      <section className="rounded-xl border overflow-hidden">
+        <div className="border-b px-6 py-4">
+          <h2 className="text-lg font-semibold tracking-tight">
+            Сводный журнал
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            Ученики в строках, тесты и задания в колонках. Нажмите на ячейку,
+            чтобы открыть разбор.
+          </p>
+        </div>
+        <div className="p-4">
+          {matrixRes.success ? (
+            <MatrixGradebook data={matrixRes.data} />
+          ) : (
+            <p className="text-destructive text-sm" role="alert">
+              {matrixRes.error}
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-xl border overflow-hidden">
+        <div className="border-b px-6 py-4">
+          <h2 className="text-lg font-semibold tracking-tight">Ученики</h2>
+          <p className="text-muted-foreground text-sm">
+            Откройте журнал по каждому ученику — таблица успеваемости по курсу группы.
+          </p>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Имя</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Дата записи</TableHead>
+              <TableHead>Статус</TableHead>
+              <TableHead className="w-[140px] text-right">Журнал</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {cohortStudents.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-muted-foreground text-center">
+                  В этой группе пока нет учеников.
+                </TableCell>
+              </TableRow>
+            ) : (
+              cohortStudents.map((row) => (
+                <TableRow key={row.enrollmentId}>
+                  <TableCell className="font-medium">{row.name}</TableCell>
+                  <TableCell className="text-muted-foreground">{row.email}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateTime(row.enrolledAt)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+                    >
+                      Активен
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild size="sm" variant="secondary">
+                      <Link
+                        href={`/dashboard/cohorts/${cohort.id}/student/${row.userId}`}
+                      >
+                        Журнал
+                      </Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </section>
+    </>
+  );
+
+  const chatNode = (
+    <CohortChat
+      key={cohort.id}
+      cohortId={cohort.id}
+      currentUserId={user.id}
+      teacherId={courseRel.teacher_id}
+      description="Общение с учениками группы в реальном времени."
+    />
+  );
+
   return (
     <>
       <SiteHeader fullName={displayName} />
@@ -179,124 +320,12 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
             </Button>
           </div>
 
-          <section className="rounded-xl border p-6 space-y-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-2">
-                <h1 className="text-2xl font-semibold tracking-tight">{cohort.name}</h1>
-                <p className="text-muted-foreground text-sm">
-                  Курс: {courseRel.title}
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary" className="font-mono text-sm tracking-widest">
-                    PIN: {cohort.pin_code}
-                  </Badge>
-                  {cohort.is_active ? (
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-                    >
-                      Набор открыт
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary">Набор приостановлен</Badge>
-                  )}
-                </div>
-              </div>
-
-              <CohortStatusToggle cohortId={cohort.id} isActive={cohort.is_active} />
-            </div>
-          </section>
-
-          <section className="rounded-xl border p-6 space-y-4">
-            <h2 className="text-xl font-semibold tracking-tight">Управление контентом</h2>
-            <CohortAssignmentManager
-              cohortId={cohort.id}
-              modules={lessonsForManager}
-              assignedLessonIds={[...assignedLessonIds]}
-            />
-          </section>
-
-          <section className="rounded-xl border overflow-hidden">
-            <div className="border-b px-6 py-4">
-              <h2 className="text-lg font-semibold tracking-tight">
-                Сводный журнал
-              </h2>
-              <p className="text-muted-foreground text-sm">
-                Ученики в строках, тесты и задания в колонках. Нажмите на ячейку,
-                чтобы открыть разбор.
-              </p>
-            </div>
-            <div className="p-4">
-              {matrixRes.success ? (
-                <MatrixGradebook data={matrixRes.data} />
-              ) : (
-                <p className="text-destructive text-sm" role="alert">
-                  {matrixRes.error}
-                </p>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-xl border overflow-hidden">
-            <div className="border-b px-6 py-4">
-              <h2 className="text-lg font-semibold tracking-tight">Ученики</h2>
-              <p className="text-muted-foreground text-sm">
-                Откройте журнал по каждому ученику — таблица успеваемости по курсу группы.
-              </p>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Имя</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Дата записи</TableHead>
-                  <TableHead>Статус</TableHead>
-                  <TableHead className="w-[140px] text-right">Журнал</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {cohortStudents.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-muted-foreground text-center">
-                      В этой группе пока нет учеников.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  cohortStudents.map((row) => (
-                    <TableRow key={row.enrollmentId}>
-                      <TableCell className="font-medium">{row.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{row.email}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatDateTime(row.enrolledAt)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-                        >
-                          Активен
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button asChild size="sm" variant="secondary">
-                          <Link
-                            href={`/dashboard/cohorts/${cohort.id}/student/${row.userId}`}
-                          >
-                            Журнал
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </section>
-
-          <CohortChat
-            cohortId={cohort.id}
-            currentUserId={user.id}
-            teacherId={courseRel.teacher_id}
+          <TeacherCohortTabs
+            managementNode={managementNode}
+            journalNode={journalNode}
+            chatNode={chatNode}
+            unreadCount={unreadCount}
+            pendingReviewCount={pendingReviewCount}
           />
         </main>
       </div>

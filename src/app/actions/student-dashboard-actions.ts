@@ -210,6 +210,42 @@ function fullAssignmentInstructions(content: Json): string {
 
 const cohortIdSchema = z.string().uuid("Некорректный ID группы");
 
+type RpcStudentProgressRow = {
+  id: string;
+  type: string;
+  title: string;
+  status: string;
+  grade10: number | null;
+  course_id: string;
+  course_slug: string;
+  course_title: string;
+  lesson_id: string;
+  test_id: string | null;
+  lesson_block_id: string | null;
+  assignment_submission_id: string | null;
+  has_completed_test_attempt: boolean;
+};
+
+function mapRpcStudentProgressRows(
+  rows: RpcStudentProgressRow[],
+): StudentProgressItem[] {
+  return rows.map((row) => ({
+    id: row.id,
+    type: row.type as StudentProgressItem["type"],
+    title: row.title,
+    status: row.status as StudentProgressStatus,
+    grade10: row.grade10,
+    courseId: row.course_id,
+    courseSlug: row.course_slug,
+    courseTitle: row.course_title,
+    lessonId: row.lesson_id,
+    testId: row.test_id,
+    lessonBlockId: row.lesson_block_id,
+    assignmentSubmissionId: row.assignment_submission_id,
+    hasCompletedTestAttempt: row.has_completed_test_attempt,
+  }));
+}
+
 async function fetchStudentProgressItemsForUserId(
   supabase: Awaited<ReturnType<typeof createClient>>,
   studentUserId: string,
@@ -558,7 +594,21 @@ export async function getStudentProgress(
     return { success: false, error: "Нет доступа к чужому прогрессу" };
   }
 
-  return fetchStudentProgressItemsForUserId(supabase, parsed.data);
+  if (profile.role === "admin" && user.id !== parsed.data) {
+    return fetchStudentProgressItemsForUserId(supabase, parsed.data);
+  }
+
+  const { data: rows, error } = await supabase.rpc("get_my_student_progress");
+
+  if (error) {
+    console.error("[getStudentProgress]", error.message);
+    return { success: false, error: "Не удалось загрузить прогресс." };
+  }
+
+  return {
+    success: true,
+    items: mapRpcStudentProgressRows((rows ?? []) as RpcStudentProgressRow[]),
+  };
 }
 
 export type StudentProgressForTeacherResult =

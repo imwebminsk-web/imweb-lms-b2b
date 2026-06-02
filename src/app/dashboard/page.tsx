@@ -5,6 +5,7 @@ import {
   getStudentDashboardCourses,
   getStudentProgress,
 } from "@/app/actions/student-dashboard-actions";
+import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { DataTable } from "@/components/data-table";
 import { ActivityFeedWidget } from "@/components/dashboard/teacher/activity-feed-widget";
 import { PendingReviewsWidget } from "@/components/dashboard/teacher/pending-reviews-widget";
@@ -12,6 +13,7 @@ import { JoinCohortForm } from "@/components/dashboard/student/join-cohort-form"
 import { SectionCards } from "@/components/section-cards";
 import { SiteHeader } from "@/components/site-header";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -51,9 +53,10 @@ export default async function Page() {
     "Пользователь";
 
   if (profile.role === "student") {
-    const [progressRes, coursesRes] = await Promise.all([
+    const [progressRes, coursesRes, unreadRes] = await Promise.all([
       getStudentProgress(user.id),
       getStudentDashboardCourses(user.id),
+      getUnreadCounts(),
     ]);
 
     if (!progressRes.success) {
@@ -61,6 +64,22 @@ export default async function Page() {
     }
     if (!coursesRes.success) {
       throw new Error(coursesRes.error);
+    }
+
+    const unreadMap = unreadRes.success ? unreadRes.counts : {};
+
+    const { data: enrollRows, error: enrollError } = await supabase
+      .from("enrollments")
+      .select("course_id, cohort_id")
+      .eq("user_id", user.id);
+
+    if (enrollError) {
+      console.error("[StudentDashboard] enrollments", enrollError.message);
+    }
+
+    const cohortIdByCourseId = new Map<string, string | null>();
+    for (const row of enrollRows ?? []) {
+      cohortIdByCourseId.set(row.course_id, row.cohort_id);
     }
 
     const items = progressRes.items;
@@ -139,11 +158,22 @@ export default async function Page() {
                             )
                           : 0;
                       const learnHref = `/learn/${encodeURIComponent(course.slug)}`;
+                      const cohortId = cohortIdByCourseId.get(course.id);
+                      const unreadCount =
+                        cohortId != null ? (unreadMap[cohortId] ?? 0) : 0;
                       return (
                         <Card
                           key={course.id}
-                          className="flex flex-col overflow-hidden border-border/80 shadow-sm transition-shadow hover:shadow-md"
+                          className="relative flex flex-col overflow-hidden border-border/80 shadow-sm transition-shadow hover:shadow-md"
                         >
+                          {unreadCount > 0 ? (
+                            <Badge
+                              variant="destructive"
+                              className="absolute top-2 right-2 min-w-5 justify-center px-1.5 tabular-nums"
+                            >
+                              {unreadCount}
+                            </Badge>
+                          ) : null}
                           <CardHeader className="pb-2">
                             <CardTitle className="line-clamp-2 text-lg leading-snug">
                               {course.title}

@@ -1,7 +1,10 @@
 import type { CSSProperties, ReactNode } from "react";
 import { redirect } from "next/navigation";
 
+import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
+import { getPendingReviewCounts } from "@/app/actions/grading-actions";
 import { AppSidebar } from "@/components/app-sidebar";
+import { GlobalChatListener } from "@/components/providers/global-chat-listener";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { createClient } from "@/lib/supabase/server";
 
@@ -34,8 +37,51 @@ export default async function DashboardLayout({
     user.email?.split("@")[0] ||
     "Пользователь";
 
+  let navBadges: Record<string, number> = {};
+  let navPendingBadges: Record<string, number> = {};
+
+  if (profile.role === "teacher") {
+    const [unreadRes, pendingRes] = await Promise.all([
+      getUnreadCounts(),
+      getPendingReviewCounts(),
+    ]);
+
+    if (unreadRes.success) {
+      const totalUnread = Object.values(unreadRes.counts).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      if (totalUnread > 0) {
+        navBadges = { "/dashboard/cohorts": totalUnread };
+      }
+    }
+
+    if (pendingRes.success) {
+      const totalPending = Object.values(pendingRes.counts).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      if (totalPending > 0) {
+        navPendingBadges = { "/dashboard/cohorts": totalPending };
+      }
+    }
+  } else if (profile.role === "student") {
+    const unreadRes = await getUnreadCounts();
+    if (unreadRes.success) {
+      const totalUnread = Object.values(unreadRes.counts).reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      if (totalUnread > 0) {
+        navBadges = { "/dashboard": totalUnread };
+      }
+    }
+  }
+
   return (
-    <SidebarProvider
+    <>
+      <GlobalChatListener />
+      <SidebarProvider
       style={
         {
           "--sidebar-width": "calc(var(--spacing) * 72)",
@@ -46,6 +92,8 @@ export default async function DashboardLayout({
       <AppSidebar
         variant="inset"
         role={profile.role}
+        navBadges={navBadges}
+        navPendingBadges={navPendingBadges}
         user={{
           name: displayName,
           email: user.email ?? "",
@@ -54,5 +102,6 @@ export default async function DashboardLayout({
       />
       <SidebarInset>{children}</SidebarInset>
     </SidebarProvider>
+    </>
   );
 }

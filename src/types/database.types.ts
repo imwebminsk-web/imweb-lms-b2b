@@ -196,6 +196,32 @@ export type Database = {
           },
         ]
       }
+      chat_read_receipts: {
+        Row: {
+          cohort_id: string
+          last_read_at: string
+          user_id: string
+        }
+        Insert: {
+          cohort_id: string
+          last_read_at?: string
+          user_id: string
+        }
+        Update: {
+          cohort_id?: string
+          last_read_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_read_receipts_cohort_id_fkey"
+            columns: ["cohort_id"]
+            isOneToOne: false
+            referencedRelation: "cohorts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cohort_messages: {
         Row: {
           cohort_id: string
@@ -695,6 +721,31 @@ export type Database = {
           email: string | null
           full_name: string | null
           user_id: string
+        }[]
+      }
+      get_my_pending_review_counts: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          cohort_id: string
+          pending_count: number
+        }[]
+      }
+      get_my_student_progress: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          type: string
+          title: string
+          status: string
+          grade10: number | null
+          course_id: string
+          course_slug: string
+          course_title: string
+          lesson_id: string
+          test_id: string | null
+          lesson_block_id: string | null
+          assignment_submission_id: string | null
+          has_completed_test_attempt: boolean
         }[]
       }
       get_users_emails: {

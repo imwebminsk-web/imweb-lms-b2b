@@ -4,11 +4,18 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import type { StudentProgressItem } from "@/app/actions/student-dashboard-actions";
+import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { ProgressStatusBadge } from "@/components/learn/progress-status-badge";
 import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
 import { TestResultSheet } from "@/components/dashboard/teacher/TestResultSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -30,7 +37,7 @@ import {
   type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle, MessageCircle } from "lucide-react";
 
 export type CourseHubClientProps = {
   course: LearnCourseCurriculum;
@@ -39,6 +46,9 @@ export type CourseHubClientProps = {
   courseProgress: StudentProgressItem[];
   userId: string;
   userDisplayName: string;
+  cohortId: string | null;
+  teacherId: string;
+  unreadCount?: number;
 };
 
 function typeBadge(type: StudentProgressItem["type"]) {
@@ -80,6 +90,9 @@ export function CourseHubClient({
   courseProgress,
   userId,
   userDisplayName,
+  cohortId,
+  teacherId,
+  unreadCount = 0,
 }: CourseHubClientProps) {
   const [selectedAssignment, setSelectedAssignment] = useState<{
     lessonBlockId: string;
@@ -101,6 +114,8 @@ export function CourseHubClient({
     () => getContinueLessonHref(modules, completedSet, course.slug),
     [modules, completedSet, course.slug],
   );
+
+  const [activeTab, setActiveTab] = useState("syllabus");
 
   return (
     <>
@@ -135,10 +150,21 @@ export function CourseHubClient({
           )}
         </header>
 
-        <Tabs defaultValue="syllabus" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList variant="line" className="mb-4 w-full justify-start">
             <TabsTrigger value="syllabus">Программа</TabsTrigger>
             <TabsTrigger value="progress">Успеваемость</TabsTrigger>
+            <TabsTrigger value="chat" className="inline-flex items-center gap-2">
+              <span>Чат группы</span>
+              {unreadCount > 0 ? (
+                <Badge
+                  variant="destructive"
+                  className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] tabular-nums"
+                >
+                  {unreadCount}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="syllabus" className="mt-0 space-y-8">
@@ -295,6 +321,38 @@ export function CourseHubClient({
                 </TableBody>
               </Table>
             </div>
+          </TabsContent>
+
+          <TabsContent
+            value="chat"
+            forceMount
+            className={cn("mt-0", activeTab !== "chat" && "hidden")}
+          >
+            {cohortId && teacherId ? (
+              <CohortChat
+                key={cohortId}
+                cohortId={cohortId}
+                currentUserId={userId}
+                teacherId={teacherId}
+              />
+            ) : (
+              <Card className="border-dashed">
+                <CardHeader className="items-center text-center">
+                  <div className="bg-muted mb-2 flex size-12 items-center justify-center rounded-full">
+                    <MessageCircle
+                      className="text-muted-foreground size-6"
+                      aria-hidden
+                    />
+                  </div>
+                  <CardTitle className="text-lg">Чат недоступен</CardTitle>
+                  <CardDescription className="max-w-md text-balance">
+                    Чат доступен только при обучении в группе. Введите PIN
+                    группы на главной странице «Моё обучение», чтобы
+                    присоединиться к когорте.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>

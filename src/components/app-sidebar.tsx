@@ -29,10 +29,14 @@ export type AppSidebarUser = {
 export function AppSidebar({
   user,
   role,
+  navBadges = {},
+  navPendingBadges = {},
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   user: AppSidebarUser
   role: ProfileRole
+  navBadges?: Record<string, number>
+  navPendingBadges?: Record<string, number>
 }) {
   const navMain = getSidebarNavForRole(role)
 
@@ -54,7 +58,11 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navMain} />
+        <NavMain
+          items={navMain}
+          navBadges={navBadges}
+          navPendingBadges={navPendingBadges}
+        />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />

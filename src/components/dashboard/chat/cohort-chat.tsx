@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { SendHorizonal } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
@@ -9,7 +10,7 @@ import {
   sendChatMessage,
   type CohortChatMessage,
 } from "@/app/actions/chat-actions";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { markChatAsRead } from "@/app/actions/chat-receipt-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,58 +23,117 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
-import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
-import type { Database } from "@/types/database.types";
 
 type CohortChatProps = {
   cohortId: string;
   currentUserId: string;
   teacherId: string;
+  title?: string;
+  description?: string;
 };
 
-type RealtimeMessageRow = Database["public"]["Tables"]["cohort_messages"]["Row"];
+const DEFAULT_CHAT_TITLE = "Чат группы";
+const DEFAULT_CHAT_DESCRIPTION =
+  "Обсуждение курса с преподавателем и одногруппниками";
 
-function formatMessageTime(iso: string): string {
-  const date = new Date(iso);
+function formatMessageDate(dateString: string): string {
+  const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) {
     return "";
   }
-  return new Intl.DateTimeFormat("ru-RU", {
+
+  const now = new Date();
+  const timePart = new Intl.DateTimeFormat("ru-RU", {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-}
 
-function initialsFromName(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
-    return "?";
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const startOfMessageDay = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+  const diffDays = Math.round(
+    (startOfToday.getTime() - startOfMessageDay.getTime()) /
+      (24 * 60 * 60 * 1000),
+  );
+
+  if (diffDays === 0) {
+    return `Сегодня, ${timePart}`;
   }
-  if (parts.length === 1) {
-    return parts[0]!.slice(0, 2).toUpperCase();
+  if (diffDays === 1) {
+    return `Вчера, ${timePart}`;
   }
-  return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase();
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = String(date.getFullYear()).slice(-2);
+
+  return `${day}.${month}.${year}, ${timePart}`;
 }
 
 export function CohortChat({
   cohortId,
   currentUserId,
   teacherId,
+  title = DEFAULT_CHAT_TITLE,
+  description = DEFAULT_CHAT_DESCRIPTION,
 }: CohortChatProps) {
+  const router = useRouter();
   const [messages, setMessages] = useState<CohortChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const messageIdsRef = useRef<Set<string>>(new Set());
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const appendMessage = useCallback((message: CohortChatMessage) => {
-    if (messageIdsRef.current.has(message.id)) {
-      return;
+  const loadMessages = useCallback(
+    async (withLoading = false) => {
+      if (withLoading) {
+        setIsLoading(true);
+      }
+
+      const result = await getCohortMessages(cohortId);
+      if (!result.success) {
+        toast.error(result.error);
+        if (withLoading) {
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      setMessages(result.messages);
+      if (withLoading) {
+        setIsLoading(false);
+      }
+    },
+    [cohortId],
+  );
+
+  const markReadAndRefresh = useCallback(async () => {
+    const result = await markChatAsRead(cohortId);
+    if (result.success) {
+      router.refresh();
     }
-    messageIdsRef.current.add(message.id);
-    setMessages((prev) => [...prev, message]);
-  }, []);
+  }, [cohortId, router]);
+
+  const loadMessagesRef = useRef(loadMessages);
+  loadMessagesRef.current = loadMessages;
+
+  const scheduleReload = useCallback(() => {
+    if (reloadTimerRef.current) {
+      clearTimeout(reloadTimerRef.current);
+    }
+    reloadTimerRef.current = setTimeout(() => {
+      void loadMessagesRef.current(false);
+      void markReadAndRefresh();
+    }, 100);
+  }, [markReadAndRefresh]);
 
   const scrollToBottom = useCallback(() => {
     const node = scrollRef.current;
@@ -88,54 +148,18 @@ export function CohortChat({
   }, [messages, scrollToBottom]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadInitialMessages() {
-      setIsLoading(true);
-      const result = await getCohortMessages(cohortId);
-      if (cancelled) {
-        return;
-      }
-      if (!result.success) {
-        toast.error(result.error);
-        setIsLoading(false);
-        return;
-      }
-      messageIdsRef.current = new Set(result.messages.map((m) => m.id));
-      setMessages(result.messages);
-      setIsLoading(false);
-    }
-
-    void loadInitialMessages();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [cohortId]);
+    void (async () => {
+      await loadMessages(true);
+      await markReadAndRefresh();
+    })();
+  }, [loadMessages, markReadAndRefresh]);
 
   useEffect(() => {
     const supabase = createClient();
-
-    async function enrichRealtimeRow(row: RealtimeMessageRow): Promise<CohortChatMessage> {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name, avatar_url")
-        .eq("id", row.user_id)
-        .maybeSingle();
-
-      return {
-        id: row.id,
-        cohortId: row.cohort_id,
-        userId: row.user_id,
-        content: row.content,
-        createdAt: row.created_at,
-        authorName: resolveStudentDisplayName(profile?.full_name, null, row.user_id),
-        authorAvatarUrl: profile?.avatar_url ?? null,
-      };
-    }
+    const channelName = `cohort-messages:${cohortId}`;
 
     const channel = supabase
-      .channel(`cohort-chat:${cohortId}`)
+      .channel(channelName)
       .on(
         "postgres_changes",
         {
@@ -145,18 +169,22 @@ export function CohortChat({
           filter: `cohort_id=eq.${cohortId}`,
         },
         (payload) => {
-          const row = payload.new as RealtimeMessageRow;
-          void enrichRealtimeRow(row).then((message) => {
-            appendMessage(message);
-          });
+          console.log("Realtime Payload received:", payload);
+          scheduleReload();
         },
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log("Realtime Status:", status, err);
+      });
 
     return () => {
+      if (reloadTimerRef.current) {
+        clearTimeout(reloadTimerRef.current);
+        reloadTimerRef.current = null;
+      }
       void supabase.removeChannel(channel);
     };
-  }, [appendMessage, cohortId]);
+  }, [cohortId, scheduleReload]);
 
   function handleSend(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -171,18 +199,16 @@ export function CohortChat({
         toast.error(result.error);
         return;
       }
-      appendMessage(result.message);
       setDraft("");
+      scheduleReload();
     });
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Чат группы</CardTitle>
-        <CardDescription>
-          Общение с учениками группы в реальном времени.
-        </CardDescription>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div
@@ -205,61 +231,43 @@ export function CohortChat({
                 <div
                   key={message.id}
                   className={cn(
-                    "flex gap-2",
-                    isOwn ? "flex-row-reverse" : "flex-row",
+                    "flex max-w-[85%] flex-col gap-1",
+                    isOwn ? "ml-auto items-end" : "mr-auto items-start",
                   )}
                 >
-                  <Avatar size="sm">
-                    {message.authorAvatarUrl ? (
-                      <AvatarImage
-                        src={message.authorAvatarUrl}
-                        alt={message.authorName}
-                      />
-                    ) : null}
-                    <AvatarFallback>
-                      {initialsFromName(message.authorName)}
-                    </AvatarFallback>
-                  </Avatar>
                   <div
                     className={cn(
-                      "flex max-w-[75%] min-w-0 flex-col gap-1",
-                      isOwn ? "items-end" : "items-start",
+                      "text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs",
+                      isOwn ? "justify-end" : "justify-start",
                     )}
                   >
-                    <div
-                      className={cn(
-                        "text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs",
-                        isOwn ? "justify-end" : "justify-start",
-                      )}
-                    >
-                      <span className="font-medium break-words text-foreground">
-                        {message.authorName}
-                      </span>
-                      {isTeacherMessage ? (
-                        <Badge
-                          variant="secondary"
-                          className="border-primary/20 bg-primary/10 text-primary shrink-0 text-[10px] uppercase tracking-wide"
-                        >
-                          Преподаватель
-                        </Badge>
-                      ) : null}
-                      <time dateTime={message.createdAt} className="shrink-0">
-                        {formatMessageTime(message.createdAt)}
-                      </time>
-                    </div>
-                    <div
-                      className={cn(
-                        "rounded-2xl px-3 py-2 text-sm leading-relaxed wrap-break-word",
-                        isTeacherMessage
-                          ? "border border-primary/20 bg-primary/10 text-foreground rounded-bl-md"
-                          : isOwn
-                            ? "bg-primary text-primary-foreground rounded-br-md"
-                            : "bg-card border rounded-bl-md",
-                        isOwn && isTeacherMessage && "rounded-br-md rounded-bl-2xl",
-                      )}
-                    >
-                      {message.content}
-                    </div>
+                    <span className="font-medium break-words text-foreground">
+                      {message.authorName}
+                    </span>
+                    {isTeacherMessage ? (
+                      <Badge
+                        variant="secondary"
+                        className="border-primary/20 bg-primary/10 text-primary shrink-0 text-[10px] uppercase tracking-wide"
+                      >
+                        Преподаватель
+                      </Badge>
+                    ) : null}
+                    <time dateTime={message.createdAt} className="shrink-0">
+                      {formatMessageDate(message.createdAt)}
+                    </time>
+                  </div>
+                  <div
+                    className={cn(
+                      "rounded-2xl px-3 py-2 text-sm leading-relaxed wrap-break-word",
+                      isTeacherMessage
+                        ? "border border-primary/20 bg-primary/10 text-foreground rounded-bl-md"
+                        : isOwn
+                          ? "bg-primary text-primary-foreground rounded-br-md"
+                          : "bg-card border rounded-bl-md",
+                      isOwn && isTeacherMessage && "rounded-br-md rounded-bl-2xl",
+                    )}
+                  >
+                    {message.content}
                   </div>
                 </div>
               );

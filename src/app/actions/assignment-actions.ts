@@ -483,5 +483,7 @@ export async function reviewSubmission(
   }
 
   revalidatePath(pathname);
+  revalidatePath("/", "layout");
+  revalidatePath("/dashboard/cohorts");
   return { success: true };
 }

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { pendingReviewBadgeClassName } from "@/lib/dashboard/pending-review-badge";
 import {
   Table,
   TableBody,
@@ -40,7 +41,15 @@ function formatCreatedAt(iso: string): string {
   }).format(d);
 }
 
-export function CohortsList({ cohorts }: { cohorts: CohortListRow[] }) {
+export function CohortsList({
+  cohorts,
+  unreadMap = {},
+  pendingMap = {},
+}: {
+  cohorts: CohortListRow[];
+  unreadMap?: Record<string, number>;
+  pendingMap?: Record<string, number>;
+}) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   async function copyPin(pin: string, id: string) {
@@ -76,9 +85,26 @@ export function CohortsList({ cohorts }: { cohorts: CohortListRow[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {cohorts.map((row) => (
+          {cohorts.map((row) => {
+            const unreadCount = unreadMap[row.id] ?? 0;
+            const pendingCount = pendingMap[row.id] ?? 0;
+            return (
             <TableRow key={row.id}>
-              <TableCell className="font-medium">{row.name}</TableCell>
+              <TableCell className="font-medium">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{row.name}</span>
+                  {pendingCount > 0 ? (
+                    <Badge className={pendingReviewBadgeClassName}>
+                      {pendingCount}
+                    </Badge>
+                  ) : null}
+                  {unreadCount > 0 ? (
+                    <Badge variant="destructive" className="min-w-5 justify-center px-1.5 tabular-nums">
+                      {unreadCount}
+                    </Badge>
+                  ) : null}
+                </div>
+              </TableCell>
               <TableCell className="max-w-[200px] truncate">
                 {courseTitle(row.courses)}
               </TableCell>
@@ -127,7 +153,8 @@ export function CohortsList({ cohorts }: { cohorts: CohortListRow[] }) {
                 </Button>
               </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </div>
