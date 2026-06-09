@@ -3,7 +3,6 @@
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { Button } from "@/components/ui/button";
 import {
   AGE_GROUP_LABELS,
   COURSE_LANGUAGE_LABELS,
@@ -58,10 +57,10 @@ function FilterPill({
       aria-pressed={isActive}
       onClick={onClick}
       className={cn(
-        "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+        "rounded-full border px-4 py-2 text-sm font-medium transition-colors",
         isActive
-          ? "bg-primary text-primary-foreground shadow"
-          : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+          : "border-border bg-transparent text-foreground hover:bg-secondary",
       )}
     >
       {label}
@@ -69,38 +68,20 @@ function FilterPill({
   );
 }
 
-function PillRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function PillRow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-muted-foreground text-xs font-medium">{label}</span>
-      <div
-        className="flex flex-wrap items-center gap-2"
-        role="group"
-        aria-label={label}
-      >
-        {children}
-      </div>
-    </div>
+    <div className="flex flex-wrap items-center gap-2">{children}</div>
   );
 }
 
 export function CatalogFiltersFallback() {
   return (
-    <div className="flex w-full flex-col gap-6" aria-hidden>
+    <div className="flex w-full flex-col gap-4" aria-hidden>
       {[0, 1, 2].map((row) => (
-        <div key={row} className="flex animate-pulse flex-col gap-2">
-          <div className="bg-muted h-3 w-16 rounded-full" />
-          <div className="flex flex-wrap gap-2">
-            <div className="bg-muted h-9 w-24 rounded-full" />
-            <div className="bg-muted h-9 w-28 rounded-full" />
-            <div className="bg-muted h-9 w-20 rounded-full" />
-          </div>
+        <div key={row} className="flex animate-pulse flex-wrap gap-2">
+          <div className="bg-muted h-9 w-24 rounded-full" />
+          <div className="bg-muted h-9 w-28 rounded-full" />
+          <div className="bg-muted h-9 w-20 rounded-full" />
         </div>
       ))}
     </div>
@@ -132,10 +113,6 @@ export function CatalogFilters() {
     }
     return "";
   }, [audience]);
-
-  const hasActiveFilters = Boolean(
-    format || language || audienceSelect || age || level,
-  );
 
   const toggleParam = useCallback(
     (key: string, value: string, current: string) => {
@@ -171,45 +148,9 @@ export function CatalogFilters() {
     <div
       role="toolbar"
       aria-label="Фильтры каталога курсов"
-      className="flex w-full flex-col gap-6"
+      className="flex w-full flex-col gap-4"
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <PillRow label="Язык">
-          {COURSE_LANGUAGE_LABELS.map((opt) => (
-            <FilterPill
-              key={opt}
-              label={opt}
-              isActive={language === opt}
-              onClick={() => toggleParam("language", opt, language)}
-            />
-          ))}
-        </PillRow>
-
-        {hasActiveFilters ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-primary h-9 shrink-0 self-start sm:mt-5"
-            onClick={() => router.push(pathname, { scroll: false })}
-          >
-            Сбросить фильтры
-          </Button>
-        ) : null}
-      </div>
-
-      <PillRow label="Аудитория">
-        {AUDIENCE_OPTIONS.map((opt) => (
-          <FilterPill
-            key={opt}
-            label={opt}
-            isActive={audienceSelect === opt}
-            onClick={() => handleAudienceClick(opt)}
-          />
-        ))}
-      </PillRow>
-
-      <PillRow label="Формат">
+      <PillRow>
         {DELIVERY_FORMAT_LABELS.map((opt) => (
           <FilterPill
             key={opt}
@@ -220,8 +161,30 @@ export function CatalogFilters() {
         ))}
       </PillRow>
 
+      <PillRow>
+        {COURSE_LANGUAGE_LABELS.map((opt) => (
+          <FilterPill
+            key={opt}
+            label={opt}
+            isActive={language === opt}
+            onClick={() => toggleParam("language", opt, language)}
+          />
+        ))}
+      </PillRow>
+
+      <PillRow>
+        {AUDIENCE_OPTIONS.map((opt) => (
+          <FilterPill
+            key={opt}
+            label={opt}
+            isActive={audienceSelect === opt}
+            onClick={() => handleAudienceClick(opt)}
+          />
+        ))}
+      </PillRow>
+
       {audienceSelect === "Дети" ? (
-        <PillRow label="Возраст">
+        <PillRow>
           {AGE_GROUP_LABELS.map((opt) => (
             <FilterPill
               key={opt}
@@ -234,7 +197,7 @@ export function CatalogFilters() {
       ) : null}
 
       {audienceSelect === "Взрослые" ? (
-        <PillRow label="Уровень CEFR">
+        <PillRow>
           {CEFR_LEVELS.map((opt) => (
             <FilterPill
               key={opt}
