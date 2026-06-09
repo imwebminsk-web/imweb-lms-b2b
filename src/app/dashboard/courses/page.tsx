@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { CreateCourseDialog } from "@/components/dashboard/teacher/create-course-dialog";
-import { CourseCard } from "@/components/dashboard/teacher/course-card";
+import { TeacherCourseCard } from "@/components/dashboard/teacher/TeacherCourseCard";
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 
@@ -78,7 +78,7 @@ export default async function DashboardCoursesPage() {
           ) : (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
               {list.map((course) => (
-                <CourseCard key={course.id} course={course} />
+                <TeacherCourseCard key={course.id} course={course} />
               ))}
             </div>
           )}

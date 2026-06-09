@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
-import { Manrope } from "next/font/google";
+import { Inter } from "next/font/google";
 
 import { AppProviders } from "@/components/app-providers";
 import "./globals.css";
 
-const manrope = Manrope({
+const inter = Inter({
   subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-sans",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -20,10 +21,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className="h-full antialiased">
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} h-full antialiased`}
+    >
       <body
         suppressHydrationWarning
-        className={`${manrope.className} flex min-h-full flex-col`}
+        className={`${inter.className} flex min-h-full flex-col`}
       >
         <AppProviders>{children}</AppProviders>
       </body>

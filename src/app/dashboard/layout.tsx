@@ -1,11 +1,10 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { getPendingReviewCounts } from "@/app/actions/grading-actions";
-import { AppSidebar } from "@/components/app-sidebar";
+import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { GlobalChatListener } from "@/components/providers/global-chat-listener";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
@@ -81,16 +80,7 @@ export default async function DashboardLayout({
   return (
     <>
       <GlobalChatListener />
-      <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as CSSProperties
-      }
-    >
-      <AppSidebar
-        variant="inset"
+      <DashboardShell
         role={profile.role}
         navBadges={navBadges}
         navPendingBadges={navPendingBadges}
@@ -99,9 +89,9 @@ export default async function DashboardLayout({
           email: user.email ?? "",
           avatar: profile.avatar_url ?? "",
         }}
-      />
-      <SidebarInset>{children}</SidebarInset>
-    </SidebarProvider>
+      >
+        {children}
+      </DashboardShell>
     </>
   );
 }

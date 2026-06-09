@@ -19,8 +19,9 @@ export function ModeToggle() {
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="ghost"
       size="icon"
+      className="size-10 shrink-0 rounded-xl hover:bg-growvy-body"
       aria-label="Переключить тему"
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >

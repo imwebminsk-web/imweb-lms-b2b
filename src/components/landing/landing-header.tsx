@@ -12,6 +12,9 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
+const navLinkClassName =
+  "text-muted-foreground text-sm font-medium transition-colors hover:text-primary";
+
 export async function LandingHeader() {
   const supabase = await createClient();
   const {
@@ -21,38 +24,30 @@ export async function LandingHeader() {
   const isAuthed = Boolean(user);
 
   return (
-    <header className="bg-background/95 supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 w-full border-b backdrop-blur">
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-card shadow-sm">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link
           href="/"
-          className="text-primary shrink-0 text-lg font-bold tracking-tight"
+          className="shrink-0 text-lg font-bold tracking-tight"
         >
-          New Education
+          <span className="text-primary">New</span>
+          <span className="text-foreground"> Education</span>
         </Link>
 
         <NavigationMenu className="hidden max-w-none flex-1 justify-center md:flex">
-          <NavigationMenuList className="gap-0">
+          <NavigationMenuList className="gap-1">
             <NavigationMenuItem>
-              <NavigationMenuLink
-                className="text-muted-foreground hover:text-foreground"
-                href="#course-catalog"
-              >
+              <NavigationMenuLink className={navLinkClassName} href="#course-catalog">
                 Курсы
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem>
-              <NavigationMenuLink
-                className="text-muted-foreground hover:text-foreground"
-                href="#teachers"
-              >
+              <NavigationMenuLink className={navLinkClassName} href="#teachers">
                 Преподаватели
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem>
-              <NavigationMenuLink
-                className="text-muted-foreground hover:text-foreground"
-                href="#faq"
-              >
+              <NavigationMenuLink className={navLinkClassName} href="#faq">
                 FAQ
               </NavigationMenuLink>
             </NavigationMenuItem>
@@ -62,13 +57,13 @@ export async function LandingHeader() {
         <div className="hidden shrink-0 flex-col items-end gap-0.5 text-right text-xs font-medium lg:flex">
           <a
             href="tel:+375447477722"
-            className="text-foreground hover:text-primary whitespace-nowrap"
+            className="whitespace-nowrap text-foreground transition-colors hover:text-primary"
           >
             +375 44 74-777-22
           </a>
           <a
             href="tel:+375298187722"
-            className="text-foreground hover:text-primary whitespace-nowrap"
+            className="whitespace-nowrap text-foreground transition-colors hover:text-primary"
           >
             +375 29 818-77-22
           </a>
@@ -78,32 +73,41 @@ export async function LandingHeader() {
           <ModeToggle />
           {!isAuthed ? (
             <>
-            <Link
-              href="/login"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            >
-              Войти
-            </Link>
-            <Link
-              href="/register"
-              className={cn(buttonVariants({ size: "sm" }))}
-            >
-              Регистрация
-            </Link>
+              <Link
+                href="/login"
+                className={cn(buttonVariants({ size: "sm" }), "rounded-xl")}
+              >
+                Войти
+              </Link>
+              <Link
+                href="/register"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "rounded-xl",
+                )}
+              >
+                Регистрация
+              </Link>
             </>
           ) : (
             <>
-            <Link
-              href="/dashboard"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            >
-              Личный кабинет
-            </Link>
-            <form action={signOutAction}>
-              <button type="submit" className={cn(buttonVariants({ size: "sm" }))}>
-                Выйти
-              </button>
-            </form>
+              <Link
+                href="/dashboard"
+                className={cn(buttonVariants({ size: "sm" }), "rounded-xl")}
+              >
+                Личный кабинет
+              </Link>
+              <form action={signOutAction}>
+                <button
+                  type="submit"
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "sm" }),
+                    "rounded-xl",
+                  )}
+                >
+                  Выйти
+                </button>
+              </form>
             </>
           )}
         </div>
