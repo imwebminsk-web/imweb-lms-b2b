@@ -3,19 +3,13 @@
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import {
   AGE_GROUP_LABELS,
   COURSE_LANGUAGE_LABELS,
   DELIVERY_FORMAT_LABELS,
 } from "@/lib/validations/course-settings-schema";
+import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database.types";
 
 const AUDIENCE_OPTIONS = ["Дети", "Взрослые"] as const;
@@ -49,6 +43,70 @@ function buildNextHref(
   return q ? `${pathname}?${q}` : pathname;
 }
 
+function FilterPill({
+  label,
+  isActive,
+  onClick,
+}: {
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={isActive}
+      onClick={onClick}
+      className={cn(
+        "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+        isActive
+          ? "bg-primary text-primary-foreground shadow"
+          : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function PillRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-muted-foreground text-xs font-medium">{label}</span>
+      <div
+        className="flex flex-wrap items-center gap-2"
+        role="group"
+        aria-label={label}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function CatalogFiltersFallback() {
+  return (
+    <div className="flex w-full flex-col gap-6" aria-hidden>
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="flex animate-pulse flex-col gap-2">
+          <div className="bg-muted h-3 w-16 rounded-full" />
+          <div className="flex flex-wrap gap-2">
+            <div className="bg-muted h-9 w-24 rounded-full" />
+            <div className="bg-muted h-9 w-28 rounded-full" />
+            <div className="bg-muted h-9 w-20 rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function CatalogFilters() {
   const router = useRouter();
   const pathname = usePathname();
@@ -75,155 +133,118 @@ export function CatalogFilters() {
     return "";
   }, [audience]);
 
+  const hasActiveFilters = Boolean(
+    format || language || audienceSelect || age || level,
+  );
+
+  const toggleParam = useCallback(
+    (key: string, value: string, current: string) => {
+      pushParams({
+        [key]: current === value ? null : value,
+      });
+    },
+    [pushParams],
+  );
+
+  const handleAudienceClick = useCallback(
+    (option: (typeof AUDIENCE_OPTIONS)[number]) => {
+      if (audienceSelect === option) {
+        pushParams({
+          audience: null,
+          age: null,
+          level: null,
+        });
+        return;
+      }
+
+      const updates: Record<string, string | null> = {
+        audience: option,
+      };
+      if (option !== "Дети") updates.age = null;
+      if (option !== "Взрослые") updates.level = null;
+      pushParams(updates);
+    },
+    [audienceSelect, pushParams],
+  );
+
   return (
-    <aside className="border-border bg-card/40 w-full shrink-0 rounded-xl border p-4 lg:sticky lg:top-20 lg:w-64 lg:self-start">
-      <h2 className="text-foreground mb-4 text-sm font-semibold tracking-tight">
-        Фильтры
-      </h2>
-      <div className="flex flex-col gap-4">
-        <div className="grid gap-2">
-          <Label htmlFor="cf-format">Формат</Label>
-          <Select
-            value={format || "__all__"}
-            onValueChange={(v) => {
-              pushParams({
-                format: v === "__all__" ? null : v,
-              });
-            }}
-          >
-            <SelectTrigger id="cf-format" className="w-full">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Все</SelectItem>
-              {DELIVERY_FORMAT_LABELS.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+    <div
+      role="toolbar"
+      aria-label="Фильтры каталога курсов"
+      className="flex w-full flex-col gap-6"
+    >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <PillRow label="Язык">
+          {COURSE_LANGUAGE_LABELS.map((opt) => (
+            <FilterPill
+              key={opt}
+              label={opt}
+              isActive={language === opt}
+              onClick={() => toggleParam("language", opt, language)}
+            />
+          ))}
+        </PillRow>
 
-        <div className="grid gap-2">
-          <Label htmlFor="cf-language">Язык</Label>
-          <Select
-            value={language || "__all__"}
-            onValueChange={(v) => {
-              pushParams({
-                language: v === "__all__" ? null : v,
-              });
-            }}
+        {hasActiveFilters ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-primary h-9 shrink-0 self-start sm:mt-5"
+            onClick={() => router.push(pathname, { scroll: false })}
           >
-            <SelectTrigger id="cf-language" className="w-full">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Все</SelectItem>
-              {COURSE_LANGUAGE_LABELS.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="grid gap-2">
-          <Label htmlFor="cf-audience">Аудитория</Label>
-          <Select
-            value={audienceSelect || "__all__"}
-            onValueChange={(v) => {
-              if (v === "__all__") {
-                pushParams({
-                  audience: null,
-                  age: null,
-                  level: null,
-                });
-                return;
-              }
-              const updates: Record<string, string | null> = {
-                audience: v,
-              };
-              if (v !== "Дети") updates.age = null;
-              if (v !== "Взрослые") updates.level = null;
-              pushParams(updates);
-            }}
-          >
-            <SelectTrigger id="cf-audience" className="w-full">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Все</SelectItem>
-              {AUDIENCE_OPTIONS.map((opt) => (
-                <SelectItem key={opt} value={opt}>
-                  {opt}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {audienceSelect === "Дети" ? (
-          <div className="grid gap-2">
-            <Label htmlFor="cf-age">Возраст</Label>
-            <Select
-              value={age || "__all__"}
-              onValueChange={(v) => {
-                pushParams({
-                  age: v === "__all__" ? null : v,
-                });
-              }}
-            >
-              <SelectTrigger id="cf-age" className="w-full">
-                <SelectValue placeholder="Все" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">Все</SelectItem>
-                {AGE_GROUP_LABELS.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            Сбросить фильтры
+          </Button>
         ) : null}
-
-        {audienceSelect === "Взрослые" ? (
-          <div className="grid gap-2">
-            <Label htmlFor="cf-level">Уровень CEFR</Label>
-            <Select
-              value={level || "__all__"}
-              onValueChange={(v) => {
-                pushParams({
-                  level: v === "__all__" ? null : v,
-                });
-              }}
-            >
-              <SelectTrigger id="cf-level" className="w-full">
-                <SelectValue placeholder="Все" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">Все</SelectItem>
-                {CEFR_LEVELS.map((opt) => (
-                  <SelectItem key={opt} value={opt}>
-                    {opt}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          className="text-muted-foreground hover:text-foreground text-left text-xs underline-offset-2 hover:underline"
-          onClick={() => router.push(pathname, { scroll: false })}
-        >
-          Сбросить фильтры
-        </button>
       </div>
-    </aside>
+
+      <PillRow label="Аудитория">
+        {AUDIENCE_OPTIONS.map((opt) => (
+          <FilterPill
+            key={opt}
+            label={opt}
+            isActive={audienceSelect === opt}
+            onClick={() => handleAudienceClick(opt)}
+          />
+        ))}
+      </PillRow>
+
+      <PillRow label="Формат">
+        {DELIVERY_FORMAT_LABELS.map((opt) => (
+          <FilterPill
+            key={opt}
+            label={opt}
+            isActive={format === opt}
+            onClick={() => toggleParam("format", opt, format)}
+          />
+        ))}
+      </PillRow>
+
+      {audienceSelect === "Дети" ? (
+        <PillRow label="Возраст">
+          {AGE_GROUP_LABELS.map((opt) => (
+            <FilterPill
+              key={opt}
+              label={opt}
+              isActive={age === opt}
+              onClick={() => toggleParam("age", opt, age)}
+            />
+          ))}
+        </PillRow>
+      ) : null}
+
+      {audienceSelect === "Взрослые" ? (
+        <PillRow label="Уровень CEFR">
+          {CEFR_LEVELS.map((opt) => (
+            <FilterPill
+              key={opt}
+              label={opt}
+              isActive={level === opt}
+              onClick={() => toggleParam("level", opt, level)}
+            />
+          ))}
+        </PillRow>
+      ) : null}
+    </div>
   );
 }
