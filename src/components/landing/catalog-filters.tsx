@@ -4,26 +4,17 @@ import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import {
-  AGE_GROUP_LABELS,
-  COURSE_LANGUAGE_LABELS,
-  DELIVERY_FORMAT_LABELS,
-} from "@/lib/validations/course-settings-schema";
+  groupCatalogTaxonomies,
+  type CatalogTaxonomy,
+} from "@/lib/catalog-taxonomies";
 import { cn } from "@/lib/utils";
-import type { Database } from "@/types/database.types";
 
-const AUDIENCE_OPTIONS = ["Дети", "Взрослые"] as const;
+const AUDIENCE_CHILDREN = "children";
+const AUDIENCE_ADULTS = "adults";
 
-const CEFR_LEVELS: Database["public"]["Enums"]["course_level"][] = [
-  "0",
-  "A1",
-  "A2",
-  "B1",
-  "B1+",
-  "B2",
-  "B2+",
-  "C1",
-  "C2",
-];
+export type CatalogFiltersProps = {
+  taxonomies: CatalogTaxonomy[];
+};
 
 function buildNextHref(
   pathname: string,
@@ -88,10 +79,15 @@ export function CatalogFiltersFallback() {
   );
 }
 
-export function CatalogFilters() {
+export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  const grouped = useMemo(
+    () => groupCatalogTaxonomies(taxonomies),
+    [taxonomies],
+  );
 
   const pushParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -108,11 +104,9 @@ export function CatalogFilters() {
   const level = searchParams.get("level") ?? "";
 
   const audienceSelect = useMemo(() => {
-    if (AUDIENCE_OPTIONS.includes(audience as (typeof AUDIENCE_OPTIONS)[number])) {
-      return audience;
-    }
-    return "";
-  }, [audience]);
+    const allowed = new Set(grouped.audience.map((row) => row.value));
+    return allowed.has(audience) ? audience : "";
+  }, [audience, grouped.audience]);
 
   const toggleParam = useCallback(
     (key: string, value: string, current: string) => {
@@ -124,8 +118,8 @@ export function CatalogFilters() {
   );
 
   const handleAudienceClick = useCallback(
-    (option: (typeof AUDIENCE_OPTIONS)[number]) => {
-      if (audienceSelect === option) {
+    (value: string) => {
+      if (audienceSelect === value) {
         pushParams({
           audience: null,
           age: null,
@@ -135,10 +129,10 @@ export function CatalogFilters() {
       }
 
       const updates: Record<string, string | null> = {
-        audience: option,
+        audience: value,
       };
-      if (option !== "Дети") updates.age = null;
-      if (option !== "Взрослые") updates.level = null;
+      if (value !== AUDIENCE_CHILDREN) updates.age = null;
+      if (value !== AUDIENCE_ADULTS) updates.level = null;
       pushParams(updates);
     },
     [audienceSelect, pushParams],
@@ -151,59 +145,59 @@ export function CatalogFilters() {
       className="flex w-full flex-col gap-4"
     >
       <PillRow>
-        {DELIVERY_FORMAT_LABELS.map((opt) => (
+        {grouped.format.map((row) => (
           <FilterPill
-            key={opt}
-            label={opt}
-            isActive={format === opt}
-            onClick={() => toggleParam("format", opt, format)}
+            key={row.id}
+            label={row.label}
+            isActive={format === row.value}
+            onClick={() => toggleParam("format", row.value, format)}
           />
         ))}
       </PillRow>
 
       <PillRow>
-        {COURSE_LANGUAGE_LABELS.map((opt) => (
+        {grouped.language.map((row) => (
           <FilterPill
-            key={opt}
-            label={opt}
-            isActive={language === opt}
-            onClick={() => toggleParam("language", opt, language)}
+            key={row.id}
+            label={row.label}
+            isActive={language === row.value}
+            onClick={() => toggleParam("language", row.value, language)}
           />
         ))}
       </PillRow>
 
       <PillRow>
-        {AUDIENCE_OPTIONS.map((opt) => (
+        {grouped.audience.map((row) => (
           <FilterPill
-            key={opt}
-            label={opt}
-            isActive={audienceSelect === opt}
-            onClick={() => handleAudienceClick(opt)}
+            key={row.id}
+            label={row.label}
+            isActive={audienceSelect === row.value}
+            onClick={() => handleAudienceClick(row.value)}
           />
         ))}
       </PillRow>
 
-      {audienceSelect === "Дети" ? (
+      {audienceSelect === AUDIENCE_CHILDREN ? (
         <PillRow>
-          {AGE_GROUP_LABELS.map((opt) => (
+          {grouped.age_group.map((row) => (
             <FilterPill
-              key={opt}
-              label={opt}
-              isActive={age === opt}
-              onClick={() => toggleParam("age", opt, age)}
+              key={row.id}
+              label={row.label}
+              isActive={age === row.value}
+              onClick={() => toggleParam("age", row.value, age)}
             />
           ))}
         </PillRow>
       ) : null}
 
-      {audienceSelect === "Взрослые" ? (
+      {audienceSelect === AUDIENCE_ADULTS ? (
         <PillRow>
-          {CEFR_LEVELS.map((opt) => (
+          {grouped.cefr_level.map((row) => (
             <FilterPill
-              key={opt}
-              label={opt}
-              isActive={level === opt}
-              onClick={() => toggleParam("level", opt, level)}
+              key={row.id}
+              label={row.label}
+              isActive={level === row.value}
+              onClick={() => toggleParam("level", row.value, level)}
             />
           ))}
         </PillRow>

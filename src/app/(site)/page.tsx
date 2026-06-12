@@ -20,7 +20,11 @@ import {
   catalogHasActiveFilters,
   parseCatalogFilters,
 } from "@/lib/catalog-filter-params";
+import { taxonomyLabelForValue } from "@/lib/catalog-taxonomies";
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/types/database.types";
+
+type CourseLevel = Database["public"]["Enums"]["course_level"];
 
 export const metadata: Metadata = {
   title: "New Education — курсы языков в Минске | Новое образование",
@@ -34,10 +38,22 @@ export default async function Home({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
-  const filters = parseCatalogFilters(sp);
+  const supabase = await createClient();
+
+  const { data: taxonomyRows, error: taxonomyError } = await supabase
+    .from("taxonomies")
+    .select("id, type, label, value, sort_order")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true });
+
+  if (taxonomyError) {
+    console.error("[Home] taxonomies", taxonomyError.message);
+  }
+
+  const taxonomies = taxonomyRows ?? [];
+  const filters = parseCatalogFilters(sp, taxonomies);
   const hasFilters = catalogHasActiveFilters(filters);
 
-  const supabase = await createClient();
   let query = supabase
     .from("courses")
     .select(
@@ -45,23 +61,49 @@ export default async function Home({
     )
     .eq("status", "published");
 
-  if (filters.audience === "Дети") {
-    query = query.eq("marketing_audience", "Дети");
-  } else if (filters.audience === "Взрослые") {
-    query = query.eq("marketing_audience", "Взрослые");
+  const audienceLabel = taxonomyLabelForValue(
+    taxonomies,
+    "audience",
+    filters.audience,
+  );
+  if (audienceLabel) {
+    query = query.eq("marketing_audience", audienceLabel);
   }
 
-  if (filters.format) {
-    query = query.eq("delivery_format", filters.format);
+  const formatLabel = taxonomyLabelForValue(
+    taxonomies,
+    "format",
+    filters.format,
+  );
+  if (formatLabel) {
+    query = query.eq("delivery_format", formatLabel);
   }
-  if (filters.language) {
-    query = query.eq("language", filters.language);
+
+  const languageLabel = taxonomyLabelForValue(
+    taxonomies,
+    "language",
+    filters.language,
+  );
+  if (languageLabel) {
+    query = query.eq("language", languageLabel);
   }
-  if (filters.audience === "Дети" && filters.age) {
-    query = query.eq("age_group", filters.age);
+
+  if (filters.audience === "children" && filters.age) {
+    const ageLabel = taxonomyLabelForValue(taxonomies, "age_group", filters.age);
+    if (ageLabel) {
+      query = query.eq("age_group", ageLabel);
+    }
   }
-  if (filters.audience === "Взрослые" && filters.level) {
-    query = query.eq("level", filters.level);
+
+  if (filters.audience === "adults" && filters.level) {
+    const levelLabel = taxonomyLabelForValue(
+      taxonomies,
+      "cefr_level",
+      filters.level,
+    );
+    if (levelLabel) {
+      query = query.eq("level", levelLabel as CourseLevel);
+    }
   }
 
   const { data, error } = await query.order("created_at", { ascending: false });
@@ -87,7 +129,7 @@ export default async function Home({
               filtersYieldEmpty={courses.length === 0 && hasFilters}
               toolbar={
                 <Suspense fallback={<CatalogFiltersFallback />}>
-                  <CatalogFilters />
+                  <CatalogFilters taxonomies={taxonomies} />
                 </Suspense>
               }
             />

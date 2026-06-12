@@ -15,6 +15,7 @@ import {
 import {
   GrowvyCatalogIcon,
   GrowvyCoursesIcon,
+  GrowvyDictionariesIcon,
   GrowvyGroupsIcon,
   GrowvyLearningIcon,
   GrowvyLogoutIcon,
@@ -47,6 +48,7 @@ const studentNav: NavItem[] = [
 
 const adminNav: NavItem[] = [
   { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
+  { title: "Справочники", url: "/dashboard/admin/taxonomies", icon: GrowvyDictionariesIcon },
   { title: "Финансы", url: "/dashboard", icon: GrowvyCatalogIcon },
   { title: "Все курсы", url: "/dashboard", icon: GrowvyCoursesIcon },
 ];

@@ -678,6 +678,36 @@ export type Database = {
           },
         ]
       }
+      taxonomies: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+          sort_order: number
+          type: string
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label: string
+          sort_order?: number
+          type: string
+          value: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          sort_order?: number
+          type?: string
+          value?: string
+        }
+        Relationships: []
+      }
       tests: {
         Row: {
           created_at: string | null

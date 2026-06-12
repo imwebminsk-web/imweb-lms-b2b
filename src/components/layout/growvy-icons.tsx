@@ -97,3 +97,12 @@ export function GrowvyMenuIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function GrowvyDictionariesIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden {...stroke} {...props}>
+      <path d="M6 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+      <path d="M8 8h8M8 12h8M8 16h5" />
+    </svg>
+  );
+}
