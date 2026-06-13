@@ -3,6 +3,10 @@
 import { z } from "zod";
 
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
+import {
+  normalizeAttemptScoreToPercent,
+  percentToGrade10,
+} from "@/lib/utils/grading";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database.types";
 
@@ -317,7 +321,7 @@ async function fetchStudentProgressItemsForUserId(
 
   const questionsPromise =
     testIds.length > 0
-      ? supabase.from("questions").select("test_id").in("test_id", testIds)
+      ? supabase.from("questions").select("test_id, points").in("test_id", testIds)
       : Promise.resolve({ data: [], error: null });
 
   const [{ data: attemptRowsRaw, error: attemptsErr }, { data: questionRows, error: questionsErr }] =
@@ -330,9 +334,15 @@ async function fetchStudentProgressItemsForUserId(
   }
 
   const questionCountByTest = new Map<string, number>();
+  const pointsSumByTest = new Map<string, number>();
   for (const q of questionRows ?? []) {
     const prev = questionCountByTest.get(q.test_id) ?? 0;
     questionCountByTest.set(q.test_id, prev + 1);
+    pointsSumByTest.set(
+      q.test_id,
+      (pointsSumByTest.get(q.test_id) ?? 0) +
+        (q.points != null && q.points > 0 ? q.points : 1),
+    );
   }
 
   const bestGrade10ByTest = new Map<string, number>();
@@ -342,18 +352,14 @@ async function fetchStudentProgressItemsForUserId(
   for (const a of attemptRowsRaw ?? []) {
     if (a.status === "completed") {
       hasCompletedByTest.add(a.test_id);
-      const total = questionCountByTest.get(a.test_id) ?? 0;
-      if (total > 0) {
-        const rawScore = a.score ?? 0;
-        const g10 = Math.max(
-          0,
-          Math.min(10, Math.round((rawScore / total) * 10)),
-        );
-        const key = a.test_id;
-        const prev = bestGrade10ByTest.get(key);
-        if (prev == null || g10 > prev) {
-          bestGrade10ByTest.set(key, g10);
-        }
+      const totalPoints = Math.max(pointsSumByTest.get(a.test_id) ?? 1, 1);
+      const rawScore = a.score ?? 0;
+      const percent = normalizeAttemptScoreToPercent(rawScore, totalPoints);
+      const g10 = percentToGrade10(percent);
+      const key = a.test_id;
+      const prev = bestGrade10ByTest.get(key);
+      if (prev == null || g10 > prev) {
+        bestGrade10ByTest.set(key, g10);
       }
     }
     if (a.status === "in_progress") {

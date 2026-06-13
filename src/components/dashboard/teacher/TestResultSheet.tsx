@@ -11,6 +11,7 @@ import {
   type GradebookBestAttemptDetails,
 } from "@/app/actions/gradebook-actions";
 import { QuizResultView } from "@/components/quiz/QuizResultView";
+import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,10 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { buildReviewMaps } from "@/lib/learn/build-review-maps";
+import {
+  groupedCorrectMapFromContent,
+  isGroupedChoiceContent,
+} from "@/lib/grouped-choice-utils";
 
 type TestResultSheetProps = {
   isOpen: boolean;
@@ -55,7 +60,21 @@ export function TestResultSheet({
 
   const reviewMaps = useMemo(() => {
     if (!details?.attemptId || !details.resultSummary) return null;
-    return buildReviewMaps(details.reviewAnswers, details.questions);
+    const groupedCorrectByQuestionId: Record<
+      string,
+      Record<string, string[]>
+    > = {};
+    for (const q of details.questions) {
+      if (isGroupedChoiceContent(q.content)) {
+        const map = groupedCorrectMapFromContent(q.content);
+        if (map) groupedCorrectByQuestionId[q.id] = map;
+      }
+    }
+    return buildReviewMaps(
+      details.reviewAnswers,
+      details.questions,
+      groupedCorrectByQuestionId,
+    );
   }, [details]);
 
   const loadDetails = useCallback(() => {
@@ -162,13 +181,24 @@ export function TestResultSheet({
 
           {details?.attemptId && details.resultSummary && reviewMaps != null ? (
             <>
-              {details.grade10 !== null ? (
-                <div className="text-muted-foreground flex flex-wrap items-center gap-2 text-sm">
-                  <Badge variant="outline">Оценка: {details.grade10} / 10</Badge>
+              {details.gradingVisuals ? (
+                <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
+                  {details.isForKids ? (
+                    <GradingDisplay
+                      score={details.score}
+                      isForKids
+                      totalPossiblePoints={details.totalPossiblePoints}
+                      compact
+                    />
+                  ) : details.grade10 !== null ? (
+                    <Badge variant="outline">
+                      Оценка: {details.grade10} / 10
+                    </Badge>
+                  ) : null}
                 </div>
               ) : null}
 
-              {isTeacher ? (
+              {isTeacher && !details.isForKids ? (
                 <section className="border-border space-y-3 rounded-xl border p-4">
                   <h3 className="text-sm font-semibold">
                     Скорректировать оценку (0–10)
@@ -214,6 +244,18 @@ export function TestResultSheet({
                 reviewFillByQuestionId={reviewMaps.reviewFillByQuestionId}
                 reviewAnswersByQuestionId={
                   reviewMaps.reviewAnswersByQuestionId
+                }
+                reviewGroupedSelectionsByQuestionId={
+                  reviewMaps.reviewGroupedSelectionsByQuestionId
+                }
+                reviewGroupedCorrectByQuestionId={
+                  reviewMaps.reviewGroupedCorrectByQuestionId
+                }
+                reviewGroupedFillTypingByQuestionId={
+                  reviewMaps.reviewGroupedFillTypingByQuestionId
+                }
+                reviewGroupedFillAssignmentsByQuestionId={
+                  reviewMaps.reviewGroupedFillAssignmentsByQuestionId
                 }
               />
             </>

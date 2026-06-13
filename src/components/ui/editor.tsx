@@ -26,12 +26,21 @@ import {
   Quote,
   Strikethrough,
   Underline as UnderlineIcon,
+  Music,
+  Film,
   Youtube as YoutubeIcon,
 } from "lucide-react";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 import { Toggle } from "@/components/ui/toggle";
+import { TipTapAudio } from "@/components/ui/tiptap-audio-extension";
+import { TipTapVideo } from "@/components/ui/tiptap-video-extension";
 import { compressImage } from "@/lib/utils/image-compression";
+import { uploadTestAttachmentAudio } from "@/lib/utils/upload-test-audio";
+import {
+  MAX_VIDEO_BYTES,
+  uploadTestAttachmentVideo,
+} from "@/lib/utils/upload-test-video";
 import { cn } from "@/lib/utils";
 
 /** Сравниваем HTML так, чтобы пустой документ TipTap (`<p></p>`) считался пустой строкой. */
@@ -57,7 +66,12 @@ export function Editor({
   id,
 }: EditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const isUploading = isUploadingImage || isUploadingAudio || isUploadingVideo;
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -75,6 +89,8 @@ export function Editor({
         types: ["heading", "paragraph"],
       }),
       TipTapImage,
+      TipTapAudio,
+      TipTapVideo,
       Youtube.configure({
         inline: false,
         width: 640,
@@ -86,7 +102,7 @@ export function Editor({
     editorProps: {
       attributes: {
         class: cn(
-          "tiptap prose prose-sm prose-a:text-blue-600 prose-a:underline hover:prose-a:text-blue-800 prose-blockquote:border-l-4 prose-blockquote:border-border prose-blockquote:pl-4 prose-blockquote:italic prose-img:mx-auto prose-img:rounded-md prose-img:shadow-sm prose-iframe:mx-auto prose-iframe:w-full prose-iframe:max-w-full sm:prose-base dark:prose-invert dark:prose-a:text-blue-400 dark:hover:prose-a:text-blue-300 max-w-none px-3 py-2",
+          "tiptap prose prose-sm prose-a:text-blue-600 prose-a:underline hover:prose-a:text-blue-800 prose-blockquote:border-l-4 prose-blockquote:border-border prose-blockquote:pl-4 prose-blockquote:italic prose-img:mx-auto prose-img:rounded-md prose-img:shadow-sm prose-iframe:mx-auto prose-iframe:w-full prose-iframe:max-w-full [&_.tiptap-audio-player]:mx-auto [&_.tiptap-audio-player]:my-2 [&_.tiptap-audio-player]:block [&_.tiptap-audio-player]:h-10 [&_.tiptap-audio-player]:w-full [&_.tiptap-audio-player]:max-w-lg [&_.tiptap-video-player]:mx-auto [&_.tiptap-video-player]:my-4 [&_.tiptap-video-player]:block [&_.tiptap-video-player]:aspect-video [&_.tiptap-video-player]:w-full [&_.tiptap-video-player]:max-w-3xl [&_.tiptap-video-player]:rounded-lg sm:prose-base dark:prose-invert dark:prose-a:text-blue-400 dark:hover:prose-a:text-blue-300 max-w-none px-3 py-2",
         ),
       },
     },
@@ -148,7 +164,7 @@ export function Editor({
     event.target.value = "";
     if (!file) return;
 
-    setIsUploading(true);
+    setIsUploadingImage(true);
 
     try {
       const compressed = await compressImage(file);
@@ -176,7 +192,72 @@ export function Editor({
     } catch {
       window.alert("Не удалось обработать или загрузить изображение.");
     } finally {
-      setIsUploading(false);
+      setIsUploadingImage(false);
+    }
+  };
+
+  const openAudioPicker = () => {
+    if (disabled || isUploading) return;
+    audioInputRef.current?.click();
+  };
+
+  const handleAudioPick = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setIsUploadingAudio(true);
+    try {
+      const url = await uploadTestAttachmentAudio(file);
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "audio",
+          attrs: { src: url, controls: true, preload: "metadata" },
+        })
+        .run();
+    } catch (err: unknown) {
+      window.alert(
+        err instanceof Error ? err.message : "Не удалось загрузить аудио.",
+      );
+    } finally {
+      setIsUploadingAudio(false);
+    }
+  };
+
+  const openVideoPicker = () => {
+    if (disabled || isUploading) return;
+    videoInputRef.current?.click();
+  };
+
+  const handleVideoPick = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (file.size > MAX_VIDEO_BYTES) {
+      window.alert("Файл слишком большой. Максимум 50 МБ.");
+      return;
+    }
+
+    setIsUploadingVideo(true);
+    try {
+      const url = await uploadTestAttachmentVideo(file);
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: "video",
+          attrs: { src: url, controls: true, preload: "metadata" },
+        })
+        .run();
+    } catch (err: unknown) {
+      window.alert(
+        err instanceof Error ? err.message : "Не удалось загрузить видео.",
+      );
+    } finally {
+      setIsUploadingVideo(false);
     }
   };
 
@@ -203,6 +284,22 @@ export function Editor({
         className="sr-only"
         tabIndex={-1}
         onChange={handleImagePick}
+      />
+      <input
+        ref={audioInputRef}
+        type="file"
+        accept="audio/*"
+        className="sr-only"
+        tabIndex={-1}
+        onChange={handleAudioPick}
+      />
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/mp4,video/webm,video/ogg"
+        className="sr-only"
+        tabIndex={-1}
+        onChange={handleVideoPick}
       />
       <div
         className="flex shrink-0 flex-wrap gap-0.5 border-b border-border bg-muted/40 p-1"
@@ -411,7 +508,29 @@ export function Editor({
           disabled={disabled || isUploading}
           aria-label="Вставить изображение"
         >
-          {isUploading ? <Loader2 className="animate-spin" /> : <ImageIcon />}
+          {isUploadingImage ? <Loader2 className="animate-spin" /> : <ImageIcon />}
+        </Toggle>
+        <Toggle
+          type="button"
+          size="sm"
+          variant="outline"
+          pressed={false}
+          onPressedChange={() => openAudioPicker()}
+          disabled={disabled || isUploading}
+          aria-label="Вставить аудио"
+        >
+          {isUploadingAudio ? <Loader2 className="animate-spin" /> : <Music />}
+        </Toggle>
+        <Toggle
+          type="button"
+          size="sm"
+          variant="outline"
+          pressed={false}
+          onPressedChange={() => openVideoPicker()}
+          disabled={disabled || isUploading}
+          aria-label="Вставить видео"
+        >
+          {isUploadingVideo ? <Loader2 className="animate-spin" /> : <Film />}
         </Toggle>
         <Toggle
           type="button"

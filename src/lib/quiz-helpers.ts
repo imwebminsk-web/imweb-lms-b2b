@@ -43,6 +43,31 @@ export function parseFillAssignmentsFromAnswerData(
   return out;
 }
 
+/** Ответ `fill_blanks_typing` (legacy flat): `{ fillTyping: Record<blankId, typedString> }`. */
+export function parseFillTypingFromAnswerData(
+  data: Json | null,
+): Record<string, string> | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  const rec = data as Record<string, unknown>;
+  const ft = rec.fillTyping;
+  if (!ft || typeof ft !== "object" || Array.isArray(ft)) {
+    return null;
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(ft)) {
+    if (typeof v !== "string") return null;
+    out[k] = v;
+  }
+  return out;
+}
+
+export {
+  parseGroupedFillAssignmentsFromAnswerData,
+  parseGroupedFillTypingFromAnswerData,
+} from "@/lib/grouped-fill-blanks-utils";
+
 function hashStringFnv1a(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {

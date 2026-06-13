@@ -9,9 +9,18 @@ import {
   saveFullTest,
   updateFullTest,
 } from "@/app/actions/test-actions";
-import { FillInTheBlanksEditor } from "@/components/admin/questions/FillInTheBlanksEditor";
+import {
+  ChoiceTaskItemsEditor,
+  createDefaultChoiceSubItem,
+} from "@/components/admin/questions/ChoiceTaskItemsEditor";
+import {
+  GroupedFillBlanksItemsEditor,
+  createDefaultGroupedFillBlanksItem,
+  type GroupedFillBlanksQuestionType,
+} from "@/components/admin/questions/GroupedFillBlanksItemsEditor";
 import { ImageLabelingImageUploadField } from "@/components/admin/questions/ImageLabelingImageUploadField";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Command,
   CommandEmpty,
@@ -20,6 +29,8 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { hasRichTextContent } from "@/lib/utils/rich-text-content";
+import { buildTaskContentPayload } from "@/lib/utils/task-content";
 import { saveFullTestPayloadSchema } from "@/lib/validations/admin-test-schema";
 import type {
   CreateTestFormInitialData,
@@ -28,6 +39,7 @@ import type {
   PuzzleOptionField,
   QuestionField,
   QuestionKind,
+  TestTypeKind,
 } from "@/types/create-test-form";
 import {
   Card,
@@ -36,7 +48,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Editor } from "@/components/ui/editor";
+import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { z } from "zod";
 import {
@@ -54,6 +69,11 @@ export type {
   QuestionField,
 } from "@/types/create-test-form";
 
+const TEST_TYPE_LABELS: Record<TestTypeKind, string> = {
+  training: "Тренировочный",
+  final: "Итоговый",
+};
+
 const QUESTION_TYPE_LABELS: Record<QuestionKind, string> = {
   single_choice: "Один выбор",
   multiple_choice: "Множественный выбор",
@@ -61,23 +81,27 @@ const QUESTION_TYPE_LABELS: Record<QuestionKind, string> = {
   dnd_puzzle: "Визуальный пазл (стыковка)",
   image_labeling: "Метки на картинке",
   fill_in_the_blanks: "Заполнение пропусков",
+  fill_blanks_typing: "Пропуски вручную",
+  text_input: "Развернутый ответ",
 };
 
 function defaultOptionsForType(
-  kind: Exclude<QuestionKind, "image_labeling" | "fill_in_the_blanks">,
-): Exclude<
+  kind: Exclude<
+    QuestionKind,
+    | "image_labeling"
+    | "fill_in_the_blanks"
+    | "fill_blanks_typing"
+    | "text_input"
+    | "single_choice"
+    | "multiple_choice"
+  >,
+): Extract<
   QuestionField,
-  { type: "image_labeling" } | { type: "fill_in_the_blanks" }
+  { type: "matching_puzzle" | "dnd_puzzle" }
 >["options"] {
-  if (kind === "matching_puzzle" || kind === "dnd_puzzle") {
-    return [
-      { left: "", right: "" },
-      { left: "", right: "" },
-    ];
-  }
   return [
-    { text: "", isCorrect: false },
-    { text: "", isCorrect: false },
+    { left: "", right: "" },
+    { left: "", right: "" },
   ];
 }
 
@@ -88,28 +112,69 @@ function defaultImageLabelingQuestion(): Extract<
   return {
     text: "",
     type: "image_labeling",
+    points: 1,
+    exampleText: "",
     labelingPairs: [{ url: "", correctWord: "", title: "" }],
   };
 }
 
-function defaultFillInTheBlanksQuestion(): Extract<
+function defaultGroupedFillBlanksQuestion(
+  type: GroupedFillBlanksQuestionType,
+): Extract<
   QuestionField,
-  { type: "fill_in_the_blanks" }
+  { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
 > {
+  const item = createDefaultGroupedFillBlanksItem(type);
   return {
     text: "",
-    type: "fill_in_the_blanks",
-    fillRawText: "Мама [мыла] раму.",
-    fillExtraWords: [],
-    fillContent: null,
+    type,
+    points: item.points,
+    exampleText: "",
+    items: [item],
+  };
+}
+
+function defaultChoiceQuestion(
+  type: "single_choice" | "multiple_choice",
+): Extract<QuestionField, { type: "single_choice" | "multiple_choice" }> {
+  const item = createDefaultChoiceSubItem();
+  return {
+    text: "",
+    type,
+    points: item.points,
+    exampleText: "",
+    items: [item],
   };
 }
 
 function emptyQuestion(): QuestionField {
+  return defaultChoiceQuestion("single_choice");
+}
+
+function sumChoiceTaskPoints(
+  q: Extract<QuestionField, { type: "single_choice" | "multiple_choice" }>,
+): number {
+  return q.items.reduce(
+    (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
+    0,
+  );
+}
+
+function isChoiceQuestion(
+  q: QuestionField,
+): q is Extract<QuestionField, { type: "single_choice" | "multiple_choice" }> {
+  return q.type === "single_choice" || q.type === "multiple_choice";
+}
+
+function parsePositiveInt(value: string, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function taskMediaFromQuestion(q: QuestionField) {
   return {
-    text: "",
-    type: "single_choice",
-    options: defaultOptionsForType("single_choice") as ChoiceOptionField[],
+    text: q.text,
+    exampleText: q.exampleText ?? "",
   };
 }
 
@@ -128,10 +193,29 @@ function isImageLabelingQuestion(
   return q.type === "image_labeling";
 }
 
-function isFillInTheBlanksQuestion(
+function isGroupedFillBlanksQuestion(
   q: QuestionField,
-): q is Extract<QuestionField, { type: "fill_in_the_blanks" }> {
-  return q.type === "fill_in_the_blanks";
+): q is Extract<
+  QuestionField,
+  { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
+> {
+  return (
+    q.type === "fill_in_the_blanks" ||
+    q.type === "fill_blanks_typing" ||
+    q.type === "text_input"
+  );
+}
+
+function sumGroupedFillBlanksPoints(
+  q: Extract<
+    QuestionField,
+    { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
+  >,
+): number {
+  return q.items.reduce(
+    (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
+    0,
+  );
 }
 
 type CreateTestFormProps = {
@@ -145,11 +229,29 @@ export function CreateTestForm({
   testId,
 }: CreateTestFormProps) {
   const router = useRouter();
-  const [title, setTitle] = useState(initialData?.title ?? "");
-  const [description, setDescription] = useState(
-    initialData?.description ?? "",
-  );
   const [folderName, setFolderName] = useState(initialData?.folderName ?? "");
+  const [titleTeacher, setTitleTeacher] = useState(
+    initialData?.titleTeacher?.trim() ||
+      initialData?.title?.trim() ||
+      "",
+  );
+  const [titleStudent, setTitleStudent] = useState(
+    initialData?.titleStudent ?? "",
+  );
+  const [testType, setTestType] = useState<TestTypeKind>(
+    initialData?.testType ?? "final",
+  );
+  const [autoCheck, setAutoCheck] = useState(initialData?.autoCheck ?? true);
+  const [saveToJournal, setSaveToJournal] = useState(
+    initialData?.saveToJournal ?? true,
+  );
+  const [maxScore, setMaxScore] = useState(
+    String(initialData?.maxScore ?? 100),
+  );
+  const [isForKids, setIsForKids] = useState(initialData?.isForKids ?? false);
+  const [isPublished, setIsPublished] = useState(
+    initialData?.isPublished ?? true,
+  );
   const [folderComboboxOpen, setFolderComboboxOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [availableFolders, setAvailableFolders] = useState<string[]>([]);
@@ -190,6 +292,33 @@ export function CreateTestForm({
       (folder) => folder.toLocaleLowerCase("ru") === createCandidate.toLocaleLowerCase("ru"),
     );
 
+  const resolvedMaxScore = useMemo(
+    () => parsePositiveInt(maxScore, 100),
+    [maxScore],
+  );
+
+  const distributedPoints = useMemo(
+    () =>
+      questions.reduce((sum, q) => {
+        if (isChoiceQuestion(q)) {
+          return sum + sumChoiceTaskPoints(q);
+        }
+        if (isGroupedFillBlanksQuestion(q)) {
+          return sum + sumGroupedFillBlanksPoints(q);
+        }
+        return sum + parsePositiveInt(String(q.points ?? 1), 1);
+      }, 0),
+    [questions],
+  );
+
+  const pointsMatch = distributedPoints === resolvedMaxScore;
+
+  useEffect(() => {
+    if (!pointsMatch && isPublished) {
+      setIsPublished(false);
+    }
+  }, [pointsMatch, isPublished]);
+
   function updateQuestion(i: number, patch: Partial<QuestionField>) {
     setQuestions((prev) =>
       prev.map((q, idx) =>
@@ -203,55 +332,129 @@ export function CreateTestForm({
       prev.map((q, idx) => {
         if (idx !== qi) return q;
         if (q.type === kind) return q;
-        if (kind === "image_labeling") {
-          return { ...defaultImageLabelingQuestion(), text: q.text };
+        const questionPoints = q.points ?? 1;
+        const questionExample = q.exampleText ?? "";
+        if (kind === "single_choice" || kind === "multiple_choice") {
+          if (isChoiceQuestion(q)) {
+            return {
+              ...q,
+              type: kind,
+              points: sumChoiceTaskPoints(q),
+            };
+          }
+          return {
+            ...defaultChoiceQuestion(kind),
+            text: q.text,
+            exampleText: questionExample,
+          };
         }
-        if (kind === "fill_in_the_blanks") {
-          return { ...defaultFillInTheBlanksQuestion(), text: q.text };
+        if (kind === "image_labeling") {
+          return {
+            ...defaultImageLabelingQuestion(),
+            text: q.text,
+            points: questionPoints,
+            exampleText: questionExample,
+          };
+        }
+        if (
+          kind === "fill_in_the_blanks" ||
+          kind === "fill_blanks_typing" ||
+          kind === "text_input"
+        ) {
+          if (isGroupedFillBlanksQuestion(q)) {
+            return {
+              ...q,
+              type: kind,
+              text: q.text,
+              points: sumGroupedFillBlanksPoints(q),
+              exampleText: questionExample,
+            };
+          }
+          return {
+            ...defaultGroupedFillBlanksQuestion(kind),
+            text: q.text,
+            points: questionPoints,
+            exampleText: questionExample,
+          };
         }
         if (isImageLabelingQuestion(q)) {
           return {
             text: q.text,
             type: kind,
+            points: questionPoints,
+            exampleText: questionExample,
             options: defaultOptionsForType(kind),
           } as QuestionField;
         }
-        if (isFillInTheBlanksQuestion(q)) {
+        if (isChoiceQuestion(q)) {
           return {
             text: q.text,
             type: kind,
+            points: questionPoints,
+            exampleText: questionExample,
+            options: defaultOptionsForType(kind),
+          } as QuestionField;
+        }
+        if (isGroupedFillBlanksQuestion(q)) {
+          return {
+            text: q.text,
+            type: kind,
+            points: questionPoints,
+            exampleText: questionExample,
             options: defaultOptionsForType(kind),
           } as QuestionField;
         }
         return {
           text: q.text,
           type: kind,
+          points: questionPoints,
+          exampleText: questionExample,
           options: defaultOptionsForType(kind),
         } as QuestionField;
       }),
     );
   }
 
-  function updateChoiceOption(
+  function updateGroupedFillItems(
     qi: number,
-    oi: number,
-    patch: Partial<ChoiceOptionField>,
+    items: Extract<
+      QuestionField,
+      { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
+    >["items"],
   ) {
     setQuestions((prev) =>
       prev.map((q, idx) => {
-        if (
-          idx !== qi ||
-          q.type === "matching_puzzle" ||
-          q.type === "dnd_puzzle" ||
-          q.type === "image_labeling" ||
-          q.type === "fill_in_the_blanks"
-        ) {
-          return q;
-        }
-        const options = q.options.map((o, j) =>
-          j === oi ? { ...o, ...patch } : o,
-        );
-        return { ...q, options } as QuestionField;
+        if (idx !== qi || !isGroupedFillBlanksQuestion(q)) return q;
+        return {
+          ...q,
+          items,
+          points: items.reduce(
+            (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
+            0,
+          ),
+        };
+      }),
+    );
+  }
+
+  function updateChoiceItems(
+    qi: number,
+    items: Extract<
+      QuestionField,
+      { type: "single_choice" | "multiple_choice" }
+    >["items"],
+  ) {
+    setQuestions((prev) =>
+      prev.map((q, idx) => {
+        if (idx !== qi || !isChoiceQuestion(q)) return q;
+        return {
+          ...q,
+          items,
+          points: items.reduce(
+            (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
+            0,
+          ),
+        };
       }),
     );
   }
@@ -338,13 +541,10 @@ export function CreateTestForm({
             options: [...q.options, { left: "", right: "" }],
           } as QuestionField;
         }
-        if (isImageLabelingQuestion(q) || isFillInTheBlanksQuestion(q)) {
+        if (isImageLabelingQuestion(q) || isGroupedFillBlanksQuestion(q) || isChoiceQuestion(q)) {
           return q;
         }
-        return {
-          ...q,
-          options: [...q.options, { text: "", isCorrect: false }],
-        } as QuestionField;
+        return q;
       }),
     );
   }
@@ -353,14 +553,19 @@ export function CreateTestForm({
     setQuestions((prev) =>
       prev.map((q, idx): QuestionField => {
         if (idx !== qi) return q;
-        if (isImageLabelingQuestion(q) || isFillInTheBlanksQuestion(q)) {
+        if (
+          isImageLabelingQuestion(q) ||
+          isGroupedFillBlanksQuestion(q) ||
+          isChoiceQuestion(q) ||
+          !isPuzzleQuestion(q)
+        ) {
           return q;
         }
         if (q.options.length <= 1) return q;
         return {
           ...q,
           options: q.options.filter((_, j) => j !== oi),
-        } as QuestionField;
+        };
       }),
     );
   }
@@ -371,17 +576,65 @@ export function CreateTestForm({
     setPending(true);
 
     for (const q of questions) {
-      if (q.text.trim().length === 0) {
-        setError("Текст вопроса обязателен для всех вопросов.");
+      if (!hasRichTextContent(q.text)) {
+        setError("Формулировка задания обязательна для всех заданий.");
         setPending(false);
         return;
       }
-      if (isFillInTheBlanksQuestion(q) && !q.fillContent) {
-        setError(
-          "Для вопроса «Заполнить пропуски» исправьте текст: нужен хотя бы один пропуск [слово] и валидный банк слов (см. предпросмотр).",
-        );
-        setPending(false);
-        return;
+      if (isGroupedFillBlanksQuestion(q)) {
+        if (q.items.length === 0) {
+          setError("Добавьте хотя бы один вопрос в задании с пропусками.");
+          setPending(false);
+          return;
+        }
+        for (const [itemIndex, item] of q.items.entries()) {
+          if (!item.text.trim()) {
+            setError(`Заполните текст вопроса ${itemIndex + 1}.`);
+            setPending(false);
+            return;
+          }
+          const hasBlank = item.segments.some((seg) => seg.type === "blank");
+          if (!hasBlank) {
+            setError(
+              q.type === "text_input"
+                ? `В вопросе ${itemIndex + 1} добавьте хотя бы один пропуск [].`
+                : `В вопросе ${itemIndex + 1} добавьте хотя бы один пропуск [слово].`,
+            );
+            setPending(false);
+            return;
+          }
+        }
+      }
+      if (isChoiceQuestion(q)) {
+        if (q.items.length === 0) {
+          setError("Добавьте хотя бы один вопрос в задании с выбором.");
+          setPending(false);
+          return;
+        }
+        for (const [itemIndex, item] of q.items.entries()) {
+          if (!hasRichTextContent(item.text)) {
+            setError(
+              `Заполните текст вопроса ${itemIndex + 1} в задании с выбором.`,
+            );
+            setPending(false);
+            return;
+          }
+          if (!item.options.some((o) => o.isCorrect)) {
+            setError(
+              `Отметьте верный вариант в вопросе ${itemIndex + 1}.`,
+            );
+            setPending(false);
+            return;
+          }
+          const emptyOption = item.options.find((o) => !o.text.trim());
+          if (emptyOption) {
+            setError(
+              `Заполните все варианты ответа в вопросе ${itemIndex + 1}.`,
+            );
+            setPending(false);
+            return;
+          }
+        }
       }
       if (isImageLabelingQuestion(q)) {
         const badPair = q.labelingPairs.find(
@@ -397,16 +650,32 @@ export function CreateTestForm({
       }
     }
 
+    const resolvedTitle =
+      titleTeacher.trim() || "Без названия";
+
     const payload = {
-      title: title.trim(),
-      description: description.trim() || null,
+      title: resolvedTitle,
+      description: null,
       folder_name: folderName.trim() || null,
-      is_published: true,
+      is_published: pointsMatch ? isPublished : false,
+      title_teacher: titleTeacher.trim() || null,
+      title_student: titleStudent.trim() || null,
+      test_type: testType,
+      auto_check: autoCheck,
+      save_to_journal: saveToJournal,
+      max_score: resolvedMaxScore,
+      is_for_kids: isForKids,
       questions: questions.map((q) => {
+        const points = parsePositiveInt(String(q.points ?? 1), 1);
+        const taskMedia = taskMediaFromQuestion(q);
         if (isPuzzleQuestion(q)) {
           return {
-            content: { text: q.text.trim() },
+            content: buildTaskContentPayload({
+              ...taskMedia,
+              includeExample: false,
+            }),
             type: q.type,
+            points,
             options: q.options.map((o) => ({
               content: {
                 left: o.left.trim(),
@@ -418,8 +687,12 @@ export function CreateTestForm({
         }
         if (isImageLabelingQuestion(q)) {
           return {
-            content: { text: q.text.trim() },
+            content: buildTaskContentPayload({
+              ...taskMedia,
+              includeExample: false,
+            }),
             type: "image_labeling" as const,
+            points,
             options: q.labelingPairs.map((p) => ({
               content: {
                 imageUrl: p.url.trim(),
@@ -430,21 +703,53 @@ export function CreateTestForm({
             })),
           };
         }
-        if (isFillInTheBlanksQuestion(q)) {
+        if (isGroupedFillBlanksQuestion(q)) {
+          const taskPoints = sumGroupedFillBlanksPoints(q);
           return {
-            content: q.fillContent!,
-            type: "fill_in_the_blanks" as const,
+            content: {
+              ...buildTaskContentPayload({
+                ...taskMedia,
+                includeExample: false,
+              }),
+              items: q.items.map((item) => ({
+                id: item.id,
+                text: item.text.trim(),
+                points: parsePositiveInt(String(item.points ?? 1), 1),
+                segments: item.segments,
+                wordBank: item.wordBank,
+                correctMapping: item.correctMapping,
+              })),
+            },
+            type: q.type,
+            points: taskPoints,
             options: [],
           };
         }
-        return {
-          content: { text: q.text.trim() },
-          type: q.type,
-          options: q.options.map((o) => ({
-            content: { text: o.text.trim() },
-            is_correct: o.isCorrect,
-          })),
-        };
+        if (isChoiceQuestion(q)) {
+          const taskPoints = sumChoiceTaskPoints(q);
+          return {
+            content: {
+              ...buildTaskContentPayload({
+                ...taskMedia,
+                includeExample: false,
+              }),
+              items: q.items.map((item) => ({
+                id: item.id,
+                text: item.text,
+                points: parsePositiveInt(String(item.points ?? 1), 1),
+                options: item.options.map((o) => ({
+                  id: o.id,
+                  text: o.text.trim(),
+                  is_correct: o.isCorrect,
+                })),
+              })),
+            },
+            type: q.type,
+            points: taskPoints,
+            options: [],
+          };
+        }
+        throw new Error(`Unsupported question type in submit payload: ${(q as QuestionField).type}`);
       }),
     };
 
@@ -463,6 +768,20 @@ export function CreateTestForm({
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto flex max-w-2xl flex-col gap-6">
+      <div className="sticky top-4 z-10 flex justify-center">
+        <Badge
+          variant="outline"
+          className={cn(
+            "px-4 py-2 text-sm font-medium shadow-sm",
+            pointsMatch
+              ? "border-green-600 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200"
+              : "border-destructive bg-destructive/10 text-destructive",
+          )}
+        >
+          Распределено баллов: {distributedPoints} / {resolvedMaxScore}
+        </Badge>
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle>
@@ -471,32 +790,7 @@ export function CreateTestForm({
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="space-y-2">
-            <label htmlFor="test-title" className="text-sm font-medium">
-              Название
-            </label>
-            <Input
-              id="test-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Например: Вступительный тест"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="test-desc" className="text-sm font-medium">
-              Описание
-            </label>
-            <Input
-              id="test-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Кратко, для кого тест"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="test-folder" className="text-sm font-medium">
-              Папка
-            </label>
+            <Label htmlFor="test-folder">Папка</Label>
             <Popover
               open={folderComboboxOpen}
               onOpenChange={(nextOpen) => {
@@ -595,13 +889,154 @@ export function CreateTestForm({
               Выберите существующую папку или создайте новую.
             </p>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="test-title-teacher">Название для учителя</Label>
+            <Input
+              id="test-title-teacher"
+              value={titleTeacher}
+              onChange={(e) => setTitleTeacher(e.target.value)}
+              placeholder="Как вы видите этот тест в списке"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="test-title-student">Название для ученика</Label>
+            <Input
+              id="test-title-student"
+              value={titleStudent}
+              onChange={(e) => setTitleStudent(e.target.value)}
+              placeholder={
+                titleTeacher.trim() || "Если пусто — используется название для учителя"
+              }
+            />
+            <p className="text-muted-foreground text-xs">
+              Если поле пустое, ученик увидит название для учителя.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="test-type">Тип теста</Label>
+            <Select
+              value={testType}
+              onValueChange={(value) => setTestType(value as TestTypeKind)}
+            >
+              <SelectTrigger id="test-type" className="w-full max-w-md">
+                <SelectValue>{TEST_TYPE_LABELS[testType]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="training">
+                  {TEST_TYPE_LABELS.training}
+                </SelectItem>
+                <SelectItem value="final">{TEST_TYPE_LABELS.final}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              Тренировочный тест можно пересдавать; итоговый — как контрольная
+              работа.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="test-max-score">Максимальный балл</Label>
+            <Input
+              id="test-max-score"
+              type="number"
+              min={1}
+              step={1}
+              value={maxScore}
+              onChange={(e) => setMaxScore(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="test-auto-check">Автоматическая проверка</Label>
+              <p className="text-muted-foreground text-xs">
+                Система сама проверит ответы ученика.
+              </p>
+            </div>
+            <Switch
+              id="test-auto-check"
+              checked={autoCheck}
+              onCheckedChange={setAutoCheck}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="test-save-journal">Записывать в журнал</Label>
+              <p className="text-muted-foreground text-xs">
+                Результат попадёт в журнал оценок.
+              </p>
+            </div>
+            <Switch
+              id="test-save-journal"
+              checked={saveToJournal}
+              onCheckedChange={setSaveToJournal}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="test-for-kids">
+                Детский режим (оценки смайликами)
+              </Label>
+              <p className="text-muted-foreground text-xs">
+                Вместо числовых баллов ученик увидит смайлики.
+              </p>
+            </div>
+            <Switch
+              id="test-for-kids"
+              checked={isForKids}
+              onCheckedChange={setIsForKids}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="test-published">Опубликовать тест</Label>
+              <p className="text-muted-foreground text-xs">
+                {pointsMatch
+                  ? "Опубликованный тест доступен ученикам."
+                  : "Публикация недоступна, пока сумма баллов за задания не совпадает с максимальным баллом. Можно сохранить как черновик."}
+              </p>
+            </div>
+            <Switch
+              id="test-published"
+              checked={isPublished}
+              onCheckedChange={setIsPublished}
+              disabled={!pointsMatch}
+            />
+          </div>
         </CardContent>
       </Card>
 
       {questions.map((q, qi) => (
         <Card key={qi}>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle>Вопрос {qi + 1}</CardTitle>
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <CardTitle>Задание {qi + 1}</CardTitle>
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor={`q-points-${qi}`}
+                  className="text-muted-foreground text-xs font-normal"
+                >
+                  {isChoiceQuestion(q) ? "Баллы за задание" : "Баллы за вопрос"}
+                </Label>
+                {isChoiceQuestion(q) ? (
+                  <Badge variant="secondary" className="tabular-nums">
+                    {sumChoiceTaskPoints(q)}
+                  </Badge>
+                ) : (
+                  <Input
+                    id={`q-points-${qi}`}
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="h-8 w-20"
+                    value={q.points ?? 1}
+                    onChange={(e) =>
+                      updateQuestion(qi, {
+                        points: parsePositiveInt(e.target.value, 1),
+                      })
+                    }
+                  />
+                )}
+              </div>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -609,22 +1044,27 @@ export function CreateTestForm({
               onClick={() => removeQuestion(qi)}
               disabled={questions.length <= 1}
             >
-              Удалить вопрос
+              Удалить задание
             </Button>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Текст вопроса *</label>
-              <Input
+              <Label htmlFor={`q-text-${qi}`}>
+                Формулировка задания (Инструкция и текст) *
+              </Label>
+              <Editor
+                id={`q-text-${qi}`}
                 value={q.text}
-                onChange={(e) => updateQuestion(qi, { text: e.target.value })}
-                placeholder={isFillInTheBlanksQuestion(q) ? "Введите текст вопроса..." : "Формулировка"}
-                required
+                onChange={(next) => updateQuestion(qi, { text: next })}
+                disabled={pending}
               />
+              <p className="text-muted-foreground text-xs">
+                Заголовки, списки, изображения и аудио сохраняются как HTML для ученика.
+              </p>
             </div>
             <div className="space-y-2">
               <span className="text-sm font-medium" id={`q-type-label-${qi}`}>
-                Тип вопроса
+                Тип выполнения
               </span>
               <Select
                 value={q.type}
@@ -659,23 +1099,27 @@ export function CreateTestForm({
                   <SelectItem value="fill_in_the_blanks">
                     {QUESTION_TYPE_LABELS.fill_in_the_blanks}
                   </SelectItem>
+                  <SelectItem value="fill_blanks_typing">
+                    {QUESTION_TYPE_LABELS.fill_blanks_typing}
+                  </SelectItem>
+                  <SelectItem value="text_input">
+                    {QUESTION_TYPE_LABELS.text_input}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {isFillInTheBlanksQuestion(q) ? (
-              <FillInTheBlanksEditor
-                rawText={q.fillRawText}
-                extraWords={q.fillExtraWords}
-                onRawTextChange={(v) =>
-                  updateQuestion(qi, { fillRawText: v })
-                }
-                onExtraWordsChange={(w) =>
-                  updateQuestion(qi, { fillExtraWords: w })
-                }
-                onFillContentChange={(c) =>
-                  updateQuestion(qi, { fillContent: c })
-                }
+            {isGroupedFillBlanksQuestion(q) ? (
+              <GroupedFillBlanksItemsEditor
+                items={q.items}
+                questionType={q.type}
+                onItemsChange={(items) => updateGroupedFillItems(qi, items)}
+              />
+            ) : isChoiceQuestion(q) ? (
+              <ChoiceTaskItemsEditor
+                items={q.items}
+                isMultiple={q.type === "multiple_choice"}
+                onItemsChange={(items) => updateChoiceItems(qi, items)}
               />
             ) : isImageLabelingQuestion(q) ? (
               <div className="space-y-3">
@@ -754,11 +1198,7 @@ export function CreateTestForm({
               </div>
             ) : (
               <div className="space-y-3">
-                <span className="text-sm font-medium">
-                  {isPuzzleQuestion(q)
-                    ? "Пары для сопоставления"
-                    : "Варианты ответа"}
-                </span>
+                <span className="text-sm font-medium">Пары для сопоставления</span>
                 {isPuzzleQuestion(q)
                   ? q.options.map((o, oi) => (
                       <div
@@ -809,54 +1249,17 @@ export function CreateTestForm({
                         </Button>
                       </div>
                     ))
-                  : q.options.map((o, oi) => (
-                      <div
-                        key={oi}
-                        className="flex flex-wrap items-center gap-2 sm:flex-nowrap"
-                      >
-                        <Input
-                          className="min-w-0 flex-1"
-                          value={o.text}
-                          onChange={(e) =>
-                            updateChoiceOption(qi, oi, {
-                              text: e.target.value,
-                            })
-                          }
-                          placeholder={`Вариант ${oi + 1}`}
-                          required
-                        />
-                        <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
-                          <input
-                            type="checkbox"
-                            checked={o.isCorrect}
-                            onChange={(e) =>
-                              updateChoiceOption(qi, oi, {
-                                isCorrect: e.target.checked,
-                              })
-                            }
-                            className="size-4 rounded border-input"
-                          />
-                          Верный
-                        </label>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeOption(qi, oi)}
-                          disabled={q.options.length <= 1}
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                    ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => addOption(qi)}
-                >
-                  + {isPuzzleQuestion(q) ? "Пара" : "Вариант"}
-                </Button>
+                  : null}
+                {isPuzzleQuestion(q) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addOption(qi)}
+                  >
+                    + Пара
+                  </Button>
+                ) : null}
               </div>
             )}
           </CardContent>
@@ -865,7 +1268,7 @@ export function CreateTestForm({
 
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" onClick={addQuestion}>
-          + Вопрос
+          + Задание
         </Button>
       </div>
 
@@ -882,8 +1285,12 @@ export function CreateTestForm({
               ? "Сохранение…"
               : "Создание…"
             : testId
-              ? "Сохранить изменения"
-              : "Создать тест"}
+              ? isPublished
+                ? "Сохранить и опубликовать"
+                : "Сохранить черновик"
+              : isPublished
+                ? "Создать и опубликовать"
+                : "Сохранить черновик"}
         </Button>
       </div>
     </form>

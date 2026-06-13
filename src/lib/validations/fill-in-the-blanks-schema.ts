@@ -102,3 +102,61 @@ export const FillInTheBlanksContentSchema = z
 export type FillInTheBlanksSegment = z.infer<typeof FillInTheBlanksSegmentSchema>;
 export type FillInTheBlanksWord = z.infer<typeof FillInTheBlanksWordSchema>;
 export type FillInTheBlanksContent = z.infer<typeof FillInTheBlanksContentSchema>;
+
+/** Развёрнутый ответ (`text_input`): пустые `[]` без эталона и wordBank. */
+export const TextInputContentSchema = z
+  .object({
+    segments: z
+      .array(FillInTheBlanksSegmentSchema)
+      .min(1, "Нужен хотя бы один сегмент"),
+    wordBank: z.array(FillInTheBlanksWordSchema).default([]),
+    correctMapping: z.record(z.string(), z.string()).default({}),
+  })
+  .superRefine((data, ctx) => {
+    const blankIds = data.segments
+      .filter((seg) => seg.type === "blank")
+      .map((seg) => seg.id);
+
+    if (blankIds.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Добавьте хотя бы один пропуск (пустые скобки [] )",
+        path: ["segments"],
+      });
+      return;
+    }
+
+    const blankSet = new Set(blankIds);
+    if (blankSet.size !== blankIds.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Id пропусков не должны повторяться",
+        path: ["segments"],
+      });
+    }
+
+    const wordIds = new Set(data.wordBank.map((w) => w.id));
+    for (const [blankId, wordId] of Object.entries(data.correctMapping)) {
+      if (!blankSet.has(blankId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Лишний ключ correctMapping: "${blankId}"`,
+          path: ["correctMapping", blankId],
+        });
+      } else if (wordId && !wordIds.has(wordId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Слово "${wordId}" не найдено в wordBank`,
+          path: ["correctMapping", blankId],
+        });
+      }
+    }
+  });
+
+export type TextInputContent = z.infer<typeof TextInputContentSchema>;
+
+export function blankIdsFromSegments(
+  segments: FillInTheBlanksSegment[],
+): string[] {
+  return segments.filter((seg) => seg.type === "blank").map((seg) => seg.id);
+}

@@ -4,6 +4,14 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
+import {
+  getGradingVisuals,
+  grade10ToPercentScore,
+  normalizeAttemptScoreToPercent,
+  percentToGrade10,
+  sumQuestionPoints,
+  type GradingVisuals,
+} from "@/lib/utils/grading";
 import type { StudentProgressStatus } from "@/app/actions/student-dashboard-actions";
 import type { AttemptResult, SafeTestQuestion } from "@/app/actions/test-actions";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
@@ -18,8 +26,11 @@ export type GradebookBestAttemptDetails = {
   score: number | null;
   completedAt: string | null;
   totalQuestions: number;
+  totalPossiblePoints: number;
   /** Балл по попытке на шкале 0–10 (как в успеваемости). */
   grade10: number | null;
+  isForKids: boolean;
+  gradingVisuals: GradingVisuals | null;
   /** Вопросы без `is_correct` на клиенте — как в прохождении теста. */
   questions: SafeTestQuestion[];
   /** Сводка для `QuizResultView` (как после `completeAttempt` для уже завершённой попытки). */
@@ -66,7 +77,7 @@ export async function getBestTestAttemptDetails(
 
   const { data: testRow, error: testError } = await supabase
     .from("tests")
-    .select("id, user_id, title, description")
+    .select("id, user_id, title, description, is_for_kids")
     .eq("id", tid.data)
     .maybeSingle();
 
@@ -94,7 +105,7 @@ export async function getBestTestAttemptDetails(
   const { data: questionsRaw, error: questionsError } = await supabase
     .from("questions")
     .select(
-      "id, type, order_index, content, created_at, options ( id, content, order_index, is_correct )",
+      "id, type, order_index, content, created_at, points, options ( id, content, order_index, is_correct )",
     )
     .eq("test_id", tid.data)
     .order("order_index", { ascending: true });
@@ -105,6 +116,8 @@ export async function getBestTestAttemptDetails(
 
   const questionsOrdered = questionsRaw ?? [];
   const totalQuestions = questionsOrdered.length;
+  const totalPossiblePoints = Math.max(sumQuestionPoints(questionsOrdered), 1);
+  const isForKids = testRow.is_for_kids ?? false;
 
   const { data: attempt, error: attemptError } = await supabase
     .from("student_attempts")
@@ -167,27 +180,29 @@ export async function getBestTestAttemptDetails(
     correct_option_ids: correctByQuestion.get(r.question_id) ?? [],
   }));
 
-  const grade10 =
-    attempt && totalQuestions > 0
-      ? Math.max(
-          0,
-          Math.min(10, Math.round(((attempt.score ?? 0) / totalQuestions) * 10)),
-        )
-      : null;
+  const scoreVal = attempt?.score ?? 0;
+  const scorePercent = normalizeAttemptScoreToPercent(
+    scoreVal,
+    totalPossiblePoints,
+  );
+  const grade10 = attempt ? percentToGrade10(scorePercent) : null;
+  const gradingVisuals = attempt
+    ? getGradingVisuals(scoreVal, isForKids, totalPossiblePoints)
+    : null;
 
   const answeredQuestionIds = new Set(answerRows.map((r) => r.question_id));
   const answeredCount = answeredQuestionIds.size;
-  const scoreVal = attempt?.score ?? 0;
   const resultSummary: AttemptResult | null = attempt
     ? {
-        score: scoreVal,
-        correctCount: scoreVal,
+        score: scorePercent,
+        correctCount: Math.round((scorePercent / 100) * totalQuestions),
         totalQuestions,
+        earnedPoints: Math.round((scorePercent / 100) * totalPossiblePoints),
+        totalPossiblePoints,
         answeredCount,
-        percentCorrect:
-          totalQuestions > 0
-            ? Math.round((scoreVal / totalQuestions) * 100)
-            : 0,
+        percentCorrect: scorePercent,
+        isForKids,
+        requiresManualReview: attempt.status === "pending_review",
       }
     : null;
 
@@ -221,7 +236,10 @@ export async function getBestTestAttemptDetails(
       score: attempt?.score ?? null,
       completedAt: attempt?.completed_at ?? null,
       totalQuestions,
+      totalPossiblePoints,
       grade10,
+      isForKids,
+      gradingVisuals,
       questions,
       resultSummary,
       reviewAnswers,
@@ -309,18 +327,14 @@ export async function overrideTestAttemptGrade(
 
   const { data: questionRows, error: qErr } = await supabase
     .from("questions")
-    .select("id")
+    .select("id, points")
     .eq("test_id", attempt.test_id);
 
   if (qErr) {
     return { success: false, error: qErr.message };
   }
 
-  const total = (questionRows ?? []).length;
-  const newScore =
-    total > 0
-      ? Math.max(0, Math.min(total, Math.round((gradeParsed.data / 10) * total)))
-      : 0;
+  const newScore = grade10ToPercentScore(gradeParsed.data);
 
   const { error: updateError } = await supabase
     .from("student_attempts")
@@ -357,6 +371,8 @@ export type MatrixGradebookCell = {
   columnId: string;
   status: StudentProgressStatus;
   grade10: number | null;
+  isForKids: boolean;
+  gradingVisuals: GradingVisuals | null;
   testId: string | null;
   blockId: string | null;
   attemptId: string | null;
@@ -638,6 +654,8 @@ export async function getMatrixGradebookData(
         columnId: col.id,
         status: "not_started",
         grade10: null,
+        isForKids: false,
+        gradingVisuals: null,
         testId: col.testId ?? null,
         blockId: col.blockId ?? null,
         attemptId: null,
@@ -651,16 +669,38 @@ export async function getMatrixGradebookData(
   }
 
   const questionCountByTest = new Map<string, number>();
+  const pointsSumByTest = new Map<string, number>();
+  const isForKidsByTest = new Map<string, boolean>();
+
   if (testIds.length > 0) {
     const { data: questionRows, error: questionsErr } = await supabase
       .from("questions")
-      .select("test_id")
+      .select("test_id, points")
       .in("test_id", testIds);
     if (questionsErr) {
       return { success: false, error: questionsErr.message };
     }
     for (const q of questionRows ?? []) {
-      questionCountByTest.set(q.test_id, (questionCountByTest.get(q.test_id) ?? 0) + 1);
+      questionCountByTest.set(
+        q.test_id,
+        (questionCountByTest.get(q.test_id) ?? 0) + 1,
+      );
+      pointsSumByTest.set(
+        q.test_id,
+        (pointsSumByTest.get(q.test_id) ?? 0) +
+          (q.points != null && q.points > 0 ? q.points : 1),
+      );
+    }
+
+    const { data: testMetaRows, error: testMetaErr } = await supabase
+      .from("tests")
+      .select("id, is_for_kids")
+      .in("id", testIds);
+    if (testMetaErr) {
+      return { success: false, error: testMetaErr.message };
+    }
+    for (const t of testMetaRows ?? []) {
+      isForKidsByTest.set(t.id, t.is_for_kids ?? false);
     }
   }
 
@@ -675,7 +715,11 @@ export async function getMatrixGradebookData(
       return { success: false, error: attemptsErr.message };
     }
 
-    type BestCompleted = { grade10: number; attemptId: string };
+    type BestCompleted = {
+      grade10: number;
+      attemptId: string;
+      gradingVisuals: GradingVisuals;
+    };
     const bestCompleted = new Map<string, BestCompleted>();
     const inProgressKeys = new Set<string>();
 
@@ -683,22 +727,22 @@ export async function getMatrixGradebookData(
       const matchingCols = columns.filter(
         (c) => c.type === "test" && c.testId === a.test_id,
       );
+      const totalPoints = Math.max(pointsSumByTest.get(a.test_id) ?? 1, 1);
+      const kids = isForKidsByTest.get(a.test_id) ?? false;
+      const visuals = getGradingVisuals(a.score, kids, totalPoints);
+      const g10 = visuals.grade10 ?? 0;
+
       for (const col of matchingCols) {
         const cellKey = matrixCellKey(a.student_id, col.id);
 
         if (a.status === "completed") {
-          const total = questionCountByTest.get(a.test_id) ?? 0;
-          const g10 =
-            total > 0
-              ? Math.max(
-                  0,
-                  Math.min(10, Math.round(((a.score ?? 0) / total) * 10)),
-                )
-              : null;
-          if (g10 == null) continue;
           const prev = bestCompleted.get(cellKey);
           if (!prev || g10 > prev.grade10) {
-            bestCompleted.set(cellKey, { grade10: g10, attemptId: a.id });
+            bestCompleted.set(cellKey, {
+              grade10: g10,
+              attemptId: a.id,
+              gradingVisuals: visuals,
+            });
           }
         } else if (a.status === "in_progress") {
           inProgressKeys.add(cellKey);
@@ -712,6 +756,18 @@ export async function getMatrixGradebookData(
       cell.status = "completed";
       cell.grade10 = best.grade10;
       cell.attemptId = best.attemptId;
+      cell.isForKids = best.gradingVisuals.isForKids;
+      cell.gradingVisuals = best.gradingVisuals;
+    }
+
+    for (const col of columns) {
+      if (col.type !== "test" || !col.testId) continue;
+      const kids = isForKidsByTest.get(col.testId) ?? false;
+      if (!kids) continue;
+      for (const student of students) {
+        const cell = cells[matrixCellKey(student.id, col.id)];
+        if (cell) cell.isForKids = true;
+      }
     }
 
     for (const cellKey of inProgressKeys) {

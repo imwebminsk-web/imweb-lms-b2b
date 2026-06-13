@@ -10,10 +10,16 @@ import {
 } from "@/app/actions/test-actions";
 import { shuffleDeterministic } from "@/lib/quiz-helpers";
 import {
+  isGroupedFillAssignmentsComplete,
+  isGroupedFillBlanksSelectionComplete,
+  resolveGroupedFillBlanksPlayerView,
+} from "@/lib/grouped-fill-blanks-utils";
+import { resolveGroupedChoicePlayerView, LEGACY_GROUPED_ITEM_ID } from "@/lib/grouped-choice-utils";
+import {
   buildReviewMaps,
   type ReviewAnswerRow,
 } from "@/lib/learn/build-review-maps";
-import { FillInTheBlanksContentSchema } from "@/lib/validations/fill-in-the-blanks-schema";
+import { parseTaskPresentation } from "@/lib/utils/task-content";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import type { Json } from "@/types/database.types";
@@ -34,9 +40,13 @@ import {
   MatchingPuzzleQuestion,
   type MatchingPair,
 } from "./MatchingPuzzleQuestion";
-import { MultipleChoiceQuestion } from "./MultipleChoiceQuestion";
-import { FillInTheBlanksQuestion } from "./FillInTheBlanksQuestion";
+import {
+  GroupedChoiceTaskQuestion,
+  isGroupedChoiceSelectionComplete,
+} from "./GroupedChoiceTaskQuestion";
+import { GroupedFillBlanksTaskQuestion } from "./GroupedFillBlanksTaskQuestion";
 import { QuizResultView } from "./QuizResultView";
+import { QuizTaskInstruction } from "./QuizTaskInstruction";
 
 function textFromContent(content: Json): string {
   if (typeof content === "string") return content;
@@ -84,16 +94,33 @@ function textFromContent(content: Json): string {
   return "Вопрос";
 }
 
-/** Заголовок над блоком вопроса: у fill контент — JSON сегментов, не показываем как строку. */
-function questionHeading(content: Json, type: string | null): string | null {
-  if (type === "fill_in_the_blanks") {
-    return "Заполните пропуски, перетаскивая слова из банка";
+const FILL_IN_THE_BLANKS_FALLBACK_HEADING =
+  "Заполните пропуски, перетаскивая слова из банка";
+
+const FILL_BLANKS_TYPING_FALLBACK_HEADING =
+  "Заполните пропуски, вводя слова вручную";
+const TEXT_INPUT_FALLBACK_HEADING = "Развёрнутый ответ";
+
+function readOptionalStringField(content: Json, key: string): string | null {
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return null;
   }
-  return textFromContent(content);
+  const value = (content as Record<string, unknown>)[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function fillInTheBlanksInstructionText(content: Json): string | null {
+  return readOptionalStringField(content, "text");
 }
 
 function isMultipleChoice(type: string | null | undefined): boolean {
   return type === "multiple_choice" || type === "multiple";
+}
+
+function isChoiceQuestionType(type: string | null | undefined): boolean {
+  return type === "single_choice" || type === "multiple_choice" || type === "multiple";
 }
 
 export type QuizPlayerProps = {
@@ -101,6 +128,7 @@ export type QuizPlayerProps = {
   testTitle: string;
   testDescription: string | null;
   questions: SafeTestQuestion[];
+  isForKids?: boolean;
 };
 
 export function QuizPlayer({
@@ -108,12 +136,9 @@ export function QuizPlayer({
   testTitle,
   testDescription,
   questions,
+  isForKids = false,
 }: QuizPlayerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedSingleId, setSelectedSingleId] = useState<string | null>(null);
-  const [selectedMultipleIds, setSelectedMultipleIds] = useState<string[]>(
-    [],
-  );
   const [puzzlePairs, setPuzzlePairs] = useState<
     MatchingPair[] | DndMatchingPair[]
   >([]);
@@ -133,6 +158,15 @@ export function QuizPlayer({
   const [reviewCorrectIdsByQuestionId, setReviewCorrectIdsByQuestionId] =
     useState<Map<string, string[]> | null>(null);
 
+  const [reviewGroupedSelectionsByQuestionId, setReviewGroupedSelectionsByQuestionId] =
+    useState<Map<string, Record<string, string[]>> | null>(null);
+  const [reviewGroupedCorrectByQuestionId, setReviewGroupedCorrectByQuestionId] =
+    useState<Map<string, Record<string, string[]>> | null>(null);
+  const [reviewGroupedFillTypingByQuestionId, setReviewGroupedFillTypingByQuestionId] =
+    useState<Map<string, Record<string, Record<string, string>>> | null>(null);
+  const [reviewGroupedFillAssignmentsByQuestionId, setReviewGroupedFillAssignmentsByQuestionId] =
+    useState<Map<string, Record<string, Record<string, string>>> | null>(null);
+
   const total = questions.length;
   const current = questions[currentIndex];
   const isLast = currentIndex >= total - 1;
@@ -140,25 +174,48 @@ export function QuizPlayer({
     total > 0 ? Math.round(((currentIndex + 1) / total) * 100) : 0;
 
   const multiple = current ? isMultipleChoice(current.type) : false;
+  const isChoiceQuestion = current ? isChoiceQuestionType(current.type) : false;
   const isClickPuzzle = current?.type === "matching_puzzle";
   const isDndPuzzle = current?.type === "dnd_puzzle";
   const isAnyPairPuzzle = isClickPuzzle || isDndPuzzle;
   const isImageLabeling = current?.type === "image_labeling";
   const isFillInTheBlanks = current?.type === "fill_in_the_blanks";
+  const isFillBlanksTyping = current?.type === "fill_blanks_typing";
+  const isTextInput = current?.type === "text_input";
+  const isAnyGroupedFillBlanks =
+    isFillInTheBlanks || isFillBlanksTyping || isTextInput;
 
-  const fillBlanksMeta = useMemo(() => {
-    if (!current || current.type !== "fill_in_the_blanks") return null;
-    const p = FillInTheBlanksContentSchema.safeParse(current.content);
-    if (!p.success) return null;
-    const blankIds = p.data.segments
-      .filter((s) => s.type === "blank")
-      .map((s) => s.id);
-    return { parsed: p.data, blankIds };
+  const taskPresentation = useMemo(() => {
+    if (!current) return null;
+    return parseTaskPresentation(current.content);
   }, [current]);
 
-  const [fillAssignments, setFillAssignments] = useState<
-    Record<string, string>
+  const groupedFillBlanksView = useMemo(() => {
+    if (!current || !isAnyGroupedFillBlanks) return null;
+    return resolveGroupedFillBlanksPlayerView({
+      content: current.content,
+      questionType: current.type,
+    });
+  }, [current, isAnyGroupedFillBlanks]);
+
+  const [groupedFillAssignments, setGroupedFillAssignments] = useState<
+    Record<string, Record<string, string>>
   >({});
+  const [groupedFillTyping, setGroupedFillTyping] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [groupedSelections, setGroupedSelections] = useState<
+    Record<string, string[]>
+  >({});
+
+  const choicePlayerView = useMemo(() => {
+    if (!current || !isChoiceQuestion) return null;
+    return resolveGroupedChoicePlayerView({
+      content: current.content,
+      questionType: current.type,
+      legacyOptions: current.options,
+    });
+  }, [current, isChoiceQuestion]);
 
   const imageLabelingMeta = useMemo(() => {
     if (!current || current.type !== "image_labeling") return null;
@@ -194,24 +251,34 @@ export function QuizPlayer({
     void (async () => {
       const res = await getAttemptReviewAnswers(attemptId);
       if (cancelled || !res.success) return;
-      const built = buildReviewMaps(res.data as ReviewAnswerRow[], questions);
+      const built = buildReviewMaps(
+        res.data.answers as ReviewAnswerRow[],
+        questions,
+        res.data.groupedCorrectByQuestionId,
+      );
       if (!cancelled) {
         setReviewAnswersByQuestionId(built.reviewAnswersByQuestionId);
         setReviewFillByQuestionId(built.reviewFillByQuestionId);
         setReviewRowsByQuestionId(built.reviewRowsByQuestionId);
         setReviewCorrectIdsByQuestionId(built.reviewCorrectIdsByQuestionId);
+        setReviewGroupedSelectionsByQuestionId(
+          built.reviewGroupedSelectionsByQuestionId,
+        );
+        setReviewGroupedCorrectByQuestionId(
+          built.reviewGroupedCorrectByQuestionId,
+        );
+        setReviewGroupedFillTypingByQuestionId(
+          built.reviewGroupedFillTypingByQuestionId,
+        );
+        setReviewGroupedFillAssignmentsByQuestionId(
+          built.reviewGroupedFillAssignmentsByQuestionId,
+        );
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [finished, attemptId, questions]);
-
-  function toggleMultiple(id: string) {
-    setSelectedMultipleIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-  }
 
   const optionCount = current?.options.length ?? 0;
   const canSubmit = isAnyPairPuzzle
@@ -223,13 +290,23 @@ export function QuizPlayer({
           imageLabelingAssignmentsMerged,
           imageLabelingMeta.images.map((i) => i.id),
         )
-      : isFillInTheBlanks
-        ? !!fillBlanksMeta &&
-          fillBlanksMeta.blankIds.length > 0 &&
-          fillBlanksMeta.blankIds.every((id) => Boolean(fillAssignments[id]))
-        : multiple
-          ? selectedMultipleIds.length >= 1
-          : selectedSingleId !== null;
+      : isAnyGroupedFillBlanks && groupedFillBlanksView
+        ? groupedFillBlanksView.mode === "dnd"
+          ? isGroupedFillAssignmentsComplete(
+              groupedFillBlanksView,
+              groupedFillAssignments,
+            )
+          : isGroupedFillBlanksSelectionComplete(
+              groupedFillBlanksView,
+              groupedFillTyping,
+            )
+        : isChoiceQuestion && choicePlayerView
+            ? isGroupedChoiceSelectionComplete(
+                choicePlayerView.items,
+                groupedSelections,
+                multiple,
+              )
+          : false;
 
   function runSubmitThenAdvance() {
     if (!current || !canSubmit) return;
@@ -251,26 +328,38 @@ export function QuizPlayer({
                   imageLabelingMeta.images.map((i) => i.id),
                 ),
               })
-            : isFillInTheBlanks
-              ? await submitAnswer(attemptId, current.id, undefined, {
-                  fillAssignments,
-                })
-              : await submitAnswer(
-                  attemptId,
-                  current.id,
-                  multiple ? selectedMultipleIds : selectedSingleId!,
-                );
+            : isAnyGroupedFillBlanks && groupedFillBlanksView
+              ? groupedFillBlanksView.mode === "dnd"
+                ? await submitAnswer(attemptId, current.id, undefined, {
+                    groupedFillAssignments,
+                  })
+                : await submitAnswer(attemptId, current.id, undefined, {
+                    groupedFillTyping,
+                  })
+              : isChoiceQuestion && choicePlayerView
+                ? choicePlayerView.isGrouped
+                  ? await submitAnswer(attemptId, current.id, undefined, {
+                      groupedSelections,
+                    })
+                  : await submitAnswer(
+                      attemptId,
+                      current.id,
+                      multiple
+                        ? (groupedSelections[LEGACY_GROUPED_ITEM_ID] ?? [])
+                        : groupedSelections[LEGACY_GROUPED_ITEM_ID]?.[0],
+                    )
+              : { success: false as const, error: "Неподдерживаемый тип задания" };
       if (!sub.success) {
         setActionError(sub.error);
         return;
       }
 
       if (!isLast) {
-        setSelectedSingleId(null);
-        setSelectedMultipleIds([]);
         setPuzzlePairs([]);
         setLabelAssignments({});
-        setFillAssignments({});
+        setGroupedFillAssignments({});
+        setGroupedFillTyping({});
+        setGroupedSelections({});
         setCurrentIndex((i) => i + 1);
         return;
       }
@@ -303,6 +392,12 @@ export function QuizPlayer({
         reviewCorrectIdsByQuestionId={reviewCorrectIdsByQuestionId}
         reviewFillByQuestionId={reviewFillByQuestionId}
         reviewAnswersByQuestionId={reviewAnswersByQuestionId}
+        reviewGroupedSelectionsByQuestionId={reviewGroupedSelectionsByQuestionId}
+        reviewGroupedCorrectByQuestionId={reviewGroupedCorrectByQuestionId}
+        reviewGroupedFillTypingByQuestionId={reviewGroupedFillTypingByQuestionId}
+        reviewGroupedFillAssignmentsByQuestionId={
+          reviewGroupedFillAssignmentsByQuestionId
+        }
       />
     );
   }
@@ -332,9 +427,29 @@ export function QuizPlayer({
         key={currentIndex}
         className="flex flex-col gap-6 transition-opacity duration-300 ease-out"
       >
-        <h2 className="text-foreground text-2xl leading-snug font-semibold tracking-tight md:text-3xl">
-          {current ? questionHeading(current.content, current.type) : null}
-        </h2>
+        {current && taskPresentation ? (
+          <div className="space-y-2">
+            <QuizTaskInstruction
+              task={taskPresentation}
+              fallbackTitle={
+                isFillInTheBlanks
+                  ? FILL_IN_THE_BLANKS_FALLBACK_HEADING
+                  : isFillBlanksTyping
+                    ? FILL_BLANKS_TYPING_FALLBACK_HEADING
+                    : isTextInput
+                      ? TEXT_INPUT_FALLBACK_HEADING
+                    : isChoiceQuestion
+                      ? choicePlayerView?.taskInstruction ?? "Вопрос"
+                      : textFromContent(current.content)
+              }
+            />
+            {isFillInTheBlanks && fillInTheBlanksInstructionText(current.content) ? (
+              <p className="text-muted-foreground text-sm">
+                (перетащите слова из банка)
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {current && isClickPuzzle ? (
           <MatchingPuzzleQuestion
@@ -358,48 +473,30 @@ export function QuizPlayer({
             assignments={imageLabelingAssignmentsMerged}
             onAssignmentsChange={setLabelAssignments}
           />
-        ) : current && isFillInTheBlanks ? (
-          fillBlanksMeta ? (
-            <FillInTheBlanksQuestion
-              key={current.id}
-              content={fillBlanksMeta.parsed}
-              value={fillAssignments}
-              onChange={setFillAssignments}
-            />
-          ) : (
-            <p className="text-destructive text-sm" role="alert">
-              Не удалось загрузить вопрос с пропусками.
-            </p>
-          )
-        ) : current && multiple ? (
-          <MultipleChoiceQuestion
-            options={current.options}
-            selectedIds={selectedMultipleIds}
-            onToggle={toggleMultiple}
+        ) : current && isAnyGroupedFillBlanks && groupedFillBlanksView ? (
+          <GroupedFillBlanksTaskQuestion
+            key={current.id}
+            items={groupedFillBlanksView.items}
+            mode={groupedFillBlanksView.mode}
+            groupedTyping={groupedFillTyping}
+            groupedAssignments={groupedFillAssignments}
+            onTypingChange={setGroupedFillTyping}
+            onAssignmentsChange={setGroupedFillAssignments}
           />
-        ) : current ? (
-          <div className="flex flex-col gap-3" role="radiogroup">
-            {current.options.map((opt) => {
-              const active = selectedSingleId === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setSelectedSingleId(opt.id)}
-                  className={
-                    "border-input hover:bg-muted/60 focus-visible:ring-ring flex min-h-11 w-full items-center rounded-xl border px-4 py-3 text-left text-base transition-colors focus-visible:ring-2 focus-visible:outline-none md:min-h-12 md:text-lg " +
-                    (active
-                      ? "border-primary bg-primary/10 ring-primary/20 ring-2"
-                      : "bg-card")
-                  }
-                >
-                  {textFromContent(opt.content)}
-                </button>
-              );
-            })}
-          </div>
+        ) : current && isAnyGroupedFillBlanks ? (
+          <p className="text-destructive text-sm" role="alert">
+            {isTextInput
+              ? "Не удалось загрузить развёрнутый ответ."
+              : "Не удалось загрузить вопрос с пропусками."}
+          </p>
+        ) : current && isChoiceQuestion && choicePlayerView ? (
+          <GroupedChoiceTaskQuestion
+            key={current.id}
+            items={choicePlayerView.items}
+            isMultiple={multiple}
+            selections={groupedSelections}
+            onSelectionsChange={setGroupedSelections}
+          />
         ) : null}
       </div>
 

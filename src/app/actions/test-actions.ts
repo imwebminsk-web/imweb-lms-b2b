@@ -2,7 +2,38 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  GROUPED_FILL_BLANKS_ANCHOR_TEXT,
+  extractExtraWordsFromFillContent,
+  isGroupedFillAssignmentsComplete,
+  isGroupedFillBlanksFullyCorrect,
+  isGroupedFillBlanksSelectionComplete,
+  isGroupedFillInTheBlanksFullyCorrect,
+  LEGACY_GROUPED_FILL_ITEM_ID,
+  parseGroupedFillAssignmentsFromAnswerData,
+  parseGroupedFillBlanksItems,
+  parseGroupedFillTypingFromAnswerData,
+  resolveGroupedFillBlanksMode,
+  resolveGroupedFillBlanksPlayerView,
+  scoreGroupedFillInTheBlanksQuestion,
+  scoreGroupedFillBlanksTypingQuestion,
+  sumGroupedFillBlanksPoints,
+  newGroupedFillBlanksId,
+  parseGroupedFillBlanksItemText,
+} from "@/lib/grouped-fill-blanks-utils";
+import {
+  GROUPED_CHOICE_ANCHOR_TEXT,
+  groupedCorrectMapFromContent,
+  isGroupedChoiceContent,
+  LEGACY_GROUPED_ITEM_ID,
+  parseGroupedChoiceItems,
+  parseGroupedSelectionsFromAnswerData,
+  scoreGroupedChoiceQuestion,
+  sumGroupedItemPoints,
+  sanitizeGroupedChoiceContentForClient,
+} from "@/lib/grouped-choice-utils";
+import {
   parseFillAssignmentsFromAnswerData,
+  parseFillTypingFromAnswerData,
   parseLabelPairsFromAnswerData,
 } from "@/lib/quiz-helpers";
 import { createClient } from "@/lib/supabase/server";
@@ -11,13 +42,29 @@ import {
   type SaveFullTestPayload,
 } from "@/lib/validations/admin-test-schema";
 import {
+  groupedChoiceContentSchema,
+} from "@/lib/validations/grouped-choice-schema";
+import {
+  groupedFillBlanksContentSchema,
+  groupedFillInTheBlanksContentSchema,
+  groupedTextInputContentSchema,
+} from "@/lib/validations/grouped-fill-blanks-schema";
+import {
   FillInTheBlanksContentSchema,
+  TextInputContentSchema,
+  blankIdsFromSegments,
   type FillInTheBlanksContent,
 } from "@/lib/validations/fill-in-the-blanks-schema";
 import {
   submitAnswerSchema,
   type SubmitAnswerInput,
 } from "@/lib/validations/test-schemas";
+import {
+  normalizeAttemptScoreToPercent,
+  resolveQuestionPoints,
+  sumQuestionPoints,
+} from "@/lib/utils/grading";
+import { mergeLegacyAudioUrlIntoHtml } from "@/lib/utils/task-content";
 import type {
   CreateTestFormInitialData,
   QuestionField,
@@ -53,6 +100,135 @@ const imageLabelingAnswerPayloadSchema = z.object({
 const fillInTheBlanksAnswerPayloadSchema = z.object({
   fillAssignments: z.record(z.string(), z.string()),
 });
+
+const fillBlanksTypingAnswerPayloadSchema = z.object({
+  fillTyping: z.record(z.string(), z.string()),
+});
+
+const groupedFillTypingAnswerPayloadSchema = z.union([
+  z.object({
+    groupedFillTyping: z.record(
+      z.string(),
+      z.record(z.string(), z.string()),
+    ),
+  }),
+  fillBlanksTypingAnswerPayloadSchema,
+]);
+
+function normalizeGroupedFillTypingPayload(
+  answerData: unknown,
+): Record<string, Record<string, string>> | null {
+  const groupedParsed = z
+    .object({
+      groupedFillTyping: z.record(
+        z.string(),
+        z.record(z.string(), z.string()),
+      ),
+    })
+    .safeParse(answerData);
+  if (groupedParsed.success) {
+    return groupedParsed.data.groupedFillTyping;
+  }
+  const legacyParsed = fillBlanksTypingAnswerPayloadSchema.safeParse(answerData);
+  if (legacyParsed.success) {
+    return { [LEGACY_GROUPED_FILL_ITEM_ID]: legacyParsed.data.fillTyping };
+  }
+  return null;
+}
+
+function validateGroupedFillTypingSubmission(params: {
+  content: Json;
+  questionType: string | null;
+  groupedTyping: Record<string, Record<string, string>>;
+}): { ok: true } | { ok: false; error: string } {
+  const view = resolveGroupedFillBlanksPlayerView({
+    content: params.content,
+    questionType: params.questionType,
+  });
+  if (!view) {
+    return { ok: false, error: "Вопрос повреждён (контент пропусков)" };
+  }
+  if (!isGroupedFillBlanksSelectionComplete(view, params.groupedTyping)) {
+    const message =
+      params.questionType === "text_input"
+        ? "Заполните каждое поле развёрнутого ответа"
+        : "Заполните каждый пропуск";
+    return { ok: false, error: message };
+  }
+  return { ok: true };
+}
+
+const groupedFillAssignmentsAnswerPayloadSchema = z.union([
+  z.object({
+    groupedFillAssignments: z.record(
+      z.string(),
+      z.record(z.string(), z.string()),
+    ),
+  }),
+  fillInTheBlanksAnswerPayloadSchema,
+]);
+
+function normalizeGroupedFillAssignmentsPayload(
+  answerData: unknown,
+): Record<string, Record<string, string>> | null {
+  const groupedParsed = z
+    .object({
+      groupedFillAssignments: z.record(
+        z.string(),
+        z.record(z.string(), z.string()),
+      ),
+    })
+    .safeParse(answerData);
+  if (groupedParsed.success) {
+    return groupedParsed.data.groupedFillAssignments;
+  }
+  const legacyParsed = fillInTheBlanksAnswerPayloadSchema.safeParse(answerData);
+  if (legacyParsed.success) {
+    return { [LEGACY_GROUPED_FILL_ITEM_ID]: legacyParsed.data.fillAssignments };
+  }
+  return null;
+}
+
+function validateGroupedFillAssignmentsSubmission(params: {
+  content: Json;
+  questionType: string | null;
+  groupedAssignments: Record<string, Record<string, string>>;
+}): { ok: true } | { ok: false; error: string } {
+  const view = resolveGroupedFillBlanksPlayerView({
+    content: params.content,
+    questionType: params.questionType,
+  });
+  if (!view) {
+    return { ok: false, error: "Вопрос повреждён (контент пропусков)" };
+  }
+  if (!isGroupedFillAssignmentsComplete(view, params.groupedAssignments)) {
+    return {
+      ok: false,
+      error: "Заполните каждый пропуск словом из банка",
+    };
+  }
+  return { ok: true };
+}
+
+const groupedChoiceAnswerPayloadSchema = z.object({
+  groupedSelections: z.record(z.string(), z.array(z.string().min(1))),
+});
+
+function isFillGapQuestionType(type: string | null | undefined): boolean {
+  return (
+    type === "fill_in_the_blanks" ||
+    type === "fill_blanks_typing" ||
+    type === "text_input"
+  );
+}
+
+function isChoiceQuestionType(type: string | null | undefined): boolean {
+  return (
+    type === "single_choice" ||
+    type === "multiple_choice" ||
+    type === "multiple"
+  );
+}
 
 /** Пара в одной строке: `imageUrl` + эталонная подпись (`correctText` или `correctWord`). */
 function isImageLabelingPairRow(content: Json | null): boolean {
@@ -198,7 +374,7 @@ export type SafeTestQuestion = Pick<
 
 export type TestWithQuestionsPayload = Pick<
   Tables<"tests">,
-  "id" | "title" | "description" | "folder_name" | "created_at" | "is_published"
+  "id" | "title" | "description" | "folder_name" | "created_at" | "is_published" | "is_for_kids"
 > & {
   questions: SafeTestQuestion[];
 };
@@ -646,6 +822,7 @@ export async function getTestWithQuestions(
       folder_name,
       created_at,
       is_published,
+      is_for_kids,
       questions (
         id,
         content,
@@ -697,6 +874,7 @@ export async function getTestWithQuestions(
     folder_name: data.folder_name,
     created_at: data.created_at,
     is_published: data.is_published,
+    is_for_kids: data.is_for_kids ?? false,
     questions,
   };
 
@@ -736,6 +914,7 @@ export async function getSafeTestForClient(
       folder_name,
       created_at,
       is_published,
+      is_for_kids,
       questions (
         id,
         content,
@@ -768,7 +947,9 @@ export async function getSafeTestForClient(
     .sort((a, b) => a.order_index - b.order_index)
     .map((q) => ({
       id: q.id,
-      content: q.content,
+      content: isGroupedChoiceContent(q.content)
+        ? sanitizeGroupedChoiceContentForClient(q.content)
+        : q.content,
       order_index: q.order_index,
       type: q.type,
       created_at: q.created_at,
@@ -790,6 +971,7 @@ export async function getSafeTestForClient(
       folder_name: data.folder_name,
       created_at: data.created_at,
       is_published: data.is_published,
+      is_for_kids: data.is_for_kids ?? false,
       questions,
     },
   };
@@ -967,13 +1149,19 @@ function resolveOptionAndAnswerData(
 }
 
 export type AttemptResult = {
-  /** Сохранено в `student_attempts.score` — сумма верных «единиц» (пары image_labeling, пропуски fill_in_the_blanks, иначе до 1 на вопрос). */
+  /** Процент 0–100 в `student_attempts.score`. */
   score: number;
+  /** Число полностью верных заданий. */
   correctCount: number;
-  /** Максимум баллов за попытку: пары у image_labeling, пропуски у fill_in_the_blanks, иначе 1 на вопрос. */
+  /** Количество заданий в тесте. */
   totalQuestions: number;
+  earnedPoints: number;
+  totalPossiblePoints: number;
   answeredCount: number;
   percentCorrect: number;
+  isForKids: boolean;
+  /** Попытка содержит развёрнутые ответы и ждёт проверки преподавателем. */
+  requiresManualReview: boolean;
 };
 
 async function deleteAttemptAnswersForQuestion(
@@ -1210,7 +1398,7 @@ export async function submitAnswer(
 
   if (question.type === "fill_in_the_blanks") {
     const payloadParsed =
-      fillInTheBlanksAnswerPayloadSchema.safeParse(answerData);
+      groupedFillAssignmentsAnswerPayloadSchema.safeParse(answerData);
     if (!payloadParsed.success) {
       return {
         success: false,
@@ -1220,26 +1408,271 @@ export async function submitAnswer(
       };
     }
 
-    const contentParsed = FillInTheBlanksContentSchema.safeParse(
-      question.content,
-    );
-    if (!contentParsed.success) {
-      return { success: false, error: "Вопрос повреждён (контент пропусков)" };
+    const groupedAssignments =
+      normalizeGroupedFillAssignmentsPayload(answerData);
+    if (!groupedAssignments) {
+      return {
+        success: false,
+        error: "Некорректные ответы для пропусков",
+      };
     }
 
-    const fill = contentParsed.data;
-    const assign = payloadParsed.data.fillAssignments;
-    const wordIds = new Set(fill.wordBank.map((w) => w.id));
-    const blankIds = Object.keys(fill.correctMapping);
-    if (blankIds.length === 0) {
-      return { success: false, error: "В вопросе нет пропусков" };
+    const validation = validateGroupedFillAssignmentsSubmission({
+      content: question.content,
+      questionType: question.type,
+      groupedAssignments,
+    });
+    if (!validation.ok) {
+      return { success: false, error: validation.error };
     }
-    for (const bid of blankIds) {
-      const wid = assign[bid];
-      if (typeof wid !== "string" || !wordIds.has(wid)) {
+
+    const { data: anchorOpts, error: anchorErr } = await supabase
+      .from("options")
+      .select("id")
+      .eq("question_id", question_id)
+      .order("order_index", { ascending: true })
+      .limit(1);
+
+    if (anchorErr) {
+      return { success: false, error: anchorErr.message };
+    }
+    const anchorId = anchorOpts?.[0]?.id;
+    if (!anchorId) {
+      return {
+        success: false,
+        error: "У вопроса нет служебной записи варианта ответа",
+      };
+    }
+
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
+    if (deleteError) {
+      return { success: false, error: deleteError };
+    }
+
+    const answerJson: Json = { groupedFillAssignments: groupedAssignments };
+
+    const { error: insertErr } = await supabase
+      .from("attempt_answers")
+      .insert({
+        attempt_id,
+        question_id,
+        option_id: anchorId,
+        answer_data: answerJson,
+      });
+
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
+    }
+
+    return { success: true };
+  }
+
+  if (question.type === "fill_blanks_typing") {
+    const payloadParsed =
+      groupedFillTypingAnswerPayloadSchema.safeParse(answerData);
+    if (!payloadParsed.success) {
+      return {
+        success: false,
+        error:
+          payloadParsed.error.issues[0]?.message ??
+          "Некорректные ответы для пропусков",
+      };
+    }
+
+    const groupedTyping = normalizeGroupedFillTypingPayload(answerData);
+    if (!groupedTyping) {
+      return {
+        success: false,
+        error: "Некорректные ответы для пропусков",
+      };
+    }
+
+    const validation = validateGroupedFillTypingSubmission({
+      content: question.content,
+      questionType: question.type,
+      groupedTyping,
+    });
+    if (!validation.ok) {
+      return { success: false, error: validation.error };
+    }
+
+    const { data: anchorOpts, error: anchorErr } = await supabase
+      .from("options")
+      .select("id")
+      .eq("question_id", question_id)
+      .order("order_index", { ascending: true })
+      .limit(1);
+
+    if (anchorErr) {
+      return { success: false, error: anchorErr.message };
+    }
+    const anchorId = anchorOpts?.[0]?.id;
+    if (!anchorId) {
+      return {
+        success: false,
+        error: "У вопроса нет служебной записи варианта ответа",
+      };
+    }
+
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
+    if (deleteError) {
+      return { success: false, error: deleteError };
+    }
+
+    const answerJson: Json = { groupedFillTyping: groupedTyping };
+
+    const { error: insertErr } = await supabase
+      .from("attempt_answers")
+      .insert({
+        attempt_id,
+        question_id,
+        option_id: anchorId,
+        answer_data: answerJson,
+      });
+
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
+    }
+
+    return { success: true };
+  }
+
+  if (question.type === "text_input") {
+    const payloadParsed =
+      groupedFillTypingAnswerPayloadSchema.safeParse(answerData);
+    if (!payloadParsed.success) {
+      return {
+        success: false,
+        error:
+          payloadParsed.error.issues[0]?.message ??
+          "Некорректные ответы для развёрнутого ответа",
+      };
+    }
+
+    const groupedTyping = normalizeGroupedFillTypingPayload(answerData);
+    if (!groupedTyping) {
+      return {
+        success: false,
+        error: "Некорректные ответы для развёрнутого ответа",
+      };
+    }
+
+    const validation = validateGroupedFillTypingSubmission({
+      content: question.content,
+      questionType: question.type,
+      groupedTyping,
+    });
+    if (!validation.ok) {
+      return { success: false, error: validation.error };
+    }
+
+    const { data: anchorOpts, error: anchorErr } = await supabase
+      .from("options")
+      .select("id")
+      .eq("question_id", question_id)
+      .order("order_index", { ascending: true })
+      .limit(1);
+
+    if (anchorErr) {
+      return { success: false, error: anchorErr.message };
+    }
+    const anchorId = anchorOpts?.[0]?.id;
+    if (!anchorId) {
+      return {
+        success: false,
+        error: "У вопроса нет служебной записи варианта ответа",
+      };
+    }
+
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
+    if (deleteError) {
+      return { success: false, error: deleteError };
+    }
+
+    const answerJson: Json = { groupedFillTyping: groupedTyping };
+
+    const { error: insertErr } = await supabase
+      .from("attempt_answers")
+      .insert({
+        attempt_id,
+        question_id,
+        option_id: anchorId,
+        answer_data: answerJson,
+      });
+
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
+    }
+
+    return { success: true };
+  }
+
+  if (
+    isChoiceQuestionType(question.type) &&
+    isGroupedChoiceContent(question.content)
+  ) {
+    const payloadParsed =
+      groupedChoiceAnswerPayloadSchema.safeParse(answerData);
+    if (!payloadParsed.success) {
+      return {
+        success: false,
+        error:
+          payloadParsed.error.issues[0]?.message ??
+          "Некорректные ответы для задания",
+      };
+    }
+
+    const items = parseGroupedChoiceItems(question.content);
+    if (!items || items.length === 0) {
+      return { success: false, error: "Вопрос повреждён (нет вопросов)" };
+    }
+
+    const selections = payloadParsed.data.groupedSelections;
+    const isMultiple =
+      question.type === "multiple_choice" || question.type === "multiple";
+
+    for (const item of items) {
+      const selected = selections[item.id];
+      if (!Array.isArray(selected)) {
         return {
           success: false,
-          error: "Заполните каждый пропуск словом из банка",
+          error: "Ответьте на все вопросы задания",
+        };
+      }
+      const uniqueSelected = [...new Set(selected)];
+      const validOptionIds = new Set(item.options.map((o) => o.id));
+      if (
+        uniqueSelected.length !== selected.length ||
+        uniqueSelected.some((id) => !validOptionIds.has(id))
+      ) {
+        return {
+          success: false,
+          error: "Выбран недопустимый вариант ответа",
+        };
+      }
+      if (isMultiple) {
+        if (uniqueSelected.length < 1) {
+          return {
+            success: false,
+            error: "Выберите хотя бы один вариант в каждом вопросе",
+          };
+        }
+      } else if (uniqueSelected.length !== 1) {
+        return {
+          success: false,
+          error: "Выберите ровно один вариант в каждом вопросе",
         };
       }
     }
@@ -1271,7 +1704,7 @@ export async function submitAnswer(
       return { success: false, error: deleteError };
     }
 
-    const answerJson: Json = { fillAssignments: assign };
+    const answerJson: Json = { groupedSelections: selections };
 
     const { error: insertErr } = await supabase
       .from("attempt_answers")
@@ -1486,11 +1919,14 @@ export async function getAttemptReviewAnswers(
   | {
       success: true;
       data: {
-        question_id: string;
-        option_id: string;
-        answer_data: Json | null;
-        correct_option_ids: string[];
-      }[];
+        answers: {
+          question_id: string;
+          option_id: string;
+          answer_data: Json | null;
+          correct_option_ids: string[];
+        }[];
+        groupedCorrectByQuestionId: Record<string, Record<string, string[]>>;
+      };
     }
   | { success: false; error: string }
 > {
@@ -1536,6 +1972,9 @@ export async function getAttemptReviewAnswers(
 
   const questionIds = [...new Set((rows ?? []).map((r) => r.question_id))];
   const correctByQuestion = new Map<string, string[]>();
+  const groupedCorrectByQuestionId: Record<string, Record<string, string[]>> =
+    {};
+
   if (questionIds.length > 0) {
     const { data: optionRows, error: optionErr } = await supabase
       .from("options")
@@ -1550,20 +1989,62 @@ export async function getAttemptReviewAnswers(
       list.push(o.id);
       correctByQuestion.set(o.question_id, list);
     }
+
+    const { data: questionRows, error: questionErr } = await supabase
+      .from("questions")
+      .select("id, type, content")
+      .in("id", questionIds);
+
+    if (questionErr) {
+      return { success: false, error: questionErr.message };
+    }
+
+    for (const q of questionRows ?? []) {
+      if (!isChoiceQuestionType(q.type) || !isGroupedChoiceContent(q.content)) {
+        continue;
+      }
+      const map = groupedCorrectMapFromContent(q.content);
+      if (map) {
+        groupedCorrectByQuestionId[q.id] = map;
+      }
+    }
   }
 
   return {
     success: true,
-    data: (rows ?? []).map((r) => ({
-      question_id: r.question_id,
-      option_id: r.option_id,
-      answer_data: r.answer_data,
-      correct_option_ids: correctByQuestion.get(r.question_id) ?? [],
-    })),
+    data: {
+      answers: (rows ?? []).map((r) => ({
+        question_id: r.question_id,
+        option_id: r.option_id,
+        answer_data: r.answer_data,
+        correct_option_ids: correctByQuestion.get(r.question_id) ?? [],
+      })),
+      groupedCorrectByQuestionId,
+    },
   };
 }
 
 function countFillInTheBlanksSlots(content: Json | null): number {
+  if (!content) return 1;
+
+  const dndGrouped = parseGroupedFillBlanksItems(content, "dnd");
+  if (dndGrouped?.length) {
+    return dndGrouped.length;
+  }
+  const typingGrouped = parseGroupedFillBlanksItems(content, "typing");
+  if (typingGrouped?.length) {
+    return typingGrouped.length;
+  }
+  const textInputGrouped = parseGroupedFillBlanksItems(content, "text_input");
+  if (textInputGrouped?.length) {
+    return textInputGrouped.length;
+  }
+
+  const textInputParsed = TextInputContentSchema.safeParse(content);
+  if (textInputParsed.success) {
+    const n = blankIdsFromSegments(textInputParsed.data.segments).length;
+    return n > 0 ? n : 1;
+  }
   const p = FillInTheBlanksContentSchema.safeParse(content);
   if (!p.success) return 1;
   const k = Object.keys(p.data.correctMapping).length;
@@ -1581,7 +2062,7 @@ function totalGradableUnitsForAttempt(
       const qopts = allOptions.filter((o) => o.question_id === q.id);
       const pc = getImageLabelingPairOptionIds(qopts).size;
       n += pc > 0 ? pc : 1;
-    } else if (q.type === "fill_in_the_blanks") {
+    } else if (isFillGapQuestionType(q.type)) {
       n += countFillInTheBlanksSlots(q.content);
     } else {
       n += 1;
@@ -1590,10 +2071,221 @@ function totalGradableUnitsForAttempt(
   return n;
 }
 
+/** Задание засчитывается целиком: все пары / пропуски / варианты верны. */
+function getAttemptQuestionEarnedPoints(
+  q: {
+    id: string;
+    type: string | null;
+    content: Json | null;
+    points?: number | null;
+  },
+  answerRow:
+    | { option_id: string | null; answer_data: Json | null }
+    | undefined,
+  allOptions: {
+    id: string;
+    question_id: string;
+    is_correct: boolean | null;
+    content: Json | null;
+  }[],
+  correctIdsByQuestion: Map<string, string[]>,
+): number {
+  if (q.type === "text_input") {
+    return 0;
+  }
+
+  if (q.type === "fill_in_the_blanks") {
+    const groupedAssignments = parseGroupedFillAssignmentsFromAnswerData(
+      answerRow?.answer_data ?? null,
+    );
+    if (!groupedAssignments) return 0;
+    return scoreGroupedFillInTheBlanksQuestion({
+      content: q.content,
+      questionType: q.type,
+      groupedAssignments,
+      questionPoints: q.points,
+    });
+  }
+
+  if (q.type === "fill_blanks_typing") {
+    const groupedTyping = parseGroupedFillTypingFromAnswerData(
+      answerRow?.answer_data ?? null,
+    );
+    if (!groupedTyping) return 0;
+    return scoreGroupedFillBlanksTypingQuestion({
+      content: q.content,
+      questionType: q.type,
+      groupedTyping,
+      questionPoints: q.points,
+    });
+  }
+
+  if (isGroupedChoiceContent(q.content)) {
+    const selections = parseGroupedSelectionsFromAnswerData(
+      answerRow?.answer_data ?? null,
+    );
+    if (!selections) return 0;
+    return scoreGroupedChoiceQuestion({
+      content: q.content,
+      questionType: q.type,
+      selections,
+      questionPoints: q.points,
+    });
+  }
+
+  if (
+    isAttemptQuestionFullyCorrect(
+      q,
+      answerRow,
+      allOptions,
+      correctIdsByQuestion,
+    )
+  ) {
+    return resolveQuestionPoints(q.points);
+  }
+
+  return 0;
+}
+
+function isAttemptQuestionFullyCorrect(
+  q: {
+    id: string;
+    type: string | null;
+    content: Json | null;
+    points?: number | null;
+  },
+  answerRow:
+    | { option_id: string | null; answer_data: Json | null }
+    | undefined,
+  allOptions: {
+    id: string;
+    question_id: string;
+    is_correct: boolean | null;
+    content: Json | null;
+  }[],
+  correctIdsByQuestion: Map<string, string[]>,
+): boolean {
+  if (!answerRow) return false;
+
+  if (q.type === "text_input") {
+    return false;
+  }
+
+  if (isGroupedChoiceContent(q.content)) {
+    const selections = parseGroupedSelectionsFromAnswerData(
+      answerRow.answer_data,
+    );
+    if (!selections) return false;
+    const items = parseGroupedChoiceItems(q.content);
+    const total = items
+      ? sumGroupedItemPoints(items)
+      : resolveQuestionPoints(q.points);
+    const earned = scoreGroupedChoiceQuestion({
+      content: q.content,
+      questionType: q.type,
+      selections,
+      questionPoints: q.points,
+    });
+    return earned >= total;
+  }
+
+  if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
+    const pairs = parsePairAssignmentsFromAnswerData(answerRow.answer_data);
+    const optionIdsForQ = allOptions
+      .filter((o) => o.question_id === q.id)
+      .map((o) => o.id);
+    const setQ = new Set(optionIdsForQ);
+    return Boolean(
+      pairs &&
+        validateMatchingPairsStructure(pairs, setQ) &&
+        pairs.every((p) => p.leftOptionId === p.rightOptionId),
+    );
+  }
+
+  if (q.type === "image_labeling") {
+    const qopts = allOptions.filter((o) => o.question_id === q.id);
+    const pairIds = getImageLabelingPairOptionIds(qopts);
+    if (pairIds.size === 0) return false;
+    const lp = parseLabelPairsFromAnswerData(answerRow.answer_data);
+    if (!lp || lp.length !== pairIds.size) return false;
+    const byImage = new Map(lp.map((p) => [p.imageId, p.wordId]));
+    return [...pairIds].every((pid) => byImage.get(pid) === pid);
+  }
+
+  if (q.type === "fill_in_the_blanks") {
+    const groupedAssignments = parseGroupedFillAssignmentsFromAnswerData(
+      answerRow.answer_data,
+    );
+    if (!groupedAssignments) return false;
+    return isGroupedFillInTheBlanksFullyCorrect({
+      content: q.content,
+      questionType: q.type,
+      groupedAssignments,
+      questionPoints: q.points,
+    });
+  }
+
+  if (q.type === "fill_blanks_typing") {
+    const groupedTyping = parseGroupedFillTypingFromAnswerData(
+      answerRow.answer_data,
+    );
+    if (!groupedTyping) return false;
+    return isGroupedFillBlanksFullyCorrect({
+      content: q.content,
+      questionType: q.type,
+      groupedTyping,
+      questionPoints: q.points,
+    });
+  }
+
+  const studentIds = parseSelectedIdsFromAnswerRow(
+    answerRow.option_id ?? "",
+    answerRow.answer_data,
+    q.type ?? "single_choice",
+  );
+  const correctIds = correctIdsByQuestion.get(q.id) ?? [];
+  const isMultiple = q.type === "multiple_choice" || q.type === "multiple";
+
+  if (isMultiple) {
+    const a = [...new Set(studentIds)].sort();
+    const b = [...new Set(correctIds)].sort();
+    return setsOfStringsEqual(a, b);
+  }
+
+  if (studentIds.length === 1) {
+    return correctIds.includes(studentIds[0]);
+  }
+
+  return false;
+}
+
+function buildAttemptResult(params: {
+  percentScore: number;
+  correctCount: number;
+  questionCount: number;
+  earnedPoints: number;
+  totalPossiblePoints: number;
+  answeredCount: number;
+  isForKids: boolean;
+  requiresManualReview?: boolean;
+}): AttemptResult {
+  const percent = Math.max(0, Math.min(100, Math.round(params.percentScore)));
+  return {
+    score: percent,
+    correctCount: params.correctCount,
+    totalQuestions: params.questionCount,
+    earnedPoints: params.earnedPoints,
+    totalPossiblePoints: params.totalPossiblePoints,
+    answeredCount: params.answeredCount,
+    percentCorrect: percent,
+    isForKids: params.isForKids,
+    requiresManualReview: params.requiresManualReview ?? false,
+  };
+}
+
 /**
  * Завершает попытку: статус `completed`, подсчёт баллов только на сервере.
- * `single_choice`: верно, если выбран один вариант с `is_correct`.
- * `multiple_choice`: верно, если множество выбранных id совпадает с множеством верных вариантов.
+ * Балл = процент 0–100 по весам `questions.points` (полностью верное задание).
  */
 export async function completeAttempt(
   attemptId: string,
@@ -1628,19 +2320,38 @@ export async function completeAttempt(
     return { success: false, error: "Нет доступа к этой попытке" };
   }
 
-  const { count: totalQuestions, error: countError } = await supabase
-    .from("questions")
-    .select("id", { count: "exact", head: true })
-    .eq("test_id", attempt.test_id);
+  const { data: testRow, error: testError } = await supabase
+    .from("tests")
+    .select("is_for_kids")
+    .eq("id", attempt.test_id)
+    .single();
 
-  if (countError) {
-    return { success: false, error: countError.message };
+  if (testError || !testRow) {
+    return { success: false, error: testError?.message ?? "Тест не найден" };
   }
 
-  const total = totalQuestions ?? 0;
+  const isForKids = testRow.is_for_kids ?? false;
 
-  if (attempt.status === "completed") {
-    const score = attempt.score ?? 0;
+  const { data: questionRows, error: questionsFetchError } = await supabase
+    .from("questions")
+    .select("id, type, order_index, content, points")
+    .eq("test_id", attempt.test_id)
+    .order("order_index", { ascending: true });
+
+  if (questionsFetchError) {
+    return { success: false, error: questionsFetchError.message };
+  }
+
+  const questionsOrdered = questionRows ?? [];
+  const questionCount = questionsOrdered.length;
+  const totalPossiblePoints = Math.max(sumQuestionPoints(questionsOrdered), 1);
+
+  if (attempt.status === "completed" || attempt.status === "pending_review") {
+    const storedScore = attempt.score ?? 0;
+    const percentScore = normalizeAttemptScoreToPercent(
+      storedScore,
+      totalPossiblePoints,
+    );
     const { count: answered } = await supabase
       .from("attempt_answers")
       .select("id", { count: "exact", head: true })
@@ -1648,14 +2359,19 @@ export async function completeAttempt(
 
     return {
       success: true,
-      data: {
-        score,
-        correctCount: score,
-        totalQuestions: total,
+      data: buildAttemptResult({
+        percentScore,
+        correctCount: Math.round(
+          (percentScore / 100) * questionCount,
+        ),
+        questionCount,
+        earnedPoints: Math.round(
+          (percentScore / 100) * totalPossiblePoints,
+        ),
+        totalPossiblePoints,
         answeredCount: answered ?? 0,
-        percentCorrect:
-          total > 0 ? Math.round((score / total) * 100) : 0,
-      },
+        isForKids,
+      }),
     };
   }
 
@@ -1670,18 +2386,6 @@ export async function completeAttempt(
 
   const rows = answers ?? [];
   const answeredCount = new Set(rows.map((r) => r.question_id)).size;
-
-  const { data: questionRows, error: questionsFetchError } = await supabase
-    .from("questions")
-    .select("id, type, order_index, content")
-    .eq("test_id", attempt.test_id)
-    .order("order_index", { ascending: true });
-
-  if (questionsFetchError) {
-    return { success: false, error: questionsFetchError.message };
-  }
-
-  const questionsOrdered = questionRows ?? [];
   const questionIds = questionsOrdered.map((q) => q.id);
 
   let allOptions: {
@@ -1703,10 +2407,15 @@ export async function completeAttempt(
     allOptions = opts ?? [];
   }
 
-  const totalGradable = Math.max(
-    totalGradableUnitsForAttempt(questionsOrdered, allOptions),
-    1,
-  );
+  const zeroResult = buildAttemptResult({
+    percentScore: 0,
+    correctCount: 0,
+    questionCount,
+    earnedPoints: 0,
+    totalPossiblePoints,
+    answeredCount: rows.length === 0 ? 0 : answeredCount,
+    isForKids,
+  });
 
   if (rows.length === 0) {
     const completedAt = new Date().toISOString();
@@ -1723,23 +2432,14 @@ export async function completeAttempt(
       return { success: false, error: updateError.message };
     }
 
-    return {
-      success: true,
-      data: {
-        score: 0,
-        correctCount: 0,
-        totalQuestions: totalGradable,
-        answeredCount: 0,
-        percentCorrect: 0,
-      },
-    };
+    return { success: true, data: zeroResult };
   }
 
   const correctIdsByQuestion = new Map<string, string[]>();
   for (const qid of questionIds) {
     correctIdsByQuestion.set(qid, []);
   }
-  for (const opt of allOptions ?? []) {
+  for (const opt of allOptions) {
     if (opt.is_correct) {
       const list = correctIdsByQuestion.get(opt.question_id) ?? [];
       if (!list.includes(opt.id)) {
@@ -1756,103 +2456,43 @@ export async function completeAttempt(
     rowsByQuestionId.set(row.question_id, list);
   }
 
+  let earnedPoints = 0;
   let correctCount = 0;
+
+  const requiresManualReview = questionsOrdered.some(
+    (q) => q.type === "text_input",
+  );
+
   for (const q of questionsOrdered) {
     const listForQ = rowsByQuestionId.get(q.id);
     const answerRow = listForQ
       ? pickRepresentativeAttemptAnswerRow(q.type, listForQ)
       : undefined;
-    if (!answerRow) {
-      continue;
-    }
-
-    if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
-      const pairs = parsePairAssignmentsFromAnswerData(answerRow.answer_data);
-      const optionIdsForQ = (allOptions ?? [])
-        .filter((o) => o.question_id === q.id)
-        .map((o) => o.id);
-      const setQ = new Set(optionIdsForQ);
-      if (
-        pairs &&
-        validateMatchingPairsStructure(pairs, setQ) &&
-        pairs.every((p) => p.leftOptionId === p.rightOptionId)
-      ) {
-        correctCount += 1;
-      }
-      continue;
-    }
-
-    if (q.type === "image_labeling") {
-      const qopts = allOptions.filter((o) => o.question_id === q.id);
-      const pairIds = getImageLabelingPairOptionIds(qopts);
-      if (pairIds.size === 0) {
-        continue;
-      }
-      const lp = parseLabelPairsFromAnswerData(answerRow.answer_data);
-      if (!lp || lp.length !== pairIds.size) {
-        continue;
-      }
-      const byImage = new Map(lp.map((p) => [p.imageId, p.wordId]));
-      for (const pid of pairIds) {
-        if (byImage.get(pid) === pid) {
-          correctCount += 1;
-        }
-      }
-      continue;
-    }
-
-    if (q.type === "fill_in_the_blanks") {
-      const contentParsed = FillInTheBlanksContentSchema.safeParse(q.content);
-      if (!contentParsed.success) {
-        continue;
-      }
-      const fill = contentParsed.data;
-      const blankIds = Object.keys(fill.correctMapping);
-      if (blankIds.length === 0) {
-        continue;
-      }
-      const assign = parseFillAssignmentsFromAnswerData(answerRow.answer_data);
-      if (!assign) {
-        continue;
-      }
-      for (const bid of blankIds) {
-        if (assign[bid] === fill.correctMapping[bid]) {
-          correctCount += 1;
-        }
-      }
-      continue;
-    }
-
-    const studentIds = parseSelectedIdsFromAnswerRow(
-      answerRow.option_id,
-      answerRow.answer_data,
-      q.type,
+    const questionPoints = resolveQuestionPoints(q.points);
+    const earnedForQuestion = getAttemptQuestionEarnedPoints(
+      q,
+      answerRow,
+      allOptions,
+      correctIdsByQuestion,
     );
-    const correctIds = correctIdsByQuestion.get(q.id) ?? [];
 
-    const isMultiple =
-      q.type === "multiple_choice" || q.type === "multiple";
-
-    if (isMultiple) {
-      const a = [...new Set(studentIds)].sort();
-      const b = [...new Set(correctIds)].sort();
-      if (setsOfStringsEqual(a, b)) {
-        correctCount += 1;
-      }
-    } else if (studentIds.length === 1) {
-      const only = studentIds[0];
-      if (correctIds.includes(only)) {
-        correctCount += 1;
-      }
+    earnedPoints += earnedForQuestion;
+    if (earnedForQuestion >= questionPoints) {
+      correctCount += 1;
     }
   }
+
+  const percentScore =
+    totalPossiblePoints > 0
+      ? Math.round((earnedPoints / totalPossiblePoints) * 100)
+      : 0;
 
   const completedAt = new Date().toISOString();
   const { error: updateError } = await supabase
     .from("student_attempts")
     .update({
-      status: "completed",
-      score: correctCount,
+      status: requiresManualReview ? "pending_review" : "completed",
+      score: percentScore,
       completed_at: completedAt,
     })
     .eq("id", idResult.data);
@@ -1861,20 +2501,18 @@ export async function completeAttempt(
     return { success: false, error: updateError.message };
   }
 
-  const percentCorrect =
-    totalGradable > 0
-      ? Math.round((correctCount / totalGradable) * 100)
-      : 0;
-
   return {
     success: true,
-    data: {
-      score: correctCount,
+    data: buildAttemptResult({
+      percentScore,
       correctCount,
-      totalQuestions: totalGradable,
+      questionCount,
+      earnedPoints,
+      totalPossiblePoints,
       answeredCount,
-      percentCorrect,
-    },
+      isForKids,
+      requiresManualReview,
+    }),
   };
 }
 
@@ -1907,21 +2545,71 @@ function fillContentToFormFields(content: FillInTheBlanksContent): {
     } else {
       const wid = content.correctMapping[seg.id];
       const txt = wid ? wordById.get(wid) : undefined;
-      raw += txt ? `[${txt}]` : "[?]";
+      raw += txt ? `[${txt}]` : "[]";
     }
   }
   return { fillRawText: raw, fillExtraWords: extraWords };
 }
 
+function extractExampleTextFromContent(content: Json): string {
+  const parsed = z
+    .object({ example_text: z.string().optional() })
+    .safeParse(content);
+  return parsed.success && parsed.data.example_text
+    ? parsed.data.example_text
+    : "";
+}
+
+function extractInstructionTextFromContent(content: Json): string {
+  const textRoot = z.object({ text: z.string().optional() }).safeParse(content);
+  const text = textRoot.success && textRoot.data.text ? textRoot.data.text : "";
+  const audioRoot = z.object({ audio_url: z.string().optional() }).safeParse(content);
+  const legacyAudio =
+    audioRoot.success && audioRoot.data.audio_url ? audioRoot.data.audio_url : "";
+  return mergeLegacyAudioUrlIntoHtml(text, legacyAudio);
+}
+
+function buildTextQuestionContent(content: {
+  text: string;
+  example_text?: string;
+}): Json {
+  const trimmedExample = content.example_text?.trim();
+  return {
+    text: content.text,
+    ...(trimmedExample ? { example_text: trimmedExample } : {}),
+  } as Json;
+}
+
+function mapTestSettingsToRow(d: SaveFullTestPayload) {
+  return {
+    title: d.title,
+    description: d.description ?? null,
+    folder_name: d.folder_name?.trim() ? d.folder_name.trim() : null,
+    is_published: d.is_published ?? true,
+    title_teacher: d.title_teacher?.trim() ? d.title_teacher.trim() : null,
+    title_student: d.title_student?.trim() ? d.title_student.trim() : null,
+    test_type: d.test_type,
+    auto_check: d.auto_check,
+    save_to_journal: d.save_to_journal,
+    max_score: d.max_score,
+    is_for_kids: d.is_for_kids,
+  };
+}
+
 function mapDbQuestionRowToQuestionField(row: {
   content: Json;
   type: string | null;
+  points?: number | null;
   options?: {
+    id: string;
     content: Json;
     order_index: number;
     is_correct: boolean | null;
   }[];
 }): QuestionField {
+  const points = resolveQuestionPoints(row.points);
+  const exampleText = extractExampleTextFromContent(row.content);
+  const instructionText = extractInstructionTextFromContent(row.content);
   const rawType = row.type ?? "single_choice";
   const type =
     rawType === "multiple" ? ("multiple_choice" as const) : rawType;
@@ -1930,39 +2618,102 @@ function mapDbQuestionRowToQuestionField(row: {
     (a, b) => a.order_index - b.order_index,
   );
 
-  if (type === "fill_in_the_blanks") {
-    const parsed = FillInTheBlanksContentSchema.safeParse(row.content);
-    if (!parsed.success) {
+  if (
+    type === "fill_in_the_blanks" ||
+    type === "fill_blanks_typing" ||
+    type === "text_input"
+  ) {
+    const mode = resolveGroupedFillBlanksMode(type);
+    const groupedSchema =
+      mode === "text_input"
+        ? groupedTextInputContentSchema
+        : mode === "dnd"
+          ? groupedFillInTheBlanksContentSchema
+          : groupedFillBlanksContentSchema;
+    const groupedParsed = groupedSchema.safeParse(row.content);
+    if (groupedParsed.success && groupedParsed.data.items?.length) {
       return {
-        text: "",
-        type: "fill_in_the_blanks",
-        fillRawText: "",
-        fillExtraWords: [],
-        fillContent: null,
+        text: instructionText,
+        type,
+        points: sumGroupedFillBlanksPoints(groupedParsed.data.items),
+        exampleText,
+        items: groupedParsed.data.items.map((item) => ({
+          id: item.id,
+          text: item.text,
+          points: resolveQuestionPoints(item.points),
+          segments: item.segments,
+          wordBank: item.wordBank,
+          correctMapping: item.correctMapping,
+          extraWords:
+            mode === "dnd"
+              ? extractExtraWordsFromFillContent({
+                  segments: item.segments,
+                  wordBank: item.wordBank,
+                  correctMapping: item.correctMapping,
+                })
+              : [],
+        })),
+      };
+    }
+
+    const flatParsed =
+      type === "text_input"
+        ? TextInputContentSchema.safeParse(row.content)
+        : FillInTheBlanksContentSchema.safeParse(row.content);
+    if (!flatParsed.success) {
+      const defaultText =
+        mode === "text_input"
+          ? "Ответьте на вопрос: []"
+          : "Мама [мыла] раму.";
+      const parsedItem = parseGroupedFillBlanksItemText(defaultText, mode, []);
+      return {
+        text: instructionText,
+        type,
+        points,
+        exampleText,
+        items: [
+          {
+            id: newGroupedFillBlanksId(),
+            text: defaultText,
+            points,
+            segments: parsedItem?.segments ?? [],
+            wordBank: parsedItem?.wordBank ?? [],
+            correctMapping: parsedItem?.correctMapping ?? {},
+            extraWords: [],
+          },
+        ],
       };
     }
     const { fillRawText, fillExtraWords } = fillContentToFormFields(
-      parsed.data,
+      flatParsed.data,
     );
-    const textRoot = z.object({ text: z.string() }).safeParse(row.content);
     return {
-      text: textRoot.success ? textRoot.data.text : "",
-      type: "fill_in_the_blanks",
-      fillRawText,
-      fillExtraWords,
-      fillContent: parsed.data,
+      text: instructionText,
+      type,
+      points,
+      exampleText,
+      items: [
+        {
+          id: LEGACY_GROUPED_FILL_ITEM_ID,
+          text: fillRawText,
+          points,
+          segments: flatParsed.data.segments,
+          wordBank: flatParsed.data.wordBank,
+          correctMapping: flatParsed.data.correctMapping,
+          extraWords: fillExtraWords,
+        },
+      ],
     };
   }
-
-  const textRoot = z.object({ text: z.string() }).safeParse(row.content);
-  const text = textRoot.success ? textRoot.data.text : "";
 
   if (type === "matching_puzzle" || type === "dnd_puzzle") {
     const puzzleType: "matching_puzzle" | "dnd_puzzle" =
       type === "dnd_puzzle" ? "dnd_puzzle" : "matching_puzzle";
     return {
-      text,
+      text: instructionText,
       type: puzzleType,
+      points,
+      exampleText,
       options: opts.map((o) => {
         const c = o.content as { left?: unknown; right?: unknown };
         return {
@@ -1975,8 +2726,10 @@ function mapDbQuestionRowToQuestionField(row: {
 
   if (type === "image_labeling") {
     return {
-      text,
+      text: instructionText,
       type: "image_labeling",
+      points,
+      exampleText,
       labelingPairs: opts.map((o) => {
         const c = o.content as {
           imageUrl?: unknown;
@@ -1996,22 +2749,92 @@ function mapDbQuestionRowToQuestionField(row: {
   const qType: "single_choice" | "multiple_choice" =
     type === "multiple_choice" ? "multiple_choice" : "single_choice";
 
+  const groupedParsed = groupedChoiceContentSchema.safeParse(row.content);
+  if (groupedParsed.success && groupedParsed.data.items?.length) {
+    return {
+      text: mergeLegacyAudioUrlIntoHtml(
+        groupedParsed.data.text,
+        typeof (row.content as Record<string, unknown>).audio_url === "string"
+          ? String((row.content as Record<string, unknown>).audio_url)
+          : "",
+      ),
+      type: qType,
+      points: sumGroupedItemPoints(groupedParsed.data.items),
+      exampleText,
+      items: groupedParsed.data.items.map((item) => ({
+        id: item.id,
+        text: item.text,
+        points: resolveQuestionPoints(item.points),
+        options: item.options.map((o) => ({
+          id: o.id,
+          text: o.text,
+          isCorrect: o.is_correct,
+        })),
+      })),
+    };
+  }
+
+  const legacyOptions = opts
+    .filter((o) => {
+      const c = o.content as { text?: unknown };
+      return (
+        c.text !== "__fill_in_the_blanks__" &&
+        c.text !== GROUPED_CHOICE_ANCHOR_TEXT &&
+        c.text !== GROUPED_FILL_BLANKS_ANCHOR_TEXT
+      );
+    })
+    .map((o) => {
+      const c = o.content as { text?: unknown };
+      return {
+        id: o.id,
+        text: typeof c.text === "string" ? c.text : "",
+        isCorrect: Boolean(o.is_correct),
+      };
+    });
+
   return {
-    text,
+    text: instructionText,
     type: qType,
-    options: opts
-      .filter((o) => {
-        const c = o.content as { text?: unknown };
-        return c.text !== "__fill_in_the_blanks__";
-      })
-      .map((o) => {
-        const c = o.content as { text?: unknown };
-        return {
-          text: typeof c.text === "string" ? c.text : "",
-          isCorrect: Boolean(o.is_correct),
-        };
-      }),
+    points,
+    exampleText,
+    items: [
+      {
+        id: LEGACY_GROUPED_ITEM_ID,
+        text: instructionText,
+        points,
+        options: legacyOptions,
+      },
+    ],
   };
+}
+
+function hasGroupedFillBlanksItemsInPayload(
+  q: SaveFullTestPayload["questions"][number],
+): boolean {
+  if (
+    q.type !== "fill_in_the_blanks" &&
+    q.type !== "fill_blanks_typing" &&
+    q.type !== "text_input"
+  ) {
+    return false;
+  }
+  const mode = resolveGroupedFillBlanksMode(q.type);
+  const schema =
+    mode === "text_input"
+      ? groupedTextInputContentSchema
+      : mode === "dnd"
+        ? groupedFillInTheBlanksContentSchema
+        : groupedFillBlanksContentSchema;
+  const parsed = schema.safeParse(q.content);
+  return Boolean(parsed.success && parsed.data.items && parsed.data.items.length > 0);
+}
+
+function hasGroupedChoiceItemsInPayload(
+  q: SaveFullTestPayload["questions"][number],
+): boolean {
+  if (!isChoiceQuestionType(q.type)) return false;
+  const parsed = groupedChoiceContentSchema.safeParse(q.content);
+  return Boolean(parsed.success && parsed.data.items && parsed.data.items.length > 0);
 }
 
 /** Вставка вопросов и вариантов для существующего `test_id` (без отката теста). */
@@ -2023,11 +2846,16 @@ async function insertQuestionsAndOptionsForTest(
   const questionInserts = questions.map((q, i) => ({
     test_id: testId,
     content:
-      q.type === "fill_in_the_blanks"
+      isFillGapQuestionType(q.type)
         ? (q.content as Json)
-        : ({ text: q.content.text } as Json),
+        : hasGroupedChoiceItemsInPayload(q)
+          ? (q.content as Json)
+          : buildTextQuestionContent(
+              q.content as { text: string; example_text?: string },
+            ),
     order_index: i,
     type: q.type,
+    points: resolveQuestionPoints(q.points),
   }));
 
   const { data: insertedQuestions, error: qInsErr } = await client
@@ -2081,11 +2909,31 @@ async function insertQuestionsAndOptionsForTest(
         };
       });
     }
-    if (q.type === "fill_in_the_blanks") {
+    if (hasGroupedFillBlanksItemsInPayload(q)) {
+      return [
+        {
+          question_id: qRow.id,
+          content: { text: GROUPED_FILL_BLANKS_ANCHOR_TEXT } as Json,
+          order_index: 0,
+          is_correct: true,
+        },
+      ];
+    }
+    if (isFillGapQuestionType(q.type)) {
       return [
         {
           question_id: qRow.id,
           content: { text: "__fill_in_the_blanks__" } as Json,
+          order_index: 0,
+          is_correct: true,
+        },
+      ];
+    }
+    if (hasGroupedChoiceItemsInPayload(q)) {
+      return [
+        {
+          question_id: qRow.id,
+          content: { text: GROUPED_CHOICE_ANCHOR_TEXT } as Json,
           order_index: 0,
           is_correct: true,
         },
@@ -2130,6 +2978,7 @@ function stableStringify(value: unknown): string {
 function buildQuestionSignature(questions: {
   type: string | null;
   content: Json;
+  points?: number | null;
   options: { order_index: number; content: Json; is_correct: boolean | null }[];
 }[]): string[] {
   return questions.map((question) => {
@@ -2139,7 +2988,7 @@ function buildQuestionSignature(questions: {
         content: option.content,
         is_correct: Boolean(option.is_correct),
       }));
-    return `${normalizeQuestionTypeForCompare(question.type)}|${stableStringify(question.content)}|${stableStringify(optionsSignature)}`;
+    return `${normalizeQuestionTypeForCompare(question.type)}|points:${resolveQuestionPoints(question.points)}|${stableStringify(question.content)}|${stableStringify(optionsSignature)}`;
   });
 }
 
@@ -2202,11 +3051,20 @@ export async function getTestDraftForEdit(
       description,
       folder_name,
       user_id,
+      title_teacher,
+      title_student,
+      test_type,
+      auto_check,
+      save_to_journal,
+      max_score,
+      is_for_kids,
+      is_published,
       questions (
         content,
         order_index,
         type,
-        options ( content, order_index, is_correct )
+        points,
+        options ( id, content, order_index, is_correct )
       )
     `,
     )
@@ -2235,6 +3093,14 @@ export async function getTestDraftForEdit(
     title: data.title,
     description: data.description ?? "",
     folderName: data.folder_name ?? "",
+    titleTeacher: data.title_teacher ?? "",
+    titleStudent: data.title_student ?? "",
+    testType: data.test_type === "training" ? "training" : "final",
+    autoCheck: data.auto_check ?? true,
+    saveToJournal: data.save_to_journal ?? true,
+    maxScore: data.max_score ?? 100,
+    isForKids: data.is_for_kids ?? false,
+    isPublished: data.is_published ?? true,
     questions,
   };
 
@@ -2304,6 +3170,7 @@ export async function updateFullTest(
         type,
         content,
         order_index,
+        points,
         options ( content, is_correct, order_index )
       )
     `,
@@ -2333,6 +3200,7 @@ export async function updateFullTest(
     .map((question) => ({
       type: question.type,
       content: question.content,
+      points: question.points,
       options: (question.options ?? []).map((option) => ({
         order_index: option.order_index,
         content: option.content,
@@ -2342,6 +3210,7 @@ export async function updateFullTest(
   const incomingQuestions = d.questions.map((question) => ({
     type: question.type,
     content: question.content as Json,
+    points: resolveQuestionPoints(question.points),
     options: question.options.map((option, index) => ({
       order_index: index,
       content: option.content as Json,
@@ -2372,12 +3241,7 @@ export async function updateFullTest(
 
   const { error: updateTestErr } = await supabase
     .from("tests")
-    .update({
-      title: d.title,
-      description: d.description ?? null,
-      folder_name: d.folder_name?.trim() ? d.folder_name.trim() : null,
-      is_published: d.is_published ?? true,
-    })
+    .update(mapTestSettingsToRow(d))
     .eq("id", tid);
 
   if (updateTestErr) {
@@ -2473,10 +3337,7 @@ export async function saveFullTest(
   const { data: testRow, error: testErr } = await supabase
     .from("tests")
     .insert({
-      title: d.title,
-      description: d.description ?? null,
-      folder_name: d.folder_name?.trim() ? d.folder_name.trim() : null,
-      is_published: d.is_published ?? true,
+      ...mapTestSettingsToRow(d),
       user_id: user.id,
     })
     .select("id")

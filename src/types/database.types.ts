@@ -611,6 +611,7 @@ export type Database = {
           created_at: string | null
           id: string
           order_index: number
+          points: number
           test_id: string
           type: string | null
         }
@@ -619,6 +620,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           order_index: number
+          points?: number
           test_id: string
           type?: string | null
         }
@@ -627,6 +629,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           order_index?: number
+          points?: number
           test_id?: string
           type?: string | null
         }
@@ -644,28 +647,34 @@ export type Database = {
         Row: {
           completed_at: string | null
           id: string
+          is_training_mode: boolean
           score: number | null
           started_at: string | null
           status: Database["public"]["Enums"]["attempt_status"] | null
           student_id: string
+          teacher_comment: string | null
           test_id: string
         }
         Insert: {
           completed_at?: string | null
           id?: string
+          is_training_mode?: boolean
           score?: number | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["attempt_status"] | null
           student_id: string
+          teacher_comment?: string | null
           test_id: string
         }
         Update: {
           completed_at?: string | null
           id?: string
+          is_training_mode?: boolean
           score?: number | null
           started_at?: string | null
           status?: Database["public"]["Enums"]["attempt_status"] | null
           student_id?: string
+          teacher_comment?: string | null
           test_id?: string
         }
         Relationships: [
@@ -710,30 +719,51 @@ export type Database = {
       }
       tests: {
         Row: {
+          auto_check: boolean
           created_at: string | null
           description: string | null
           folder_name: string | null
           id: string
+          is_for_kids: boolean
           is_published: boolean | null
+          max_score: number
+          save_to_journal: boolean
+          test_type: string
           title: string
+          title_student: string | null
+          title_teacher: string | null
           user_id: string | null
         }
         Insert: {
+          auto_check?: boolean
           created_at?: string | null
           description?: string | null
           folder_name?: string | null
           id?: string
+          is_for_kids?: boolean
           is_published?: boolean | null
+          max_score?: number
+          save_to_journal?: boolean
+          test_type?: string
           title: string
+          title_student?: string | null
+          title_teacher?: string | null
           user_id?: string | null
         }
         Update: {
+          auto_check?: boolean
           created_at?: string | null
           description?: string | null
           folder_name?: string | null
           id?: string
+          is_for_kids?: boolean
           is_published?: boolean | null
+          max_score?: number
+          save_to_journal?: boolean
+          test_type?: string
           title?: string
+          title_student?: string | null
+          title_teacher?: string | null
           user_id?: string | null
         }
         Relationships: []
@@ -795,7 +825,7 @@ export type Database = {
       }
     }
     Enums: {
-      attempt_status: "in_progress" | "completed"
+      attempt_status: "in_progress" | "completed" | "pending_review"
       submission_status: "pending" | "approved" | "rejected"
       course_level:
         | "0"
@@ -946,7 +976,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      attempt_status: ["in_progress", "completed"],
+      attempt_status: ["in_progress", "completed", "pending_review"],
       submission_status: ["pending", "approved", "rejected"],
       course_level: [
         "0",

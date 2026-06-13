@@ -12,7 +12,7 @@ const testIdSchema = z.string().uuid("Некорректный ID теста");
 
 export type InitStudentQuizSuccess = {
   success: true;
-  test: { title: string; description: string | null };
+  test: { title: string; description: string | null; isForKids: boolean };
   questions: SafeTestQuestion[];
   attemptId: string;
 };
@@ -131,7 +131,11 @@ export async function initStudentQuiz(
 
   return {
     success: true,
-    test: { title: data.title, description: data.description },
+    test: {
+      title: data.title,
+      description: data.description,
+      isForKids: data.is_for_kids ?? false,
+    },
     questions: data.questions,
     attemptId,
   };

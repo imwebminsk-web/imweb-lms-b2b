@@ -4,9 +4,11 @@ import {
   parseImageLabelingOptions,
 } from "@/components/quiz/ImageLabelingQuestion";
 import {
-  parseFillAssignmentsFromAnswerData,
+  parseGroupedFillAssignmentsFromAnswerData,
+  parseGroupedFillTypingFromAnswerData,
   parseLabelPairsFromAnswerData,
 } from "@/lib/quiz-helpers";
+import { parseGroupedSelectionsFromAnswerData } from "@/lib/grouped-choice-utils";
 import type { Json } from "@/types/database.types";
 
 /** Одна строка ответа попытки + справочно верные option id по вопросу (как в `getAttemptReviewAnswers`). */
@@ -48,7 +50,17 @@ export type ReviewMaps = {
   >;
   reviewCorrectIdsByQuestionId: Map<string, string[]>;
   reviewFillByQuestionId: Map<string, Record<string, string>>;
+  reviewGroupedFillTypingByQuestionId: Map<
+    string,
+    Record<string, Record<string, string>>
+  >;
+  reviewGroupedFillAssignmentsByQuestionId: Map<
+    string,
+    Record<string, Record<string, string>>
+  >;
   reviewAnswersByQuestionId: Map<string, Record<string, string | null>>;
+  reviewGroupedSelectionsByQuestionId: Map<string, Record<string, string[]>>;
+  reviewGroupedCorrectByQuestionId: Map<string, Record<string, string[]>>;
 };
 
 /**
@@ -58,12 +70,29 @@ export type ReviewMaps = {
 export function buildReviewMaps(
   reviewAnswers: ReviewAnswerRow[],
   questions: SafeTestQuestion[],
+  groupedCorrectByQuestionId: Record<string, Record<string, string[]>> = {},
 ): ReviewMaps {
   const reviewAnswersByQuestionId = new Map<
     string,
     Record<string, string | null>
   >();
   const reviewFillByQuestionId = new Map<string, Record<string, string>>();
+  const reviewGroupedFillTypingByQuestionId = new Map<
+    string,
+    Record<string, Record<string, string>>
+  >();
+  const reviewGroupedFillAssignmentsByQuestionId = new Map<
+    string,
+    Record<string, Record<string, string>>
+  >();
+  const reviewGroupedSelectionsByQuestionId = new Map<
+    string,
+    Record<string, string[]>
+  >();
+  const reviewGroupedCorrectByQuestionId = new Map<
+    string,
+    Record<string, string[]>
+  >();
   const reviewRowsByQuestionId = new Map<
     string,
     { option_id: string; answer_data: Json | null }[]
@@ -107,20 +136,60 @@ export function buildReviewMaps(
       }
     }
 
-    const fill = parseFillAssignmentsFromAnswerData(parsedData);
-    if (fill && Object.keys(fill).length > 0) {
+    const groupedAssignments =
+      parseGroupedFillAssignmentsFromAnswerData(parsedData);
+    if (groupedAssignments && Object.keys(groupedAssignments).length > 0) {
       const q = questions.find((x) => x.id === row.question_id);
       if (q?.type === "fill_in_the_blanks") {
-        const prev = reviewFillByQuestionId.get(row.question_id) ?? {};
-        reviewFillByQuestionId.set(row.question_id, { ...prev, ...fill });
+        const prev =
+          reviewGroupedFillAssignmentsByQuestionId.get(row.question_id) ?? {};
+        reviewGroupedFillAssignmentsByQuestionId.set(row.question_id, {
+          ...prev,
+          ...groupedAssignments,
+        });
       }
     }
+
+    const groupedTyping = parseGroupedFillTypingFromAnswerData(parsedData);
+    if (groupedTyping && Object.keys(groupedTyping).length > 0) {
+      const q = questions.find((x) => x.id === row.question_id);
+      if (q?.type === "fill_blanks_typing" || q?.type === "text_input") {
+        const prev =
+          reviewGroupedFillTypingByQuestionId.get(row.question_id) ?? {};
+        reviewGroupedFillTypingByQuestionId.set(row.question_id, {
+          ...prev,
+          ...groupedTyping,
+        });
+      }
+    }
+
+    const grouped = parseGroupedSelectionsFromAnswerData(parsedData);
+    if (grouped && Object.keys(grouped).length > 0) {
+      const q = questions.find((x) => x.id === row.question_id);
+      if (q?.type === "single_choice" || q?.type === "multiple_choice") {
+        const prev = reviewGroupedSelectionsByQuestionId.get(row.question_id) ?? {};
+        reviewGroupedSelectionsByQuestionId.set(row.question_id, {
+          ...prev,
+          ...grouped,
+        });
+      }
+    }
+  }
+
+  for (const [questionId, correctMap] of Object.entries(
+    groupedCorrectByQuestionId,
+  )) {
+    reviewGroupedCorrectByQuestionId.set(questionId, correctMap);
   }
 
   return {
     reviewRowsByQuestionId,
     reviewCorrectIdsByQuestionId,
     reviewFillByQuestionId,
+    reviewGroupedFillTypingByQuestionId,
+    reviewGroupedFillAssignmentsByQuestionId,
     reviewAnswersByQuestionId,
+    reviewGroupedSelectionsByQuestionId,
+    reviewGroupedCorrectByQuestionId,
   };
 }

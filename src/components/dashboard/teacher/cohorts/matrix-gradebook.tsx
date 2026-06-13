@@ -25,6 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { cn } from "@/lib/utils";
 
 function cellKey(studentId: string, columnId: string): string {
@@ -59,6 +60,8 @@ function MatrixCell({
 }) {
   const status = cell?.status ?? "not_started";
   const grade10 = cell?.grade10 ?? null;
+  const isForKids = cell?.isForKids ?? false;
+  const gradingVisuals = cell?.gradingVisuals ?? null;
 
   const isClickable =
     (column.type === "test" &&
@@ -124,6 +127,24 @@ function MatrixCell({
   }
 
   if (grade10 != null) {
+    if (isForKids && gradingVisuals?.emoji) {
+      return (
+        <button
+          type="button"
+          onClick={handleClick}
+          className="inline-flex size-full min-h-8 items-center justify-center rounded-sm hover:bg-muted/60"
+          aria-label={`Результат: ${gradingVisuals.scorePercent}%`}
+        >
+          <GradingDisplay
+            score={gradingVisuals.scorePercent}
+            isForKids
+            totalPossiblePoints={100}
+            compact
+          />
+        </button>
+      );
+    }
+
     const pass = grade10 >= 5;
     return (
       <button

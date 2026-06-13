@@ -1,17 +1,32 @@
 "use client";
 
 import type { AttemptResult, SafeTestOption, SafeTestQuestion } from "@/app/actions/test-actions";
+import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
-  parseFillAssignmentsFromAnswerData,
+  parseGroupedFillAssignmentsFromAnswerData,
+  parseGroupedFillTypingFromAnswerData,
   parseLabelPairsFromAnswerData,
 } from "@/lib/quiz-helpers";
-import { FillInTheBlanksContentSchema } from "@/lib/validations/fill-in-the-blanks-schema";
+import {
+  isGroupedFillBlanksFullyCorrect,
+  isGroupedFillInTheBlanksFullyCorrect,
+  resolveGroupedFillBlanksPlayerView,
+} from "@/lib/grouped-fill-blanks-utils";
+import {
+  isGroupedChoiceContent,
+  parseGroupedChoiceItems,
+  parseGroupedSelectionsFromAnswerData,
+  resolveGroupedChoicePlayerView,
+  scoreGroupedChoiceQuestion,
+  sumGroupedItemPoints,
+} from "@/lib/grouped-choice-utils";
 import type { Json } from "@/types/database.types";
 import type { ReactNode } from "react";
 
-import { FillInTheBlanksQuestion } from "./FillInTheBlanksQuestion";
+import { GroupedFillBlanksTaskQuestion } from "./GroupedFillBlanksTaskQuestion";
+import { GroupedChoiceTaskQuestion } from "./GroupedChoiceTaskQuestion";
 import {
   buildAssignmentsFromLabelPairs,
   ImageLabelingQuestion,
@@ -136,23 +151,56 @@ function parsePairsFromAnswerData(answerData: Json | null): PuzzlePair[] {
   return [];
 }
 
-function parseFillAssignmentsBulletproof(data: Json | null): Record<string, string> | null {
+function parseGroupedSelectionsBulletproof(
+  data: Json | null,
+): Record<string, string[]> | null {
   const u = deepUnwrapJson(data);
   if (!u) return null;
-  const direct = parseFillAssignmentsFromAnswerData(u);
-  if (direct && Object.keys(direct).length > 0) return direct;
-  if (typeof u === "object" && !Array.isArray(u)) {
-    const rec = u as Record<string, unknown>;
-    const as = rec.assignments;
-    if (as && typeof as === "object" && !Array.isArray(as)) {
-      const out: Record<string, string> = {};
-      for (const [k, v] of Object.entries(as)) {
-        if (typeof v === "string") out[k] = v;
-      }
-      if (Object.keys(out).length > 0) return out;
-    }
+  return parseGroupedSelectionsFromAnswerData(u);
+}
+
+function parseGroupedFillTypingBulletproof(
+  data: Json | null,
+): Record<string, Record<string, string>> | null {
+  const u = deepUnwrapJson(data);
+  if (!u) return null;
+  return parseGroupedFillTypingFromAnswerData(u);
+}
+
+function parseFillTypingBulletproof(data: Json | null): Record<string, string> | null {
+  const grouped = parseGroupedFillTypingBulletproof(data);
+  if (!grouped) return null;
+  const itemIds = Object.keys(grouped);
+  if (itemIds.length === 1) {
+    return grouped[itemIds[0]!] ?? null;
   }
-  return null;
+  const flat: Record<string, string> = {};
+  for (const itemTyping of Object.values(grouped)) {
+    Object.assign(flat, itemTyping);
+  }
+  return Object.keys(flat).length > 0 ? flat : null;
+}
+
+function parseGroupedFillAssignmentsBulletproof(
+  data: Json | null,
+): Record<string, Record<string, string>> | null {
+  const u = deepUnwrapJson(data);
+  if (!u) return null;
+  return parseGroupedFillAssignmentsFromAnswerData(u);
+}
+
+function parseFillAssignmentsBulletproof(data: Json | null): Record<string, string> | null {
+  const grouped = parseGroupedFillAssignmentsBulletproof(data);
+  if (!grouped) return null;
+  const itemIds = Object.keys(grouped);
+  if (itemIds.length === 1) {
+    return grouped[itemIds[0]!] ?? null;
+  }
+  const flat: Record<string, string> = {};
+  for (const itemAssignments of Object.values(grouped)) {
+    Object.assign(flat, itemAssignments);
+  }
+  return Object.keys(flat).length > 0 ? flat : null;
 }
 
 function pickAnswerDataFromRows(
@@ -223,7 +271,17 @@ export type QuizResultViewProps = {
   > | null;
   reviewCorrectIdsByQuestionId: Map<string, string[]> | null;
   reviewFillByQuestionId: Map<string, Record<string, string>> | null;
+  reviewGroupedFillTypingByQuestionId?: Map<
+    string,
+    Record<string, Record<string, string>>
+  > | null;
+  reviewGroupedFillAssignmentsByQuestionId?: Map<
+    string,
+    Record<string, Record<string, string>>
+  > | null;
   reviewAnswersByQuestionId: Map<string, Record<string, string | null>> | null;
+  reviewGroupedSelectionsByQuestionId?: Map<string, Record<string, string[]>> | null;
+  reviewGroupedCorrectByQuestionId?: Map<string, Record<string, string[]>> | null;
   /** Например кнопки «Вернуться к уроку» под разбором — для Sheet не передаётся. */
   children?: ReactNode;
 };
@@ -237,7 +295,11 @@ export function QuizResultView({
   reviewRowsByQuestionId,
   reviewCorrectIdsByQuestionId,
   reviewFillByQuestionId,
+  reviewGroupedFillTypingByQuestionId,
+  reviewGroupedFillAssignmentsByQuestionId,
   reviewAnswersByQuestionId,
+  reviewGroupedSelectionsByQuestionId,
+  reviewGroupedCorrectByQuestionId,
   children,
 }: QuizResultViewProps) {
   function getSelectedIdsForQuestion(questionId: string) {
@@ -278,6 +340,22 @@ export function QuizResultView({
       q.type === "multiple_choice" ||
       q.type === "multiple"
     ) {
+      if (isGroupedChoiceContent(q.content)) {
+        const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
+        const selections =
+          (fromMap && Object.keys(fromMap).length > 0
+            ? fromMap
+            : parseGroupedSelectionsBulletproof(answerData)) ?? {};
+        const items = parseGroupedChoiceItems(q.content);
+        const total = items ? sumGroupedItemPoints(items) : 1;
+        const earned = scoreGroupedChoiceQuestion({
+          content: q.content,
+          questionType: q.type,
+          selections,
+        });
+        return earned >= total;
+      }
+
       const selected = [...new Set(getSelectedIdsForQuestion(q.id))].sort();
       const correct = [...new Set(reviewCorrectIdsByQuestionId?.get(q.id) ?? [])].sort();
       if (selected.length !== correct.length) return false;
@@ -285,16 +363,45 @@ export function QuizResultView({
     }
 
     if (q.type === "fill_in_the_blanks") {
-      const p = FillInTheBlanksContentSchema.safeParse(q.content);
-      if (!p.success) return false;
-      const fromMap = reviewFillByQuestionId?.get(q.id);
+      const view = resolveGroupedFillBlanksPlayerView({
+        content: q.content,
+        questionType: q.type,
+      });
+      if (!view) return false;
+      const fromMap = reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
       const saved =
         (fromMap && Object.keys(fromMap).length > 0
           ? fromMap
-          : parseFillAssignmentsBulletproof(pickAnswerDataFromRows(rows))) ?? {};
-      const blankIds = Object.keys(p.data.correctMapping);
-      if (Object.keys(saved).length !== blankIds.length) return false;
-      return blankIds.every((id) => saved[id] === p.data.correctMapping[id]);
+          : parseGroupedFillAssignmentsBulletproof(
+              pickAnswerDataFromRows(rows),
+            )) ?? {};
+      return isGroupedFillInTheBlanksFullyCorrect({
+        content: q.content,
+        questionType: q.type,
+        groupedAssignments: saved,
+      });
+    }
+
+    if (q.type === "fill_blanks_typing") {
+      const view = resolveGroupedFillBlanksPlayerView({
+        content: q.content,
+        questionType: q.type,
+      });
+      if (!view) return false;
+      const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
+      const saved =
+        (fromMap && Object.keys(fromMap).length > 0
+          ? fromMap
+          : parseGroupedFillTypingBulletproof(pickAnswerDataFromRows(rows))) ?? {};
+      return isGroupedFillBlanksFullyCorrect({
+        content: q.content,
+        questionType: q.type,
+        groupedTyping: saved,
+      });
+    }
+
+    if (q.type === "text_input") {
+      return false;
     }
 
     if (q.type === "image_labeling") {
@@ -316,6 +423,8 @@ export function QuizResultView({
   }
 
   const totalCorrectQuestions = questions.filter((q) => isQuestionFullyCorrect(q)).length;
+  const isForKids = result.isForKids;
+  const requiresManualReview = result.requiresManualReview;
 
   return (
     <div className="flex flex-col gap-10 py-8">
@@ -332,29 +441,78 @@ export function QuizResultView({
       ) : null}
 
       <div className="flex flex-col items-center gap-6 text-center">
-        <div className="flex w-full max-w-md flex-col gap-2">
-          <div className="flex w-full items-center gap-2 text-sm">
-            <span className="font-medium">Готово</span>
-            <span className="text-muted-foreground ml-auto tabular-nums">100%</span>
+        {!isForKids ? (
+          <div className="flex w-full max-w-md flex-col gap-2">
+            <div className="flex w-full items-center gap-2 text-sm">
+              <span className="font-medium">
+                {requiresManualReview ? "Отправлено на проверку" : "Готово"}
+              </span>
+              {!requiresManualReview ? (
+                <span className="text-muted-foreground ml-auto tabular-nums">
+                  {result.percentCorrect}%
+                </span>
+              ) : null}
+            </div>
+            {!requiresManualReview ? (
+              <Progress value={result.percentCorrect} className="w-full" />
+            ) : null}
           </div>
-          <Progress value={100} className="w-full" />
-        </div>
+        ) : null}
         <div className="space-y-2">
           <h2 className="text-2xl font-semibold tracking-tight">Результат</h2>
-          <p className="text-muted-foreground text-lg">
-            Правильных ответов:{" "}
-            <span className="text-foreground font-semibold tabular-nums">
-              {totalCorrectQuestions}
-            </span>{" "}
-            из{" "}
-            <span className="text-foreground font-semibold tabular-nums">
-              {questions.length}
-            </span>
-          </p>
-          <p className="text-muted-foreground text-sm">
-            Отвечено на вопросов: {result.answeredCount} · {result.percentCorrect}% верно
-            от общего числа вопросов в тесте
-          </p>
+          {requiresManualReview ? (
+            <p className="text-muted-foreground text-sm max-w-lg">
+              В тесте есть развёрнутые ответы. Преподаватель проверит их вручную —
+              автоматическая оценка за эти задания не выставляется.
+            </p>
+          ) : null}
+          {isForKids ? (
+            <div className="flex flex-col items-center gap-3 py-2">
+              {requiresManualReview ? (
+                <p className="text-muted-foreground text-sm">
+                  Ответы отправлены преподавателю. Жди проверки!
+                </p>
+              ) : (
+                <>
+                  <GradingDisplay
+                    score={result.score}
+                    isForKids
+                    totalPossiblePoints={result.totalPossiblePoints}
+                  />
+                  <p className="text-muted-foreground text-sm">
+                    Молодец! Посмотри разбор заданий ниже.
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              {!requiresManualReview ? (
+                <>
+                  <p className="text-muted-foreground text-lg">
+                    Правильных заданий:{" "}
+                    <span className="text-foreground font-semibold tabular-nums">
+                      {totalCorrectQuestions}
+                    </span>{" "}
+                    из{" "}
+                    <span className="text-foreground font-semibold tabular-nums">
+                      {questions.length}
+                    </span>
+                  </p>
+                  <p className="text-muted-foreground text-sm">
+                    Набрано баллов: {result.earnedPoints} / {result.totalPossiblePoints}
+                    {" · "}
+                    Отвечено на заданий: {result.answeredCount}
+                  </p>
+                </>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  Автоматически проверенные задания: {result.earnedPoints} /{" "}
+                  {result.totalPossiblePoints} баллов (предварительно)
+                </p>
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -376,14 +534,26 @@ export function QuizResultView({
                     Вопрос {index + 1}: {textFromContent(q.content)}
                   </h4>
                   <Badge
-                    variant={questionFullyCorrect ? "secondary" : "destructive"}
+                    variant={
+                      q.type === "text_input"
+                        ? "outline"
+                        : questionFullyCorrect
+                          ? "secondary"
+                          : "destructive"
+                    }
                     className={
-                      questionFullyCorrect
-                        ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                        : undefined
+                      q.type === "text_input"
+                        ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+                        : questionFullyCorrect
+                          ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                          : undefined
                     }
                   >
-                    {questionFullyCorrect ? "Верно" : "Ошибка"}
+                    {q.type === "text_input"
+                      ? "На проверке"
+                      : questionFullyCorrect
+                        ? "Верно"
+                        : "Ошибка"}
                   </Badge>
                 </div>
 
@@ -444,6 +614,34 @@ export function QuizResultView({
                   q.type === "multiple_choice" ||
                   q.type === "multiple") &&
                   (() => {
+                    if (isGroupedChoiceContent(q.content)) {
+                      const playerView = resolveGroupedChoicePlayerView({
+                        content: q.content,
+                        questionType: q.type,
+                        legacyOptions: q.options,
+                      });
+                      const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
+                      const selections =
+                        (fromMap && Object.keys(fromMap).length > 0
+                          ? fromMap
+                          : parseGroupedSelectionsBulletproof(
+                              pickAnswerDataFromRows(rows),
+                            )) ?? {};
+                      const correctByItemId =
+                        reviewGroupedCorrectByQuestionId?.get(q.id) ?? {};
+                      return (
+                        <GroupedChoiceTaskQuestion
+                          items={playerView.items}
+                          isMultiple={
+                            q.type === "multiple_choice" || q.type === "multiple"
+                          }
+                          selections={selections}
+                          isReviewMode
+                          correctByItemId={correctByItemId}
+                        />
+                      );
+                    }
+
                     const correctIds = reviewCorrectIdsByQuestionId?.get(q.id) ?? [];
                     const selectedOptions = selectedIds
                       .map((id) => q.options.find((o) => o.id === id))
@@ -512,25 +710,90 @@ export function QuizResultView({
 
                 {q.type === "fill_in_the_blanks" &&
                   (() => {
-                    const p = FillInTheBlanksContentSchema.safeParse(q.content);
-                    if (!p.success) {
+                    const view = resolveGroupedFillBlanksPlayerView({
+                      content: q.content,
+                      questionType: q.type,
+                    });
+                    if (!view) {
                       return (
                         <p className="text-muted-foreground text-sm">
                           Не удалось показать разбор этого вопроса.
                         </p>
                       );
                     }
-                    const fromMap = reviewFillByQuestionId?.get(q.id);
+                    const fromMap =
+                      reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
                     const saved =
                       (fromMap && Object.keys(fromMap).length > 0
                         ? fromMap
-                        : parseFillAssignmentsBulletproof(
+                        : parseGroupedFillAssignmentsBulletproof(
                             pickAnswerDataFromRows(rows),
                           )) ?? {};
                     return (
-                      <FillInTheBlanksQuestion
-                        content={p.data}
-                        value={saved}
+                      <GroupedFillBlanksTaskQuestion
+                        items={view.items}
+                        mode={view.mode}
+                        groupedAssignments={saved}
+                        isReviewMode
+                      />
+                    );
+                  })()}
+
+                {q.type === "fill_blanks_typing" &&
+                  (() => {
+                    const view = resolveGroupedFillBlanksPlayerView({
+                      content: q.content,
+                      questionType: q.type,
+                    });
+                    if (!view) {
+                      return (
+                        <p className="text-muted-foreground text-sm">
+                          Не удалось показать разбор этого вопроса.
+                        </p>
+                      );
+                    }
+                    const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
+                    const saved =
+                      (fromMap && Object.keys(fromMap).length > 0
+                        ? fromMap
+                        : parseGroupedFillTypingBulletproof(
+                            pickAnswerDataFromRows(rows),
+                          )) ?? {};
+                    return (
+                      <GroupedFillBlanksTaskQuestion
+                        items={view.items}
+                        mode={view.mode}
+                        groupedTyping={saved}
+                        isReviewMode
+                      />
+                    );
+                  })()}
+
+                {q.type === "text_input" &&
+                  (() => {
+                    const view = resolveGroupedFillBlanksPlayerView({
+                      content: q.content,
+                      questionType: q.type,
+                    });
+                    if (!view) {
+                      return (
+                        <p className="text-muted-foreground text-sm">
+                          Не удалось показать развёрнутый ответ.
+                        </p>
+                      );
+                    }
+                    const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
+                    const saved =
+                      (fromMap && Object.keys(fromMap).length > 0
+                        ? fromMap
+                        : parseGroupedFillTypingBulletproof(
+                            pickAnswerDataFromRows(rows),
+                          )) ?? {};
+                    return (
+                      <GroupedFillBlanksTaskQuestion
+                        items={view.items}
+                        mode={view.mode}
+                        groupedTyping={saved}
                         isReviewMode
                       />
                     );

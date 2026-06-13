@@ -31,6 +31,8 @@ export const QUESTION_TYPE_SLUGS = [
   "image_labeling",
   /** Заполнение пропусков в тексте (DnD слов); контент см. FillInTheBlanksContentSchema. */
   "fill_in_the_blanks",
+  /** Пропуски вручную: ввод текста в inline-поля; контент тот же JSON. */
+  "fill_blanks_typing",
   /** Легаси после ENUM */
   "single",
   "multiple",

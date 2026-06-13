@@ -58,14 +58,13 @@ export function parseFillInTheBlanks(
     const inner = match[1]!.trim();
     lastIndex = regex.lastIndex;
 
-    if (!inner) {
-      continue;
-    }
-
     const blankId = newBlankId();
-    const wordId = wordIdForText(inner);
     segments.push({ type: "blank", id: blankId });
-    correctMapping[blankId] = wordId;
+
+    if (inner) {
+      const wordId = wordIdForText(inner);
+      correctMapping[blankId] = wordId;
+    }
   }
 
   if (lastIndex < rawText.length) {
