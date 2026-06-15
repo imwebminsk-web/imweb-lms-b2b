@@ -8,6 +8,7 @@ import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { ProgressStatusBadge } from "@/components/learn/progress-status-badge";
 import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
 import { TestResultSheet } from "@/components/dashboard/teacher/TestResultSheet";
+import { useLanguage } from "@/components/providers/language-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,13 +52,16 @@ export type CourseHubClientProps = {
   unreadCount?: number;
 };
 
-function typeBadge(type: StudentProgressItem["type"]) {
+function typeBadge(
+  type: StudentProgressItem["type"],
+  t: ReturnType<typeof useLanguage>["t"],
+) {
   if (type === "test") {
-    return <Badge variant="secondary">Тест</Badge>;
+    return <Badge variant="secondary">{t("course_view.badgeTest")}</Badge>;
   }
   return (
     <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10">
-      Задание
+      {t("course_view.badgeAssignment")}
     </Badge>
   );
 }
@@ -94,6 +98,7 @@ export function CourseHubClient({
   teacherId,
   unreadCount = 0,
 }: CourseHubClientProps) {
+  const { t } = useLanguage();
   const [selectedAssignment, setSelectedAssignment] = useState<{
     lessonBlockId: string;
   } | null>(null);
@@ -128,7 +133,7 @@ export function CourseHubClient({
           >
             <Link href="/dashboard" className="inline-flex items-center">
               <ArrowLeft className="mr-2 h-4 w-4" aria-hidden />
-              На дашборд
+              {t("course_view.backToDashboard")}
             </Link>
           </Button>
           <div className="space-y-1">
@@ -136,26 +141,26 @@ export function CourseHubClient({
               {course.title}
             </h1>
             <p className="text-muted-foreground text-sm">
-              Программа курса и ваша успеваемость
+              {t("course_view.subtitle")}
             </p>
           </div>
           {continueHref ? (
             <Button asChild>
-              <Link href={continueHref}>Продолжить обучение</Link>
+              <Link href={continueHref}>{t("course_view.continueLearning")}</Link>
             </Button>
           ) : (
             <Button type="button" disabled variant="secondary">
-              Продолжить обучение
+              {t("course_view.continueLearning")}
             </Button>
           )}
         </header>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList variant="line" className="mb-4 w-full justify-start">
-            <TabsTrigger value="syllabus">Программа</TabsTrigger>
-            <TabsTrigger value="progress">Успеваемость</TabsTrigger>
+            <TabsTrigger value="syllabus">{t("course_view.tabSyllabus")}</TabsTrigger>
+            <TabsTrigger value="progress">{t("course_view.tabProgress")}</TabsTrigger>
             <TabsTrigger value="chat" className="inline-flex items-center gap-2">
-              <span>Чат группы</span>
+              <span>{t("course_view.tabChat")}</span>
               {unreadCount > 0 ? (
                 <Badge
                   variant="destructive"
@@ -170,7 +175,7 @@ export function CourseHubClient({
           <TabsContent value="syllabus" className="mt-0 space-y-8">
             {modules.length === 0 ? (
               <p className="text-muted-foreground text-sm">
-                В курсе пока нет модулей.
+                {t("course_view.noModules")}
               </p>
             ) : (
               modules.map((mod) => {
@@ -182,7 +187,7 @@ export function CourseHubClient({
                     </h2>
                     {lessons.length === 0 ? (
                       <p className="text-muted-foreground text-sm">
-                        Нет опубликованных уроков в этом модуле.
+                        {t("course_view.noPublishedLessons")}
                       </p>
                     ) : (
                       <ul className="border-border divide-border flex flex-col divide-y rounded-lg border">
@@ -198,12 +203,12 @@ export function CourseHubClient({
                                 {done ? (
                                   <CheckCircle2
                                     className="text-emerald-600 size-5 shrink-0 dark:text-emerald-400"
-                                    aria-label="Урок пройден"
+                                    aria-label={t("course_view.lessonCompletedAria")}
                                   />
                                 ) : (
                                   <Circle
                                     className="text-muted-foreground size-5 shrink-0"
-                                    aria-label="Урок не отмечен как пройденный"
+                                    aria-label={t("course_view.lessonNotCompletedAria")}
                                   />
                                 )}
                                 <span className="min-w-0 flex-1 font-medium leading-snug">
@@ -223,16 +228,18 @@ export function CourseHubClient({
 
           <TabsContent value="progress" className="mt-0">
             <p className="text-muted-foreground mb-4 text-sm">
-              Нажмите на строку с тестом или заданием, чтобы открыть подробности.
+              {t("course_view.progressHint")}
             </p>
             <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[200px]">Урок</TableHead>
-                    <TableHead className="w-[100px]">Тип</TableHead>
-                    <TableHead className="w-[140px]">Статус</TableHead>
-                    <TableHead className="w-[100px]">Оценка</TableHead>
+                    <TableHead className="min-w-[200px]">
+                      {t("course_view.colLesson")}
+                    </TableHead>
+                    <TableHead className="w-[100px]">{t("course_view.colType")}</TableHead>
+                    <TableHead className="w-[140px]">{t("course_view.colStatus")}</TableHead>
+                    <TableHead className="w-[100px]">{t("course_view.colGrade")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -242,8 +249,7 @@ export function CourseHubClient({
                         colSpan={4}
                         className="text-muted-foreground py-10 text-center text-sm"
                       >
-                        Пока нет тестов и заданий по этому курсу в вашей
-                        успеваемости.
+                        {t("course_view.noProgress")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -274,7 +280,7 @@ export function CourseHubClient({
                                 <span className="font-medium">{item.title}</span>
                               )}
                             </TableCell>
-                            <TableCell>{typeBadge(item.type)}</TableCell>
+                            <TableCell>{typeBadge(item.type, t)}</TableCell>
                             <TableCell>
                               <ProgressStatusBadge item={item} />
                             </TableCell>
@@ -309,7 +315,7 @@ export function CourseHubClient({
                               <span className="font-medium">{item.title}</span>
                             )}
                           </TableCell>
-                          <TableCell>{typeBadge(item.type)}</TableCell>
+                          <TableCell>{typeBadge(item.type, t)}</TableCell>
                           <TableCell>
                             <ProgressStatusBadge item={item} />
                           </TableCell>
@@ -344,11 +350,9 @@ export function CourseHubClient({
                       aria-hidden
                     />
                   </div>
-                  <CardTitle className="text-lg">Чат недоступен</CardTitle>
+                  <CardTitle className="text-lg">{t("course_view.chatUnavailable")}</CardTitle>
                   <CardDescription className="max-w-md text-balance">
-                    Чат доступен только при обучении в группе. Введите PIN
-                    группы на главной странице «Моё обучение», чтобы
-                    присоединиться к когорте.
+                    {t("course_view.chatUnavailableDescription")}
                   </CardDescription>
                 </CardHeader>
               </Card>

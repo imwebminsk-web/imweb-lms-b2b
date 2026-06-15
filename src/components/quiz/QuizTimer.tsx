@@ -10,6 +10,7 @@ type QuizTimerProps = {
   timeLimitMinutes: number;
   onExpire: () => void;
   disabled?: boolean;
+  timeRemainingLabel?: string;
 };
 
 function formatMmSs(totalSeconds: number): string {
@@ -23,6 +24,7 @@ export function QuizTimer({
   timeLimitMinutes,
   onExpire,
   disabled = false,
+  timeRemainingLabel = "осталось",
 }: QuizTimerProps) {
   const totalSeconds = Math.max(0, Math.round(timeLimitMinutes * 60));
   const [remainingSeconds, setRemainingSeconds] = useState(totalSeconds);
@@ -84,7 +86,7 @@ export function QuizTimer({
       >
         {formatMmSs(remainingSeconds)}
       </span>
-      <span className="text-muted-foreground text-xs">осталось</span>
+      <span className="text-muted-foreground text-xs">{timeRemainingLabel}</span>
     </div>
   );
 }

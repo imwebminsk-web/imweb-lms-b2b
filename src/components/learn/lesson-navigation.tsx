@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/components/providers/language-provider";
 import {
   publishedLessonsSorted,
   sortModules,
@@ -31,6 +34,7 @@ export function LessonNavigation({
   modules,
   currentLessonId,
 }: LessonNavigationProps) {
+  const { t } = useLanguage();
   const allLessons = flattenPublishedLessons(modules);
   const currentIndex = allLessons.findIndex((l) => l.id === currentLessonId);
 
@@ -57,7 +61,9 @@ export function LessonNavigation({
             </Link>
           </Button>
         ) : (
-          <span className="text-muted-foreground text-sm">Первый урок</span>
+          <span className="text-muted-foreground text-sm">
+            {t("lesson_view.firstLesson")}
+          </span>
         )}
       </div>
 
@@ -68,14 +74,14 @@ export function LessonNavigation({
               href={`/learn/${encodeURIComponent(courseSlug)}/${nextLesson.id}`}
               className="flex min-w-0 items-center"
             >
-              <span className="truncate">Следующий урок</span>
+              <span className="truncate">{t("lesson_view.nextLesson")}</span>
               <ChevronRight className="ml-2 size-4 shrink-0" aria-hidden />
             </Link>
           </Button>
         ) : (
           <Button variant="secondary" asChild>
             <Link href={hubHref} className="inline-flex items-center">
-              Завершить курс
+              {t("lesson_view.finishCourse")}
               <CheckCircle className="ml-2 size-4 shrink-0" aria-hidden />
             </Link>
           </Button>

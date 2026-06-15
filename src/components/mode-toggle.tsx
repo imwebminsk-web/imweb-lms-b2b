@@ -6,7 +6,11 @@ import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
 
-export function ModeToggle() {
+type ModeToggleProps = {
+  ariaLabel?: string;
+};
+
+export function ModeToggle({ ariaLabel = "Переключить тему" }: ModeToggleProps) {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -22,7 +26,7 @@ export function ModeToggle() {
       variant="ghost"
       size="icon"
       className="size-10 shrink-0 rounded-xl hover:bg-growvy-body"
-      aria-label="Переключить тему"
+      aria-label={ariaLabel}
       onClick={() => setTheme(isDark ? "light" : "dark")}
     >
       {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}

@@ -19,6 +19,7 @@ import { parseTaskPresentation } from "@/lib/utils/task-content";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { useLanguage } from "@/components/providers/language-provider";
 import { cn } from "@/lib/utils";
 import type { Json } from "@/types/database.types";
 import {
@@ -149,6 +150,7 @@ export function QuizPlayer({
   isForKids = false,
   timeLimitMinutes = 0,
 }: QuizPlayerProps) {
+  const { t } = useLanguage();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [draftsByQuestionId, setDraftsByQuestionId] = useState<
     Record<string, QuestionDraft>
@@ -410,7 +412,7 @@ export function QuizPlayer({
   if (total === 0) {
     return (
       <p className="text-muted-foreground text-center text-sm">
-        В этом тесте пока нет вопросов.
+        {t("quiz.noQuestions")}
       </p>
     );
   }
@@ -443,12 +445,13 @@ export function QuizPlayer({
         timeLimitMinutes={timeLimitMinutes}
         onExpire={handleSubmitQuiz}
         disabled={isPending || finished}
+        timeRemainingLabel={t("quiz.timeRemaining")}
       />
 
       <div className="flex w-full flex-col gap-2">
         <div className="flex w-full items-center gap-2 text-sm">
           <span>
-            Задание {currentIndex + 1} из {total}
+            {t("quiz.task")} {currentIndex + 1} {t("quiz.of")} {total}
           </span>
           <span className="text-muted-foreground ml-auto tabular-nums">
             {progressValue}%
@@ -466,7 +469,7 @@ export function QuizPlayer({
 
       <nav
         className="flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-muted/30 p-2 sm:p-3"
-        aria-label="Навигация по заданиям"
+        aria-label={t("quiz.taskNav")}
       >
         <Button
           type="button"
@@ -475,7 +478,7 @@ export function QuizPlayer({
           className="shrink-0"
           disabled={currentIndex === 0 || isPending}
           onClick={() => goToTask(currentIndex - 1)}
-          aria-label="Предыдущее задание"
+          aria-label={t("quiz.prevTask")}
         >
           <ChevronLeftIcon className="size-4" aria-hidden />
         </Button>
@@ -496,7 +499,7 @@ export function QuizPlayer({
                 )}
                 onClick={() => goToTask(index)}
                 aria-current={isActive ? "step" : undefined}
-                aria-label={`Задание ${index + 1}${isSubmitted ? ", ответ отправлен" : ""}`}
+                aria-label={`${t("quiz.task")} ${index + 1}${isSubmitted ? t("quiz.answerSentAria") : ""}`}
                 disabled={isPending}
               >
                 {index + 1}
@@ -512,7 +515,7 @@ export function QuizPlayer({
           className="shrink-0"
           disabled={currentIndex >= total - 1 || isPending}
           onClick={() => goToTask(currentIndex + 1)}
-          aria-label="Следующее задание"
+          aria-label={t("quiz.nextTask")}
         >
           <ChevronRightIcon className="size-4" aria-hidden />
         </Button>
@@ -524,7 +527,7 @@ export function QuizPlayer({
             variant="secondary"
             className="w-fit border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
           >
-            Ответ отправлен
+            {t("quiz.answerSentBadge")}
           </Badge>
         ) : null}
 
@@ -649,12 +652,12 @@ export function QuizPlayer({
         onClick={runSubmitThenAdvance}
       >
         {isPending
-          ? "Отправка…"
+          ? t("quiz.submitting")
           : isCurrentSubmitted
-            ? "Ответ уже отправлен"
+            ? t("quiz.answerAlreadySent")
             : isLast
-              ? "Завершить тест"
-              : "Ответить"}
+              ? t("quiz.finishTest")
+              : t("quiz.submit")}
       </Button>
     </div>
   );

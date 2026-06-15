@@ -3,6 +3,7 @@
 import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
 import { LessonAssignmentBlock } from "@/components/dashboard/student/lesson-assignment-block";
 import { TestRevealWrapper } from "@/components/learn/test-reveal-wrapper";
+import { useLanguage } from "@/components/providers/language-provider";
 import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { vimeoEmbedSrc } from "@/lib/learn/vimeo-embed";
 import type { Database, Json } from "@/types/database.types";
@@ -59,12 +60,16 @@ export function LessonBlockRenderer({
   /** Заголовок урока — для блока «Задание» в единой вёрстке. */
   lessonTitle?: string;
 }) {
+  const { t } = useLanguage();
+
   switch (block.type) {
     case "text": {
       const html = readHtml(block.content);
       if (!html) {
         return (
-          <p className="text-muted-foreground text-sm">Пустой текстовый блок.</p>
+          <p className="text-muted-foreground text-sm">
+            {t("lesson_view.emptyTextBlock")}
+          </p>
         );
       }
       return (
@@ -78,7 +83,9 @@ export function LessonBlockRenderer({
       const src = readImageUrl(block.content);
       if (!src) {
         return (
-          <p className="text-muted-foreground text-sm">Изображение не задано.</p>
+          <p className="text-muted-foreground text-sm">
+            {t("lesson_view.imageNotSet")}
+          </p>
         );
       }
       return (
@@ -95,7 +102,7 @@ export function LessonBlockRenderer({
         return (
           <div className="bg-muted aspect-video w-full overflow-hidden rounded-xl border shadow-sm">
             <iframe
-              title="Видео YouTube"
+              title={t("lesson_view.youtubeVideoTitle")}
               src={embed}
               className="size-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
@@ -112,7 +119,9 @@ export function LessonBlockRenderer({
         );
       }
       return (
-        <p className="text-muted-foreground text-sm">Ссылка YouTube не указана.</p>
+        <p className="text-muted-foreground text-sm">
+          {t("lesson_view.youtubeNotSet")}
+        </p>
       );
     }
     case "vimeo": {
@@ -122,7 +131,7 @@ export function LessonBlockRenderer({
         return (
           <div className="bg-muted aspect-video w-full overflow-hidden rounded-xl border shadow-sm">
             <iframe
-              title="Видео Vimeo"
+              title={t("lesson_view.vimeoVideoTitle")}
               src={embed}
               className="size-full"
               allow="autoplay; fullscreen; picture-in-picture"
@@ -132,7 +141,9 @@ export function LessonBlockRenderer({
         );
       }
       return (
-        <p className="text-muted-foreground text-sm">Ссылка Vimeo не указана.</p>
+        <p className="text-muted-foreground text-sm">
+          {t("lesson_view.vimeoNotSet")}
+        </p>
       );
     }
     case "assignment": {
@@ -140,7 +151,7 @@ export function LessonBlockRenderer({
         <LessonAssignmentBlock
           block={block}
           initialSubmission={initialAssignmentSubmission ?? null}
-          lessonTitle={lessonTitle.trim() || "Урок"}
+          lessonTitle={lessonTitle.trim() || t("lesson_view.defaultLessonTitle")}
         />
       );
     }
@@ -149,13 +160,13 @@ export function LessonBlockRenderer({
       if (!testId) {
         return (
           <p className="text-muted-foreground rounded-xl border border-dashed p-6 text-center text-sm">
-            Тест для этого блока ещё не выбран.
+            {t("lesson_view.testNotSelected")}
           </p>
         );
       }
       return (
         <div className="my-8">
-          <TestRevealWrapper testId={testId} title="Тест к блоку" />
+          <TestRevealWrapper testId={testId} title={t("lesson_view.blockTestTitle")} />
         </div>
       );
     }

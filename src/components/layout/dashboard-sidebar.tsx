@@ -3,9 +3,10 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Settings } from "lucide-react";
 
 import { signOut } from "@/app/actions/auth-actions";
-import { ModeToggle } from "@/components/mode-toggle";
+import { useLanguage } from "@/components/providers/language-provider";
 import { Badge } from "@/components/ui/badge";
 import {
   Avatar,
@@ -19,16 +20,17 @@ import {
   GrowvyGroupsIcon,
   GrowvyLearningIcon,
   GrowvyLogoutIcon,
-  GrowvySettingsIcon,
   GrowvyStudentsIcon,
   GrowvySupportIcon,
   GrowvyTestsIcon,
 } from "@/components/layout/growvy-icons";
 import type { ProfileRole } from "@/lib/dashboard/sidebar-nav";
+import type { TranslationKey } from "@/lib/i18n/dict";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
   title: string;
+  labelKey?: TranslationKey;
   url: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
 };
@@ -41,9 +43,24 @@ const teacherNav: NavItem[] = [
 ];
 
 const studentNav: NavItem[] = [
-  { title: "Моё обучение", url: "/dashboard", icon: GrowvyLearningIcon },
-  { title: "Каталог", url: "/", icon: GrowvyCatalogIcon },
-  { title: "Поддержка", url: "/", icon: GrowvySupportIcon },
+  {
+    title: "Моё обучение",
+    labelKey: "nav.myLearning",
+    url: "/dashboard",
+    icon: GrowvyLearningIcon,
+  },
+  {
+    title: "Каталог",
+    labelKey: "nav.catalog",
+    url: "/",
+    icon: GrowvyCatalogIcon,
+  },
+  {
+    title: "Поддержка",
+    labelKey: "nav.support",
+    url: "/",
+    icon: GrowvySupportIcon,
+  },
 ];
 
 const adminNav: NavItem[] = [
@@ -150,12 +167,20 @@ export function DashboardSidebar({
   navPendingBadges = {},
 }: DashboardSidebarProps) {
   const pathname = usePathname();
+  const { t } = useLanguage();
   const items = getNavForRole(role);
+
+  function navLabel(item: NavItem): string {
+    if (role === "student" && item.labelKey) {
+      return t(item.labelKey);
+    }
+    return item.title;
+  }
 
   return (
     <aside
       className={cn(
-        "flex h-screen shrink-0 flex-col border-r border-border bg-growvy-content py-6 transition-[width,padding] duration-200 ease-in-out",
+        "sticky top-0 z-20 flex h-screen shrink-0 flex-col overflow-y-auto border-r border-border bg-growvy-content py-6 transition-[width,padding] duration-200 ease-in-out",
         isCollapsed ? "w-20 px-2" : "w-[260px] px-4",
       )}
     >
@@ -192,7 +217,7 @@ export function DashboardSidebar({
             <Link
               key={`${item.title}-${item.url}`}
               href={item.url}
-              title={item.title}
+              title={navLabel(item)}
               className={cn(
                 "relative flex items-center rounded-xl text-sm font-medium transition-colors",
                 isCollapsed
@@ -205,7 +230,7 @@ export function DashboardSidebar({
             >
               <Icon className="size-5 shrink-0" />
               {!isCollapsed ? (
-                <span className="flex-1 truncate">{item.title}</span>
+                <span className="flex-1 truncate">{navLabel(item)}</span>
               ) : null}
               <NavBadges
                 active={active}
@@ -246,21 +271,9 @@ export function DashboardSidebar({
           ) : null}
         </div>
 
-        <div
-          className={cn(
-            "flex items-center",
-            isCollapsed ? "justify-center py-1" : "justify-between gap-2 px-3 py-1",
-          )}
-        >
-          {!isCollapsed ? (
-            <span className="text-sm font-medium text-muted-foreground">Тема</span>
-          ) : null}
-          <ModeToggle />
-        </div>
-
         <Link
           href="/dashboard/settings"
-          title="Настройки"
+          title={role === "student" ? t("nav.settings") : "Настройки"}
           className={cn(
             "flex items-center rounded-xl text-sm font-medium transition-colors",
             isCollapsed
@@ -271,14 +284,16 @@ export function DashboardSidebar({
               : "text-muted-foreground hover:bg-growvy-body hover:text-foreground",
           )}
         >
-          <GrowvySettingsIcon className="size-5 shrink-0" />
-          {!isCollapsed ? <span>Настройки</span> : null}
+          <Settings className="size-5 shrink-0" aria-hidden />
+          {!isCollapsed ? (
+            <span>{role === "student" ? t("nav.settings") : "Настройки"}</span>
+          ) : null}
         </Link>
 
         <form action={signOut} className="w-full">
           <button
             type="submit"
-            title="Выйти"
+            title={role === "student" ? t("nav.logout") : "Выйти"}
             className={cn(
               "flex w-full items-center rounded-xl text-sm font-medium text-muted-foreground transition-colors hover:bg-growvy-body hover:text-foreground",
               isCollapsed
@@ -287,7 +302,9 @@ export function DashboardSidebar({
             )}
           >
             <GrowvyLogoutIcon className="size-5 shrink-0" />
-            {!isCollapsed ? <span>Выйти</span> : null}
+            {!isCollapsed ? (
+              <span>{role === "student" ? t("nav.logout") : "Выйти"}</span>
+            ) : null}
           </button>
         </form>
       </div>

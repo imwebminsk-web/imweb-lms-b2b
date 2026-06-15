@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useLanguage } from "@/components/providers/language-provider";
 import { normalizeStoredGradeToGrade10 } from "@/lib/learn/assignment-grade-display";
 
 export type AssignmentSheetDisplayStatus =
@@ -13,7 +14,10 @@ export type AssignmentSheetDisplayStatus =
   | "rejected"
   | "not_started";
 
-function statusBadge(status: AssignmentSheetDisplayStatus) {
+function statusBadge(
+  status: AssignmentSheetDisplayStatus,
+  t: ReturnType<typeof useLanguage>["t"],
+) {
   switch (status) {
     case "pending":
       return (
@@ -21,7 +25,7 @@ function statusBadge(status: AssignmentSheetDisplayStatus) {
           variant="outline"
           className="border-amber-500/50 bg-amber-500/10 text-amber-950 dark:text-amber-100"
         >
-          На проверке
+          {t("lesson_view.statusPending")}
         </Badge>
       );
     case "approved":
@@ -30,13 +34,13 @@ function statusBadge(status: AssignmentSheetDisplayStatus) {
           variant="outline"
           className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
         >
-          Принято
+          {t("lesson_view.statusApproved")}
         </Badge>
       );
     case "rejected":
-      return <Badge variant="destructive">На доработку</Badge>;
+      return <Badge variant="destructive">{t("lesson_view.statusRejected")}</Badge>;
     case "not_started":
-      return <Badge variant="secondary">Не начато</Badge>;
+      return <Badge variant="secondary">{t("lesson_view.statusNotStarted")}</Badge>;
     default:
       return null;
   }
@@ -77,6 +81,7 @@ export type AssignmentSheetLayoutProps =
  * Единая вёрстка блока задания (урок, формулировка, ответ, статус, оценка, комментарий).
  */
 export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
+  const { t } = useLanguage();
   const { lessonTitle, assignmentText, studentAnswer, status, isTeacher } =
     props;
 
@@ -91,26 +96,36 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
       </div>
 
       <section className="space-y-2">
-        <p className="text-sm font-semibold">Текст задания</p>
+        <p className="text-sm font-semibold">
+          {isTeacher ? "Текст задания" : t("lesson_view.assignmentText")}
+        </p>
         <div className="text-muted-foreground rounded-md bg-muted p-4 text-sm leading-relaxed">
           {assignmentText.trim() ? (
             <p className="whitespace-pre-wrap">{assignmentText}</p>
           ) : (
-            <span className="italic">Текст задания не указан.</span>
+            <span className="italic">
+              {isTeacher
+                ? "Текст задания не указан."
+                : t("lesson_view.assignmentTextMissing")}
+            </span>
           )}
         </div>
       </section>
 
       <section className="space-y-2">
-        <p className="text-sm font-semibold">Ответ ученика</p>
+        <p className="text-sm font-semibold">
+          {isTeacher ? "Ответ ученика" : t("lesson_view.studentAnswer")}
+        </p>
         <div className="rounded-md border border-border bg-card p-4 text-sm leading-relaxed">
           <p className="whitespace-pre-wrap break-words">{studentAnswer}</p>
         </div>
       </section>
 
       <section className="space-y-2">
-        <p className="text-sm font-semibold">Статус</p>
-        <div>{statusBadge(status)}</div>
+        <p className="text-sm font-semibold">
+          {isTeacher ? "Статус" : t("lesson_view.status")}
+        </p>
+        <div>{statusBadge(status, t)}</div>
       </section>
 
       {isTeacher ? (
@@ -176,15 +191,17 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
       ) : (
         <section className="space-y-3 rounded-md border bg-muted/15 p-4 text-sm">
           <p>
-            <span className="font-semibold">Оценка: </span>
+            <span className="font-semibold">{t("lesson_view.grade")}: </span>
             {grade10Display != null ? `${grade10Display} / 10` : "—"}
           </p>
           <p>
-            <span className="font-semibold">Комментарий преподавателя: </span>
+            <span className="font-semibold">
+              {t("lesson_view.teacherComment")}:{" "}
+            </span>
             {props.teacherComment?.trim() ? (
               <span className="whitespace-pre-wrap">{props.teacherComment}</span>
             ) : (
-              <span className="text-muted-foreground">Нет</span>
+              <span className="text-muted-foreground">{t("lesson_view.noComment")}</span>
             )}
           </p>
         </section>

@@ -23,6 +23,7 @@ import {
 } from "@/components/learn/lesson-block-renderer";
 import { LessonNavigation } from "@/components/learn/lesson-navigation";
 import { TestRevealWrapper } from "@/components/learn/test-reveal-wrapper";
+import { useLanguage } from "@/components/providers/language-provider";
 import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { cn } from "@/lib/utils";
 import type { Database, Json } from "@/types/database.types";
@@ -94,7 +95,13 @@ function LessonTypeIcon({
   }
 }
 
-function LessonMainContent({ lesson }: { lesson: PlayerLessonPayload }) {
+function LessonMainContent({
+  lesson,
+  t,
+}: {
+  lesson: PlayerLessonPayload;
+  t: ReturnType<typeof useLanguage>["t"];
+}) {
   switch (lesson.type) {
     case "video": {
       const url = readVideoUrl(lesson.content).trim();
@@ -121,8 +128,7 @@ function LessonMainContent({ lesson }: { lesson: PlayerLessonPayload }) {
       }
       return (
         <p className="text-muted-foreground text-sm">
-          Видео не настроено. Добавьте ссылку на YouTube или файл в редакторе
-          курса.
+          {t("lesson_view.videoNotConfigured")}
         </p>
       );
     }
@@ -131,7 +137,7 @@ function LessonMainContent({ lesson }: { lesson: PlayerLessonPayload }) {
       if (!html) {
         return (
           <p className="text-muted-foreground text-sm">
-            Текст урока пока пуст.
+            {t("lesson_view.emptyTextLesson")}
           </p>
         );
       }
@@ -162,6 +168,7 @@ export function PlayerLayout({
   assignmentSubmissionsByBlockId = {},
   lessonCompletion,
 }: PlayerLayoutProps) {
+  const { t } = useLanguage();
   const sortedMods = useMemo(() => sortModules(modules), [modules]);
 
   const sortedBlocks = useMemo(
@@ -190,19 +197,19 @@ export function PlayerLayout({
   return (
     <div className="bg-background flex min-h-screen flex-col lg:flex-row">
       <aside
-        className="border-border bg-muted/15 flex max-h-[40vh] flex-col border-b lg:fixed lg:top-0 lg:left-0 lg:z-30 lg:h-screen lg:max-h-none lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0"
-        aria-label="Программа курса"
+        className="border-border bg-muted/15 sticky top-0 z-30 flex max-h-[40vh] flex-col border-b lg:fixed lg:left-0 lg:h-screen lg:max-h-none lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0"
+        aria-label={t("lesson_view.curriculumAria")}
       >
         <div className="border-border shrink-0 space-y-3 border-b p-4">
           <Button variant="ghost" size="sm" className="h-8 px-2" asChild>
-            <Link href="/dashboard">
+            <Link href={`/learn/${encodeURIComponent(courseSlug)}`}>
               <ArrowLeft className="mr-1 size-4" aria-hidden />
-              К курсу
+              {t("lesson_view.backToCourse")}
             </Link>
           </Button>
           <div>
             <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-              Курс
+              {t("lesson_view.courseLabel")}
             </p>
             <p className="line-clamp-3 text-sm font-semibold leading-snug">
               {courseTitle}
@@ -212,7 +219,7 @@ export function PlayerLayout({
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {sortedMods.length === 0 ? (
             <p className="text-muted-foreground px-1 text-sm">
-              Программа пока не добавлена.
+              {t("lesson_view.noSyllabus")}
             </p>
           ) : (
             <Accordion
@@ -231,7 +238,7 @@ export function PlayerLayout({
                     <AccordionContent className="pb-1">
                       {lessons.length === 0 ? (
                         <p className="text-muted-foreground px-1 py-2 text-xs">
-                          Нет уроков
+                          {t("lesson_view.noLessons")}
                         </p>
                       ) : (
                         <ul className="space-y-0.5">
@@ -295,21 +302,21 @@ export function PlayerLayout({
               ))}
             </div>
           ) : (
-            <LessonMainContent lesson={lesson} />
+            <LessonMainContent lesson={lesson} t={t} />
           )}
           {lesson.test_id && !blockTestIds.includes(lesson.test_id) ? (
             <div className="space-y-4 pt-2">
               <Separator />
               <TestRevealWrapper
                 testId={lesson.test_id}
-                title="Итоговый тест по уроку"
+                title={t("lesson_view.finalTestTitle")}
               />
             </div>
           ) : null}
           {lessonCompletion ? (
             <section className="border-border/60 space-y-3 border-t pt-8">
               <h2 className="text-lg font-semibold tracking-tight">
-                Прогресс по уроку
+                {t("lesson_view.lessonProgress")}
               </h2>
               {lessonCompletion}
             </section>

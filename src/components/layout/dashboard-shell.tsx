@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import { DashboardTopnav } from "@/components/layout/dashboard-topnav";
+import { LanguageProvider } from "@/components/providers/language-provider";
 import type { ProfileRole } from "@/lib/dashboard/sidebar-nav";
 
 export type DashboardShellUser = {
@@ -30,21 +31,24 @@ export function DashboardShell({
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   return (
-    <div className="flex min-h-screen bg-growvy-body">
-      <DashboardSidebar
-        role={role}
-        user={user}
-        isCollapsed={!isSidebarOpen}
-        navBadges={navBadges}
-        navPendingBadges={navPendingBadges}
-      />
-      <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <DashboardTopnav
-          isSidebarOpen={isSidebarOpen}
-          onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
+    <LanguageProvider role={role}>
+      <div className="flex h-screen overflow-hidden bg-growvy-body">
+        <DashboardSidebar
+          role={role}
+          user={user}
+          isCollapsed={!isSidebarOpen}
+          navBadges={navBadges}
+          navPendingBadges={navPendingBadges}
         />
-        <main className="flex-1 overflow-auto p-6 lg:p-8">{children}</main>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <DashboardTopnav
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
+            role={role}
+          />
+          <main className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">{children}</main>
+        </div>
       </div>
-    </div>
+    </LanguageProvider>
   );
 }

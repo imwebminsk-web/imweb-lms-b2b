@@ -7,6 +7,7 @@ import {
   type InitStudentQuizSuccess,
 } from "@/app/actions/student-quiz-actions";
 import { QuizPlayer } from "@/components/quiz/QuizPlayer";
+import { useLanguage } from "@/components/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,8 +26,10 @@ type TestRevealWrapperProps = {
 
 export function TestRevealWrapper({
   testId,
-  title = "Проверка знаний",
+  title,
 }: TestRevealWrapperProps) {
+  const { t } = useLanguage();
+  const cardTitle = title ?? t("lesson_view.defaultQuizTitle");
   const [quizData, setQuizData] = useState<InitStudentQuizSuccess | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -67,9 +70,9 @@ export function TestRevealWrapper({
             <Brain className="text-primary size-5" aria-hidden />
           </div>
           <div className="min-w-0 space-y-1">
-            <CardTitle className="text-lg leading-snug">{title}</CardTitle>
+            <CardTitle className="text-lg leading-snug">{cardTitle}</CardTitle>
             <CardDescription>
-              Нажмите кнопку, чтобы начать тестирование
+              {t("lesson_view.startQuizDescription")}
             </CardDescription>
           </div>
         </div>
@@ -84,10 +87,10 @@ export function TestRevealWrapper({
           {isLoading ? (
             <>
               <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-              Загрузка…
+              {t("lesson_view.loading")}
             </>
           ) : (
-            "Начать тестирование"
+            t("lesson_view.takeTest")
           )}
         </Button>
       </CardContent>

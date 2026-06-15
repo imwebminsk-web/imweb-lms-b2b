@@ -8,6 +8,7 @@ import {
   joinCohortByPin,
   type JoinCohortByPinState,
 } from "@/app/actions/enrollment-actions";
+import { useLanguage } from "@/components/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -25,6 +26,7 @@ const initialState: JoinCohortByPinState = {};
 
 export function JoinCohortForm() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [pin, setPin] = useState("");
   const [state, formAction, isPending] = useActionState(
     joinCohortByPin,
@@ -49,18 +51,15 @@ export function JoinCohortForm() {
     if (!state.success || !state.redirectUrl) return;
     if (successHandled.current) return;
     successHandled.current = true;
-    toast.success("Вы записаны на курс. Переход к обучению…");
+    toast.success(t("dashboard.enrollSuccess"));
     router.push(state.redirectUrl);
-  }, [state.success, state.redirectUrl, router]);
+  }, [state.success, state.redirectUrl, router, t]);
 
   return (
     <Card className="border-border/80 shadow-sm">
       <CardHeader>
-        <CardTitle>Присоединиться к группе</CardTitle>
-        <CardDescription>
-          Введите шестизначный PIN, который выдал преподаватель. После проверки
-          вы попадёте в курс в разделе «Обучение».
-        </CardDescription>
+        <CardTitle>{t("dashboard.joinGroup")}</CardTitle>
+        <CardDescription>{t("dashboard.joinGroupDescription")}</CardDescription>
       </CardHeader>
       <Form action={formAction} className="flex flex-col">
         <CardContent className="space-y-4">
@@ -70,7 +69,7 @@ export function JoinCohortForm() {
             </p>
           ) : null}
           <div className="grid gap-2">
-            <Label htmlFor="cohort-pin">PIN группы</Label>
+            <Label htmlFor="cohort-pin">{t("dashboard.groupPin")}</Label>
             <Input
               id="cohort-pin"
               name="pin"
@@ -82,7 +81,7 @@ export function JoinCohortForm() {
                   .slice(0, 6);
                 setPin(next);
               }}
-              placeholder="Например, X7B9QA"
+              placeholder={t("dashboard.pinPlaceholder")}
               autoComplete="off"
               inputMode="text"
               maxLength={6}
@@ -94,7 +93,7 @@ export function JoinCohortForm() {
         </CardContent>
         <CardFooter>
           <Button type="submit" disabled={isPending || pin.length < 6}>
-            {isPending ? "Проверка…" : "Войти по PIN"}
+            {isPending ? t("dashboard.verifying") : t("dashboard.joinWithPin")}
           </Button>
         </CardFooter>
       </Form>

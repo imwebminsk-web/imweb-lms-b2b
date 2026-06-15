@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 
 import { toggleLessonCompletion } from "@/app/actions/lesson-completion-actions";
+import { useLanguage } from "@/components/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ export function LessonCompletionButton({
   initialIsCompleted,
   pathname,
 }: LessonCompletionButtonProps) {
+  const { t } = useLanguage();
   const [isCompleted, setIsCompleted] = useState(initialIsCompleted);
   const [isPending, startTransition] = useTransition();
 
@@ -46,10 +48,10 @@ export function LessonCompletionButton({
       className={cn("w-full sm:w-auto")}
     >
       {isPending
-        ? "Сохранение…"
+        ? t("lesson_view.saving")
         : isCompleted
-          ? "✅ Урок пройден"
-          : "Завершить урок"}
+          ? t("lesson_view.lessonCompleted")
+          : t("lesson_view.markComplete")}
     </Button>
   );
 }

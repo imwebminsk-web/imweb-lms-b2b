@@ -8,6 +8,7 @@ import { submitAssignment } from "@/app/actions/assignment-actions";
 import type { AssignmentSubmissionRow } from "@/app/actions/assignment-actions";
 import { AssignmentSheetLayout } from "@/components/dashboard/assignment-sheet-layout";
 import type { PlayerBlockRow } from "@/components/learn/lesson-block-renderer";
+import { useLanguage } from "@/components/providers/language-provider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +33,7 @@ export function LessonAssignmentBlock({
   initialSubmission,
   lessonTitle,
 }: LessonAssignmentBlockProps) {
+  const { t } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -49,7 +51,7 @@ export function LessonAssignmentBlock({
   const handleSubmit = useCallback(() => {
     const text = draft.trim();
     if (!text) {
-      toast.error("Введите ответ перед отправкой");
+      toast.error(t("lesson_view.enterAnswerBeforeSubmit"));
       return;
     }
 
@@ -58,18 +60,18 @@ export function LessonAssignmentBlock({
         await submitAssignment(block.id, text, pathname);
         toast.success(
           submission?.status === "rejected"
-            ? "Ответ отправлен повторно"
-            : "Ответ отправлен на проверку",
+            ? t("lesson_view.answerResubmitted")
+            : t("lesson_view.answerSubmitted"),
         );
         setDraft("");
         router.refresh();
       } catch (e) {
         const message =
-          e instanceof Error ? e.message : "Не удалось отправить задание";
+          e instanceof Error ? e.message : t("lesson_view.submitFailed");
         toast.error(message);
       }
     });
-  }, [block.id, draft, pathname, router, submission?.status]);
+  }, [block.id, draft, pathname, router, submission?.status, t]);
 
   const hasReviewableSubmission =
     submission &&
@@ -92,23 +94,25 @@ export function LessonAssignmentBlock({
       ) : (
         <>
           <h3 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-            Задание
+            {t("lesson_view.lessonAssignments")}
           </h3>
           {instructions ? (
             <div className="text-muted-foreground rounded-md bg-muted p-4 text-sm leading-relaxed">
               <p className="whitespace-pre-wrap">{instructions}</p>
             </div>
           ) : (
-            <p className="text-muted-foreground text-sm">Задание без текста.</p>
+            <p className="text-muted-foreground text-sm">
+              {t("lesson_view.assignmentNoText")}
+            </p>
           )}
         </>
       )}
 
       {submission?.status === "pending" ? (
         <Alert variant="warning">
-          <AlertTitle>Ответ на проверке</AlertTitle>
+          <AlertTitle>{t("lesson_view.pendingReview")}</AlertTitle>
           <AlertDescription>
-            Преподаватель ещё не проверил вашу работу. Редактирование недоступно.
+            {t("lesson_view.pendingReviewDescription")}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -116,26 +120,25 @@ export function LessonAssignmentBlock({
       {submission?.status === "rejected" ? (
         <>
           <Alert variant="destructive">
-            <AlertTitle>Нужна доработка</AlertTitle>
+            <AlertTitle>{t("lesson_view.needsRevision")}</AlertTitle>
             <AlertDescription>
-              Комментарий преподавателя указан в сводке выше. Исправьте ответ и
-              отправьте снова.
+              {t("lesson_view.needsRevisionDescription")}
             </AlertDescription>
           </Alert>
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Ваш ответ или ссылки на работу…"
+            placeholder={t("lesson_view.answerPlaceholder")}
             rows={6}
             disabled={isPending}
-            aria-label="Ответ на задание"
+            aria-label={t("lesson_view.answerAriaLabel")}
           />
           <Button
             type="button"
             onClick={handleSubmit}
             disabled={isPending || !draft.trim()}
           >
-            {isPending ? "Отправка…" : "Отправить на проверку"}
+            {isPending ? t("lesson_view.submitting") : t("lesson_view.submitForReview")}
           </Button>
         </>
       ) : null}
@@ -145,17 +148,17 @@ export function LessonAssignmentBlock({
           <Textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Ваш ответ или ссылки на работу…"
+            placeholder={t("lesson_view.answerPlaceholder")}
             rows={6}
             disabled={isPending}
-            aria-label="Ответ на задание"
+            aria-label={t("lesson_view.answerAriaLabel")}
           />
           <Button
             type="button"
             onClick={handleSubmit}
             disabled={isPending || !draft.trim()}
           >
-            {isPending ? "Отправка…" : "Отправить на проверку"}
+            {isPending ? t("lesson_view.submitting") : t("lesson_view.submitForReview")}
           </Button>
         </>
       ) : null}
