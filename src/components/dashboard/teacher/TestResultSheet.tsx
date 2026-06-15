@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2Icon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -10,7 +11,6 @@ import {
   overrideTestAttemptGrade,
   type GradebookBestAttemptDetails,
 } from "@/app/actions/gradebook-actions";
-import { ManualTestGradingPanel } from "@/components/dashboard/teacher/ManualTestGradingPanel";
 import { QuizResultView } from "@/components/quiz/QuizResultView";
 import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -168,21 +168,24 @@ export function TestResultSheet({
 
           {details?.attemptId &&
           details.resultSummary?.requiresManualReview &&
-          isTeacher &&
-          reviewMaps != null ? (
-            <ManualTestGradingPanel
-              attemptId={details.attemptId}
-              targets={details.manualGradingTargets}
-              autoGradedScores={details.autoGradedScores}
-              questions={details.questions}
-              reviewGroupedFillTypingByQuestionId={
-                reviewMaps.reviewGroupedFillTypingByQuestionId
-              }
-              onCompleted={() => {
-                router.refresh();
-                loadDetails();
-              }}
-            />
+          isTeacher ? (
+            <section className="border-amber-500/40 bg-amber-500/5 space-y-3 rounded-xl border-2 p-4">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                Требуется ручная проверка развёрнутых ответов
+              </p>
+              <p className="text-muted-foreground text-sm">
+                Откройте отдельную страницу проверки, чтобы выставить баллы и
+                завершить оценку.
+              </p>
+              <Button asChild>
+                <Link
+                  href={`/dashboard/gradebook/attempts/${details.attemptId}/grade`}
+                  onClick={() => onOpenChange(false)}
+                >
+                  Проверить
+                </Link>
+              </Button>
+            </section>
           ) : null}
 
           {details?.attemptId && details.resultSummary && reviewMaps != null ? (

@@ -9,6 +9,7 @@ import {
   dashboardTableRowSchema,
 } from "@/lib/dashboard-table-schema";
 import { formatCoursePriceDecimal } from "@/lib/format-course-price";
+import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import type { Database } from "@/types/database.types";
 
@@ -57,14 +58,25 @@ function mapCourseRow(
 }
 
 /** Только данные для UI дашборда (без роли — её знает страница). */
-export type PendingReviewItem = {
-  submissionId: string;
-  studentName: string;
-  courseTitle: string;
-  lessonTitle: string;
-  submittedAt: string;
-  courseSlug: string;
-};
+export type PendingReviewItem =
+  | {
+      kind: "assignment";
+      submissionId: string;
+      studentName: string;
+      courseTitle: string;
+      lessonTitle: string;
+      submittedAt: string;
+      courseSlug: string;
+    }
+  | {
+      kind: "test";
+      attemptId: string;
+      studentName: string;
+      courseTitle: string;
+      lessonTitle: string;
+      submittedAt: string;
+      courseSlug: string;
+    };
 
 export type DashboardData = {
   tableRows: DashboardTableRow[];
@@ -212,11 +224,251 @@ function readPendingSubmissionContext(row: PendingSubmissionRow): {
 }
 
 /**
- * Последние сдачи заданий со статусом pending для курсов преподавателя.
+ * Последние сдачи заданий и тестов, ожидающие проверки преподавателя.
  */
 export async function getPendingReviewsForTeacher(
   userId: string,
   limit = 5,
+): Promise<PendingReviewItem[]> {
+  const [assignmentItems, testItems] = await Promise.all([
+    getPendingAssignmentReviewsForTeacher(userId, limit),
+    getPendingTestReviewsForTeacher(userId, limit),
+  ]);
+
+  return [...assignmentItems, ...testItems]
+    .sort(
+      (a, b) =>
+        new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+    )
+    .slice(0, limit);
+}
+
+type PendingTestContext = {
+  lessonTitle: string;
+  courseTitle: string;
+  courseSlug: string;
+};
+
+async function buildTeacherPendingTestContextMap(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<Map<string, PendingTestContext>> {
+  const map = new Map<string, PendingTestContext>();
+
+  const { data: lessonRows, error: lessonsError } = await supabase
+    .from("lessons")
+    .select(
+      `
+      id,
+      title,
+      test_id,
+      modules!inner(
+        courses!inner(
+          title,
+          slug,
+          teacher_id
+        )
+      )
+    `,
+    )
+    .eq("modules.courses.teacher_id", userId)
+    .not("test_id", "is", null);
+
+  if (lessonsError) {
+    console.error(
+      "[getPendingReviewsForTeacher] lessons",
+      lessonsError.message,
+    );
+  }
+
+  const lessonIds: string[] = [];
+
+  for (const lesson of lessonRows ?? []) {
+    lessonIds.push(lesson.id);
+    if (!lesson.test_id) continue;
+
+    const modulesRel = lesson.modules as
+      | {
+          courses:
+            | { title: string | null; slug: string }
+            | { title: string | null; slug: string }[]
+            | null;
+        }
+      | {
+          courses:
+            | { title: string | null; slug: string }
+            | { title: string | null; slug: string }[]
+            | null;
+        }[]
+      | null;
+    const module = Array.isArray(modulesRel) ? modulesRel[0] : modulesRel;
+    const courseRel = module?.courses;
+    const course = Array.isArray(courseRel) ? courseRel[0] : courseRel;
+    if (!course?.slug) continue;
+
+    map.set(lesson.test_id, {
+      lessonTitle: lesson.title?.trim() || "Урок",
+      courseTitle: course.title?.trim() || "—",
+      courseSlug: course.slug,
+    });
+  }
+
+  if (lessonIds.length > 0) {
+    const { data: blockRows, error: blocksError } = await supabase
+      .from("lesson_blocks")
+      .select("content, lessons!inner(id, title, modules!inner(courses!inner(title, slug, teacher_id)))")
+      .in("lesson_id", lessonIds)
+      .eq("type", "quiz");
+
+    if (blocksError) {
+      console.error(
+        "[getPendingReviewsForTeacher] quiz blocks",
+        blocksError.message,
+      );
+    }
+
+    for (const block of blockRows ?? []) {
+      const lessonRel = block.lessons as
+        | {
+            title: string | null;
+            modules:
+              | {
+                  courses:
+                    | { title: string | null; slug: string }
+                    | { title: string | null; slug: string }[]
+                    | null;
+                }
+              | {
+                  courses:
+                    | { title: string | null; slug: string }
+                    | { title: string | null; slug: string }[]
+                    | null;
+                }[]
+              | null;
+          }
+        | null;
+      const moduleRel = lessonRel?.modules;
+      const module = Array.isArray(moduleRel) ? moduleRel[0] : moduleRel;
+      const courseRel = module?.courses;
+      const course = Array.isArray(courseRel) ? courseRel[0] : courseRel;
+      const testId = parseTestIdFromQuizBlockContent(block.content);
+      if (!testId || !course?.slug) continue;
+
+      map.set(testId, {
+        lessonTitle: lessonRel?.title?.trim() || "Урок",
+        courseTitle: course.title?.trim() || "—",
+        courseSlug: course.slug,
+      });
+    }
+  }
+
+  return map;
+}
+
+type PendingTestAttemptRow = {
+  id: string;
+  completed_at: string | null;
+  student_id: string;
+  test_id: string;
+  tests:
+    | { title: string | null; user_id: string }
+    | { title: string | null; user_id: string }[]
+    | null;
+};
+
+async function getPendingTestReviewsForTeacher(
+  userId: string,
+  limit: number,
+): Promise<PendingReviewItem[]> {
+  const supabase = await createClient();
+
+  const { data: rows, error } = await supabase
+    .from("student_attempts")
+    .select(
+      `
+      id,
+      completed_at,
+      student_id,
+      test_id,
+      tests!inner(
+        title,
+        user_id
+      )
+    `,
+    )
+    .eq("status", "pending_review")
+    .eq("tests.user_id", userId)
+    .order("completed_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) {
+    console.error(
+      "[getPendingReviewsForTeacher] test attempts",
+      JSON.stringify(error, null, 2),
+    );
+    return [];
+  }
+
+  const attemptRows = (rows ?? []) as PendingTestAttemptRow[];
+  if (attemptRows.length === 0) {
+    return [];
+  }
+
+  const testContextById = await buildTeacherPendingTestContextMap(
+    supabase,
+    userId,
+  );
+  const studentIds = [...new Set(attemptRows.map((row) => row.student_id))];
+  const profileNameByUserId = new Map<string, string | null>();
+
+  if (studentIds.length > 0) {
+    const { data: profileRows, error: profilesError } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", studentIds);
+
+    if (profilesError) {
+      console.error(
+        "[getPendingReviewsForTeacher] profiles",
+        profilesError.message,
+      );
+    }
+
+    for (const profile of profileRows ?? []) {
+      profileNameByUserId.set(profile.id, profile.full_name);
+    }
+  }
+
+  const items: PendingReviewItem[] = [];
+
+  for (const row of attemptRows) {
+    const testsRel = row.tests;
+    const testMeta = Array.isArray(testsRel) ? testsRel[0] : testsRel;
+    const context = testContextById.get(row.test_id);
+    const submittedAt = row.completed_at ?? new Date(0).toISOString();
+
+    items.push({
+      kind: "test",
+      attemptId: row.id,
+      studentName: resolveStudentDisplayName(
+        profileNameByUserId.get(row.student_id),
+        null,
+        row.student_id,
+      ),
+      courseTitle: context?.courseTitle ?? "—",
+      lessonTitle:
+        context?.lessonTitle ?? testMeta?.title?.trim() ?? "Тест",
+      submittedAt,
+      courseSlug: context?.courseSlug ?? "",
+    });
+  }
+
+  return items;
+}
+
+async function getPendingAssignmentReviewsForTeacher(
+  userId: string,
+  limit: number,
 ): Promise<PendingReviewItem[]> {
   const supabase = await createClient();
 
@@ -282,6 +534,7 @@ export async function getPendingReviewsForTeacher(
     }
 
     items.push({
+      kind: "assignment",
       submissionId: row.id,
       studentName: resolveStudentDisplayName(
         profileNameByUserId.get(row.student_id),

@@ -306,6 +306,10 @@ export type QuizResultViewProps = {
   reviewOrderingAssignmentsByQuestionId?: Map<string, Record<string, string[]>> | null;
   /** Например кнопки «Вернуться к уроку» под разбором — для Sheet не передаётся. */
   children?: ReactNode;
+  /** Только блок разбора вопросов — без шапки «Результат» (страница проверки). */
+  reviewOnly?: boolean;
+  /** Смещение номера вопроса в подписи «Вопрос N» (когда передан один вопрос из полного теста). */
+  questionIndexOffset?: number;
 };
 
 export function QuizResultView({
@@ -324,6 +328,8 @@ export function QuizResultView({
   reviewGroupedCorrectByQuestionId,
   reviewOrderingAssignmentsByQuestionId,
   children,
+  reviewOnly = false,
+  questionIndexOffset = 0,
 }: QuizResultViewProps) {
   function getSelectedIdsForQuestion(questionId: string) {
     const rows = reviewRowsByQuestionId?.get(questionId) ?? [];
@@ -484,6 +490,373 @@ export function QuizResultView({
   const isForKids = result.isForKids;
   const requiresManualReview = result.requiresManualReview;
 
+  const questionsSection = (
+    <section
+      className={
+        reviewOnly
+          ? "w-full text-left"
+          : "border-border w-full rounded-xl border bg-card/30 p-4 text-left shadow-sm sm:p-6"
+      }
+    >
+      {!reviewOnly ? (
+        <h3 className="text-foreground mb-4 text-lg font-semibold tracking-tight">
+          Разбор ответов
+        </h3>
+      ) : null}
+      <div className={reviewOnly ? "flex flex-col gap-0" : "flex flex-col gap-10"}>
+        {questions.map((q, index) => {
+          const displayIndex = questionIndexOffset + index;
+          const rows = reviewRowsByQuestionId?.get(q.id) ?? [];
+          const answerData = pickAnswerDataFromRows(rows);
+          const questionFullyCorrect = isQuestionFullyCorrect(q);
+          const selectedIds = getSelectedIdsForQuestion(q.id);
+          const textInputManualGrades =
+            q.type === "text_input"
+              ? parseManualItemGradesFromAnswerData(answerData)
+              : null;
+          const textInputGraded =
+            q.type === "text_input" &&
+            textInputManualGrades &&
+            !result.requiresManualReview;
+
+          return (
+            <div key={q.id} className="mb-6 space-y-4 rounded-xl border p-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-foreground text-base font-medium leading-snug">
+                  Вопрос {displayIndex + 1}: {textFromContent(q.content)}
+                </h4>
+                <Badge
+                  variant={
+                    q.type === "text_input" && !textInputGraded
+                      ? "outline"
+                      : questionFullyCorrect
+                        ? "secondary"
+                        : "destructive"
+                  }
+                  className={
+                    q.type === "text_input" && !textInputGraded
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+                      : questionFullyCorrect
+                        ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                        : undefined
+                  }
+                >
+                  {q.type === "text_input"
+                    ? textInputGraded
+                      ? questionFullyCorrect
+                        ? "Верно"
+                        : "Частично / неверно"
+                      : "На проверке"
+                    : questionFullyCorrect
+                      ? "Верно"
+                      : "Ошибка"}
+                </Badge>
+              </div>
+
+              {(q.type === "matching_puzzle" || q.type === "dnd_puzzle") &&
+                (() => {
+                  const pairs = parsePairsFromAnswerData(answerData);
+                  const optionById = new Map(q.options.map((o) => [o.id, o]));
+                  return (
+                    <div className="flex flex-col gap-2">
+                      {q.options.map((leftOpt) => {
+                        const pair = pairs.find((p) => p.leftOptionId === leftOpt.id);
+                        const userRight = pair
+                          ? optionById.get(pair.rightOptionId)
+                          : undefined;
+                        const correctRight = optionById.get(leftOpt.id);
+                        const isCorrect = Boolean(
+                          pair && pair.rightOptionId === leftOpt.id,
+                        );
+                        return (
+                          <div
+                            key={`${q.id}-${leftOpt.id}`}
+                            className="rounded-md border bg-muted/50 p-2 text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">
+                                {puzzlePartText(leftOpt.content, "left")}
+                              </span>
+                              <span className="text-muted-foreground">—</span>
+                              <span>
+                                {userRight
+                                  ? puzzlePartText(userRight.content, "right")
+                                  : "— Нет ответа —"}
+                              </span>
+                              <Badge
+                                variant={isCorrect ? "secondary" : "destructive"}
+                                className={
+                                  isCorrect
+                                    ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                    : undefined
+                                }
+                              >
+                                {isCorrect ? "Верно" : "Ошибка"}
+                              </Badge>
+                            </div>
+                            {!isCorrect && correctRight ? (
+                              <p className="text-muted-foreground mt-1 text-xs">
+                                Правильно: {puzzlePartText(correctRight.content, "right")}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+              {(q.type === "single_choice" ||
+                q.type === "multiple_choice" ||
+                q.type === "multiple") &&
+                (() => {
+                  if (isGroupedChoiceContent(q.content)) {
+                    const playerView = resolveGroupedChoicePlayerView({
+                      content: q.content,
+                      questionType: q.type,
+                      legacyOptions: q.options,
+                    });
+                    const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
+                    const selections =
+                      (fromMap && Object.keys(fromMap).length > 0
+                        ? fromMap
+                        : parseGroupedSelectionsBulletproof(
+                            pickAnswerDataFromRows(rows),
+                          )) ?? {};
+                    const correctByItemId =
+                      reviewGroupedCorrectByQuestionId?.get(q.id) ?? {};
+                    return (
+                      <GroupedChoiceTaskQuestion
+                        items={playerView.items}
+                        isMultiple={
+                          q.type === "multiple_choice" || q.type === "multiple"
+                        }
+                        selections={selections}
+                        isReviewMode
+                        correctByItemId={correctByItemId}
+                      />
+                    );
+                  }
+
+                  const correctIds = reviewCorrectIdsByQuestionId?.get(q.id) ?? [];
+                  const selectedOptions = selectedIds
+                    .map((id) => q.options.find((o) => o.id === id))
+                    .filter((o): o is SafeTestOption => Boolean(o));
+                  const missedCorrectIds = correctIds.filter(
+                    (id) => !selectedIds.includes(id),
+                  );
+                  return (
+                    <div className="flex flex-col gap-2">
+                      {selectedOptions.length > 0 ? (
+                        selectedOptions.map((opt) => {
+                          const isCorrect = correctIds.includes(opt.id);
+                          return (
+                            <div
+                              key={`${q.id}-${opt.id}`}
+                              className="flex items-center gap-2 rounded-md border bg-muted/50 p-2 text-sm"
+                            >
+                              <span>{textFromContent(opt.content)}</span>
+                              <Badge
+                                variant={isCorrect ? "secondary" : "destructive"}
+                                className={
+                                  isCorrect
+                                    ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                    : undefined
+                                }
+                              >
+                                {isCorrect ? "Верно" : "Ошибка"}
+                              </Badge>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-muted-foreground text-sm">— Нет ответа —</p>
+                      )}
+                      {missedCorrectIds.length > 0 ? (
+                        <p className="text-muted-foreground text-xs">
+                          Правильный ответ:{" "}
+                          {missedCorrectIds
+                            .map((id) => q.options.find((o) => o.id === id))
+                            .filter((o): o is SafeTestOption => Boolean(o))
+                            .map((o) => textFromContent(o.content))
+                            .join(", ")}
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+
+              {q.type === "ordering" &&
+                (() => {
+                  const playerView = resolveOrderingPlayerView({
+                    content: q.content,
+                  });
+                  if (!playerView) {
+                    return (
+                      <p className="text-muted-foreground text-sm">
+                        Не удалось показать разбор этого вопроса.
+                      </p>
+                    );
+                  }
+                  const fromMap = reviewOrderingAssignmentsByQuestionId?.get(q.id);
+                  const assignments =
+                    (fromMap && Object.keys(fromMap).length > 0
+                      ? fromMap
+                      : parseOrderingAssignmentsBulletproof(
+                          pickAnswerDataFromRows(rows),
+                        )) ?? {};
+                  const correctByItemId =
+                    reviewGroupedCorrectByQuestionId?.get(q.id) ?? {};
+                  return (
+                    <OrderingTaskQuestion
+                      items={playerView.items}
+                      assignments={assignments}
+                      isReviewMode
+                      correctByItemId={correctByItemId}
+                    />
+                  );
+                })()}
+
+              {q.type === "image_labeling" &&
+                (() => {
+                  const meta = parseImageLabelingOptions(q.options);
+                  const assignments = resolveImageLabelingAssignments(
+                    q,
+                    rows,
+                    reviewAnswersByQuestionId,
+                  );
+                  return (
+                    <ImageLabelingQuestion
+                      isReviewMode
+                      images={meta.images}
+                      words={meta.words}
+                      assignments={assignments}
+                    />
+                  );
+                })()}
+
+              {(q.type === "fill_in_the_blanks" ||
+                q.type === "fill_in_the_blanks_multi") &&
+                (() => {
+                  const view = resolveGroupedFillBlanksPlayerView({
+                    content: q.content,
+                    questionType: q.type,
+                  });
+                  if (!view) {
+                    return (
+                      <p className="text-muted-foreground text-sm">
+                        Не удалось показать разбор этого вопроса.
+                      </p>
+                    );
+                  }
+                  const fromMap =
+                    reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
+                  const saved =
+                    (fromMap && Object.keys(fromMap).length > 0
+                      ? fromMap
+                      : parseGroupedFillAssignmentsBulletproof(
+                          pickAnswerDataFromRows(rows),
+                        )) ?? {};
+                  return (
+                    <GroupedFillBlanksTaskQuestion
+                      items={view.items}
+                      mode={view.mode}
+                      groupedAssignments={saved}
+                      isReviewMode
+                    />
+                  );
+                })()}
+
+              {(q.type === "fill_blanks_typing" ||
+                q.type === "fill_blanks_typing_multi") &&
+                (() => {
+                  const view = resolveGroupedFillBlanksPlayerView({
+                    content: q.content,
+                    questionType: q.type,
+                  });
+                  if (!view) {
+                    return (
+                      <p className="text-muted-foreground text-sm">
+                        Не удалось показать разбор этого вопроса.
+                      </p>
+                    );
+                  }
+                  const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
+                  const saved =
+                    (fromMap && Object.keys(fromMap).length > 0
+                      ? fromMap
+                      : parseGroupedFillTypingBulletproof(
+                          pickAnswerDataFromRows(rows),
+                        )) ?? {};
+                  return (
+                    <GroupedFillBlanksTaskQuestion
+                      items={view.items}
+                      mode={view.mode}
+                      groupedTyping={saved}
+                      isReviewMode
+                    />
+                  );
+                })()}
+
+              {q.type === "text_input" &&
+                (() => {
+                  const view = resolveGroupedFillBlanksPlayerView({
+                    content: q.content,
+                    questionType: q.type,
+                  });
+                  if (!view) {
+                    return (
+                      <p className="text-muted-foreground text-sm">
+                        Не удалось показать развёрнутый ответ.
+                      </p>
+                    );
+                  }
+                  const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
+                  const saved =
+                    (fromMap && Object.keys(fromMap).length > 0
+                      ? fromMap
+                      : parseGroupedFillTypingBulletproof(
+                          pickAnswerDataFromRows(rows),
+                        )) ?? {};
+                  return (
+                    <div className="space-y-3">
+                      <GroupedFillBlanksTaskQuestion
+                        items={view.items}
+                        mode={view.mode}
+                        groupedTyping={saved}
+                        isReviewMode
+                      />
+                      {textInputManualGrades && !result.requiresManualReview ? (
+                        <ul className="text-muted-foreground space-y-1 text-xs">
+                          {view.items.map((item, itemIndex) => (
+                            <li key={item.id}>
+                              Вопрос {itemIndex + 1}:{" "}
+                              <span className="text-foreground tabular-nums font-medium">
+                                {textInputManualGrades[item.id] ?? 0}
+                              </span>{" "}
+                              / {item.points} баллов
+                            </li>
+                          ))}
+                        </ul>
+                      ) : result.requiresManualReview ? (
+                        <p className="text-muted-foreground text-xs">
+                          Ответ отправлен на проверку преподавателю.
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+
+  if (reviewOnly) {
+    return questionsSection;
+  }
+
   return (
     <div className="flex flex-col gap-10 py-8">
       {showTestMeta &&
@@ -574,358 +947,7 @@ export function QuizResultView({
         </div>
       </div>
 
-      <section className="border-border w-full rounded-xl border bg-card/30 p-4 text-left shadow-sm sm:p-6">
-        <h3 className="text-foreground mb-4 text-lg font-semibold tracking-tight">
-          Разбор ответов
-        </h3>
-        <div className="flex flex-col gap-10">
-          {questions.map((q, index) => {
-            const rows = reviewRowsByQuestionId?.get(q.id) ?? [];
-            const answerData = pickAnswerDataFromRows(rows);
-            const questionFullyCorrect = isQuestionFullyCorrect(q);
-            const selectedIds = getSelectedIdsForQuestion(q.id);
-            const textInputManualGrades =
-              q.type === "text_input"
-                ? parseManualItemGradesFromAnswerData(answerData)
-                : null;
-            const textInputGraded =
-              q.type === "text_input" &&
-              textInputManualGrades &&
-              !result.requiresManualReview;
-
-            return (
-              <div key={q.id} className="mb-6 space-y-4 rounded-xl border p-6">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className="text-foreground text-base font-medium leading-snug">
-                    Вопрос {index + 1}: {textFromContent(q.content)}
-                  </h4>
-                  <Badge
-                    variant={
-                      q.type === "text_input" && !textInputGraded
-                        ? "outline"
-                        : questionFullyCorrect
-                          ? "secondary"
-                          : "destructive"
-                    }
-                    className={
-                      q.type === "text_input" && !textInputGraded
-                        ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-                        : questionFullyCorrect
-                          ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                          : undefined
-                    }
-                  >
-                    {q.type === "text_input"
-                      ? textInputGraded
-                        ? questionFullyCorrect
-                          ? "Верно"
-                          : "Частично / неверно"
-                        : "На проверке"
-                      : questionFullyCorrect
-                        ? "Верно"
-                        : "Ошибка"}
-                  </Badge>
-                </div>
-
-                {(q.type === "matching_puzzle" || q.type === "dnd_puzzle") &&
-                  (() => {
-                    const pairs = parsePairsFromAnswerData(answerData);
-                    const optionById = new Map(q.options.map((o) => [o.id, o]));
-                    return (
-                      <div className="flex flex-col gap-2">
-                        {q.options.map((leftOpt) => {
-                          const pair = pairs.find((p) => p.leftOptionId === leftOpt.id);
-                          const userRight = pair
-                            ? optionById.get(pair.rightOptionId)
-                            : undefined;
-                          const correctRight = optionById.get(leftOpt.id);
-                          const isCorrect = Boolean(
-                            pair && pair.rightOptionId === leftOpt.id,
-                          );
-                          return (
-                            <div
-                              key={`${q.id}-${leftOpt.id}`}
-                              className="rounded-md border bg-muted/50 p-2 text-sm"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-medium">
-                                  {puzzlePartText(leftOpt.content, "left")}
-                                </span>
-                                <span className="text-muted-foreground">—</span>
-                                <span>
-                                  {userRight
-                                    ? puzzlePartText(userRight.content, "right")
-                                    : "— Нет ответа —"}
-                                </span>
-                                <Badge
-                                  variant={isCorrect ? "secondary" : "destructive"}
-                                  className={
-                                    isCorrect
-                                      ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                      : undefined
-                                  }
-                                >
-                                  {isCorrect ? "Верно" : "Ошибка"}
-                                </Badge>
-                              </div>
-                              {!isCorrect && correctRight ? (
-                                <p className="text-muted-foreground mt-1 text-xs">
-                                  Правильно: {puzzlePartText(correctRight.content, "right")}
-                                </p>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-
-                {(q.type === "single_choice" ||
-                  q.type === "multiple_choice" ||
-                  q.type === "multiple") &&
-                  (() => {
-                    if (isGroupedChoiceContent(q.content)) {
-                      const playerView = resolveGroupedChoicePlayerView({
-                        content: q.content,
-                        questionType: q.type,
-                        legacyOptions: q.options,
-                      });
-                      const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
-                      const selections =
-                        (fromMap && Object.keys(fromMap).length > 0
-                          ? fromMap
-                          : parseGroupedSelectionsBulletproof(
-                              pickAnswerDataFromRows(rows),
-                            )) ?? {};
-                      const correctByItemId =
-                        reviewGroupedCorrectByQuestionId?.get(q.id) ?? {};
-                      return (
-                        <GroupedChoiceTaskQuestion
-                          items={playerView.items}
-                          isMultiple={
-                            q.type === "multiple_choice" || q.type === "multiple"
-                          }
-                          selections={selections}
-                          isReviewMode
-                          correctByItemId={correctByItemId}
-                        />
-                      );
-                    }
-
-                    const correctIds = reviewCorrectIdsByQuestionId?.get(q.id) ?? [];
-                    const selectedOptions = selectedIds
-                      .map((id) => q.options.find((o) => o.id === id))
-                      .filter((o): o is SafeTestOption => Boolean(o));
-                    const missedCorrectIds = correctIds.filter(
-                      (id) => !selectedIds.includes(id),
-                    );
-                    return (
-                      <div className="flex flex-col gap-2">
-                        {selectedOptions.length > 0 ? (
-                          selectedOptions.map((opt) => {
-                            const isCorrect = correctIds.includes(opt.id);
-                            return (
-                              <div
-                                key={`${q.id}-${opt.id}`}
-                                className="flex items-center gap-2 rounded-md border bg-muted/50 p-2 text-sm"
-                              >
-                                <span>{textFromContent(opt.content)}</span>
-                                <Badge
-                                  variant={isCorrect ? "secondary" : "destructive"}
-                                  className={
-                                    isCorrect
-                                      ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                      : undefined
-                                  }
-                                >
-                                  {isCorrect ? "Верно" : "Ошибка"}
-                                </Badge>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <p className="text-muted-foreground text-sm">— Нет ответа —</p>
-                        )}
-                        {missedCorrectIds.length > 0 ? (
-                          <p className="text-muted-foreground text-xs">
-                            Правильный ответ:{" "}
-                            {missedCorrectIds
-                              .map((id) => q.options.find((o) => o.id === id))
-                              .filter((o): o is SafeTestOption => Boolean(o))
-                              .map((o) => textFromContent(o.content))
-                              .join(", ")}
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })()}
-
-                {q.type === "ordering" &&
-                  (() => {
-                    const playerView = resolveOrderingPlayerView({
-                      content: q.content,
-                    });
-                    if (!playerView) {
-                      return (
-                        <p className="text-muted-foreground text-sm">
-                          Не удалось показать разбор этого вопроса.
-                        </p>
-                      );
-                    }
-                    const fromMap = reviewOrderingAssignmentsByQuestionId?.get(q.id);
-                    const assignments =
-                      (fromMap && Object.keys(fromMap).length > 0
-                        ? fromMap
-                        : parseOrderingAssignmentsBulletproof(
-                            pickAnswerDataFromRows(rows),
-                          )) ?? {};
-                    const correctByItemId =
-                      reviewGroupedCorrectByQuestionId?.get(q.id) ?? {};
-                    return (
-                      <OrderingTaskQuestion
-                        items={playerView.items}
-                        assignments={assignments}
-                        isReviewMode
-                        correctByItemId={correctByItemId}
-                      />
-                    );
-                  })()}
-
-                {q.type === "image_labeling" &&
-                  (() => {
-                    const meta = parseImageLabelingOptions(q.options);
-                    const assignments = resolveImageLabelingAssignments(
-                      q,
-                      rows,
-                      reviewAnswersByQuestionId,
-                    );
-                    return (
-                      <ImageLabelingQuestion
-                        isReviewMode
-                        images={meta.images}
-                        words={meta.words}
-                        assignments={assignments}
-                      />
-                    );
-                  })()}
-
-                {(q.type === "fill_in_the_blanks" ||
-                  q.type === "fill_in_the_blanks_multi") &&
-                  (() => {
-                    const view = resolveGroupedFillBlanksPlayerView({
-                      content: q.content,
-                      questionType: q.type,
-                    });
-                    if (!view) {
-                      return (
-                        <p className="text-muted-foreground text-sm">
-                          Не удалось показать разбор этого вопроса.
-                        </p>
-                      );
-                    }
-                    const fromMap =
-                      reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
-                    const saved =
-                      (fromMap && Object.keys(fromMap).length > 0
-                        ? fromMap
-                        : parseGroupedFillAssignmentsBulletproof(
-                            pickAnswerDataFromRows(rows),
-                          )) ?? {};
-                    return (
-                      <GroupedFillBlanksTaskQuestion
-                        items={view.items}
-                        mode={view.mode}
-                        groupedAssignments={saved}
-                        isReviewMode
-                      />
-                    );
-                  })()}
-
-                {(q.type === "fill_blanks_typing" ||
-                  q.type === "fill_blanks_typing_multi") &&
-                  (() => {
-                    const view = resolveGroupedFillBlanksPlayerView({
-                      content: q.content,
-                      questionType: q.type,
-                    });
-                    if (!view) {
-                      return (
-                        <p className="text-muted-foreground text-sm">
-                          Не удалось показать разбор этого вопроса.
-                        </p>
-                      );
-                    }
-                    const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-                    const saved =
-                      (fromMap && Object.keys(fromMap).length > 0
-                        ? fromMap
-                        : parseGroupedFillTypingBulletproof(
-                            pickAnswerDataFromRows(rows),
-                          )) ?? {};
-                    return (
-                      <GroupedFillBlanksTaskQuestion
-                        items={view.items}
-                        mode={view.mode}
-                        groupedTyping={saved}
-                        isReviewMode
-                      />
-                    );
-                  })()}
-
-                {q.type === "text_input" &&
-                  (() => {
-                    const view = resolveGroupedFillBlanksPlayerView({
-                      content: q.content,
-                      questionType: q.type,
-                    });
-                    if (!view) {
-                      return (
-                        <p className="text-muted-foreground text-sm">
-                          Не удалось показать развёрнутый ответ.
-                        </p>
-                      );
-                    }
-                    const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-                    const saved =
-                      (fromMap && Object.keys(fromMap).length > 0
-                        ? fromMap
-                        : parseGroupedFillTypingBulletproof(
-                            pickAnswerDataFromRows(rows),
-                          )) ?? {};
-                    return (
-                      <div className="space-y-3">
-                        <GroupedFillBlanksTaskQuestion
-                          items={view.items}
-                          mode={view.mode}
-                          groupedTyping={saved}
-                          isReviewMode
-                        />
-                        {textInputManualGrades &&
-                        !result.requiresManualReview ? (
-                          <ul className="text-muted-foreground space-y-1 text-xs">
-                            {view.items.map((item, itemIndex) => (
-                              <li key={item.id}>
-                                Вопрос {itemIndex + 1}:{" "}
-                                <span className="text-foreground tabular-nums font-medium">
-                                  {textInputManualGrades[item.id] ?? 0}
-                                </span>{" "}
-                                / {item.points} баллов
-                              </li>
-                            ))}
-                          </ul>
-                        ) : result.requiresManualReview ? (
-                          <p className="text-muted-foreground text-xs">
-                            Ответ отправлен на проверку преподавателю.
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })()}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {questionsSection}
 
       {children}
     </div>

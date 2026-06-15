@@ -371,6 +371,9 @@ export function CreateTestForm({
   const [maxScore, setMaxScore] = useState(
     String(initialData?.maxScore ?? 100),
   );
+  const [timeLimit, setTimeLimit] = useState(
+    String(initialData?.timeLimit ?? 0),
+  );
   const [isForKids, setIsForKids] = useState(initialData?.isForKids ?? false);
   const [isPublished, setIsPublished] = useState(
     initialData?.isPublished ?? true,
@@ -869,6 +872,7 @@ export function CreateTestForm({
       auto_check: autoCheck,
       save_to_journal: saveToJournal,
       max_score: resolvedMaxScore,
+      time_limit: parsePositiveInt(timeLimit, 0),
       is_for_kids: isForKids,
       questions: questions.map((q) => {
         const points = parsePositiveInt(String(q.points ?? 1), 1);
@@ -1180,6 +1184,26 @@ export function CreateTestForm({
               value={maxScore}
               onChange={(e) => setMaxScore(e.target.value)}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="test-time-limit">
+              Ограничение по времени (в минутах)
+            </Label>
+            <Input
+              id="test-time-limit"
+              type="number"
+              min={0}
+              max={600}
+              step={1}
+              inputMode="numeric"
+              value={timeLimit}
+              onChange={(e) => setTimeLimit(e.target.value)}
+              placeholder="0 — без ограничения"
+            />
+            <p className="text-muted-foreground text-xs">
+              Укажите 0 или оставьте пустым, если лимит не нужен. По истечении
+              времени тест завершится автоматически.
+            </p>
           </div>
           <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
             <div className="space-y-0.5">

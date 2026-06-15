@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { PendingReviewItem } from "@/app/dashboard/fetch-dashboard-data";
 import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -33,6 +35,12 @@ function formatSubmittedAt(iso: string): string {
   }).format(date);
 }
 
+function pendingReviewKey(review: PendingReviewItem): string {
+  return review.kind === "test"
+    ? `test-${review.attemptId}`
+    : `assignment-${review.submissionId}`;
+}
+
 export function PendingReviewsWidget({
   reviews,
 }: {
@@ -44,7 +52,9 @@ export function PendingReviewsWidget({
   );
 
   const selectedReview = reviews.find(
-    (review) => review.submissionId === selectedSubmissionId,
+    (review) =>
+      review.kind === "assignment" &&
+      review.submissionId === selectedSubmissionId,
   );
 
   return (
@@ -52,7 +62,9 @@ export function PendingReviewsWidget({
       <Card>
         <CardHeader>
           <CardTitle>Требует внимания</CardTitle>
-          <CardDescription>Недавние ответы, ожидающие проверки</CardDescription>
+          <CardDescription>
+            Недавние задания и тесты, ожидающие проверки
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {reviews.length === 0 ? (
@@ -65,6 +77,7 @@ export function PendingReviewsWidget({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Ученик</TableHead>
+                    <TableHead>Тип</TableHead>
                     <TableHead>Курс</TableHead>
                     <TableHead>Урок</TableHead>
                     <TableHead>Дата</TableHead>
@@ -73,9 +86,21 @@ export function PendingReviewsWidget({
                 </TableHeader>
                 <TableBody>
                   {reviews.map((review) => (
-                    <TableRow key={review.submissionId}>
+                    <TableRow key={pendingReviewKey(review)}>
                       <TableCell className="font-medium">
                         {review.studentName}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            review.kind === "test"
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+                              : undefined
+                          }
+                        >
+                          {review.kind === "test" ? "Тест" : "Задание"}
+                        </Badge>
                       </TableCell>
                       <TableCell>{review.courseTitle}</TableCell>
                       <TableCell>{review.lessonTitle}</TableCell>
@@ -83,15 +108,25 @@ export function PendingReviewsWidget({
                         {formatSubmittedAt(review.submittedAt)}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            setSelectedSubmissionId(review.submissionId)
-                          }
-                        >
-                          Проверить
-                        </Button>
+                        {review.kind === "test" ? (
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link
+                              href={`/dashboard/gradebook/attempts/${review.attemptId}/grade`}
+                            >
+                              Проверить
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setSelectedSubmissionId(review.submissionId)
+                            }
+                          >
+                            Проверить
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -102,7 +137,9 @@ export function PendingReviewsWidget({
         </CardContent>
       </Card>
 
-      {selectedSubmissionId && selectedReview ? (
+      {selectedSubmissionId &&
+      selectedReview &&
+      selectedReview.kind === "assignment" ? (
         <AssignmentReviewSheet
           isOpen
           onOpenChange={(open) => {

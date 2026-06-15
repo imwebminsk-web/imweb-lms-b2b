@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import {
+  getBestTestAttemptDetails,
+  type GradebookBestAttemptDetails,
+} from "@/app/actions/gradebook-actions";
+import {
   getAttemptQuestionEarnedPoints,
   pickRepresentativeAttemptAnswerRow,
   resolveQuestionMaxPoints,
@@ -12,7 +16,13 @@ import { mergeManualItemGradesIntoAnswerData } from "@/lib/manual-grading-utils"
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
 import { createClient } from "@/lib/supabase/server";
 import { sumQuestionPoints } from "@/lib/utils/grading";
+import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import type { Json } from "@/types/database.types";
+
+export type AttemptGradingDetails = GradebookBestAttemptDetails & {
+  studentId: string;
+  studentName: string;
+};
 
 export type GetPendingReviewCountsResult =
   | { success: true; counts: Record<string, number> }
@@ -55,6 +65,101 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
   }
 
   return { success: true, counts };
+}
+
+/** Данные для страницы ручной проверки конкретной попытки (`pending_review`). */
+export async function getAttemptGradingDetails(
+  attemptId: string,
+): Promise<
+  { success: true; data: AttemptGradingDetails } | { success: false; error: string }
+> {
+  const idParsed = attemptIdSchema.safeParse(attemptId);
+  if (!idParsed.success) {
+    return {
+      success: false,
+      error: idParsed.error.issues[0]?.message ?? "Некорректный ID попытки",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { success: false, error: "Профиль не найден" };
+  }
+
+  if (profile.role !== "teacher" && profile.role !== "admin") {
+    return { success: false, error: "Недостаточно прав для проверки" };
+  }
+
+  const { data: attempt, error: attemptError } = await supabase
+    .from("student_attempts")
+    .select("id, student_id, test_id, status")
+    .eq("id", idParsed.data)
+    .maybeSingle();
+
+  if (attemptError || !attempt) {
+    return { success: false, error: "Попытка не найдена" };
+  }
+
+  if (attempt.status !== "pending_review") {
+    return {
+      success: false,
+      error: "Эта попытка не ожидает ручной проверки",
+    };
+  }
+
+  const detailsRes = await getBestTestAttemptDetails(
+    attempt.student_id,
+    attempt.test_id,
+  );
+  if (!detailsRes.success) {
+    return detailsRes;
+  }
+
+  if (detailsRes.data.attemptId !== attempt.id) {
+    return {
+      success: false,
+      error: "Не удалось загрузить данные попытки для проверки",
+    };
+  }
+
+  const { data: studentProfile, error: studentError } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", attempt.student_id)
+    .maybeSingle();
+
+  if (studentError) {
+    return { success: false, error: studentError.message };
+  }
+
+  const studentName = resolveStudentDisplayName(
+    studentProfile?.full_name,
+    null,
+    attempt.student_id,
+  );
+
+  return {
+    success: true,
+    data: {
+      ...detailsRes.data,
+      studentId: attempt.student_id,
+      studentName,
+    },
+  };
 }
 
 /**
@@ -364,6 +469,7 @@ export async function submitManualGrades(
 
   revalidatePath("/dashboard");
   revalidatePath("/learn");
+  revalidatePath(`/dashboard/gradebook/attempts/${attempt.id}/grade`);
 
   return { success: true, percentScore };
 }

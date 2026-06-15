@@ -343,7 +343,14 @@ export type SafeTestQuestion = Pick<
 
 export type TestWithQuestionsPayload = Pick<
   Tables<"tests">,
-  "id" | "title" | "description" | "folder_name" | "created_at" | "is_published" | "is_for_kids"
+  | "id"
+  | "title"
+  | "description"
+  | "folder_name"
+  | "created_at"
+  | "is_published"
+  | "is_for_kids"
+  | "time_limit"
 > & {
   questions: SafeTestQuestion[];
 };
@@ -792,6 +799,7 @@ export async function getTestWithQuestions(
       created_at,
       is_published,
       is_for_kids,
+      time_limit,
       questions (
         id,
         content,
@@ -844,6 +852,7 @@ export async function getTestWithQuestions(
     created_at: data.created_at,
     is_published: data.is_published,
     is_for_kids: data.is_for_kids ?? false,
+    time_limit: data.time_limit ?? 0,
     questions,
   };
 
@@ -884,6 +893,7 @@ export async function getSafeTestForClient(
       created_at,
       is_published,
       is_for_kids,
+      time_limit,
       questions (
         id,
         content,
@@ -941,6 +951,7 @@ export async function getSafeTestForClient(
       created_at: data.created_at,
       is_published: data.is_published,
       is_for_kids: data.is_for_kids ?? false,
+      time_limit: data.time_limit ?? 0,
       questions,
     },
   };
@@ -2399,6 +2410,7 @@ function mapTestSettingsToRow(d: SaveFullTestPayload) {
     save_to_journal: d.save_to_journal,
     max_score: d.max_score,
     is_for_kids: d.is_for_kids,
+    time_limit: d.time_limit ?? 0,
   };
 }
 
@@ -2944,6 +2956,7 @@ export async function getTestDraftForEdit(
       max_score,
       is_for_kids,
       is_published,
+      time_limit,
       questions (
         content,
         order_index,
@@ -2984,6 +2997,7 @@ export async function getTestDraftForEdit(
     autoCheck: data.auto_check ?? true,
     saveToJournal: data.save_to_journal ?? true,
     maxScore: data.max_score ?? 100,
+    timeLimit: data.time_limit ?? 0,
     isForKids: data.is_for_kids ?? false,
     isPublished: data.is_published ?? true,
     questions,

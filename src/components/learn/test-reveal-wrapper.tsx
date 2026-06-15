@@ -53,6 +53,7 @@ export function TestRevealWrapper({
           testDescription={quizData.test.description}
           questions={quizData.questions}
           isForKids={quizData.test.isForKids}
+          timeLimitMinutes={quizData.test.timeLimitMinutes}
         />
       </div>
     );

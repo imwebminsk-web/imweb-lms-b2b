@@ -153,6 +153,12 @@ export const saveFullTestPayloadSchema = z
       .int("Максимальный балл — целое число")
       .min(1, "Максимальный балл должен быть больше 0")
       .default(100),
+    time_limit: z.coerce
+      .number()
+      .int("Лимит времени — целое число минут")
+      .min(0, "Лимит не может быть отрицательным")
+      .max(600, "Максимум 600 минут")
+      .default(0),
     is_for_kids: z.boolean().default(false),
     questions: z
       .array(adminQuestionSchema)

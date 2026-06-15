@@ -877,6 +877,7 @@ export async function getMatrixGradebookData(
     };
     const bestCompleted = new Map<string, BestCompleted>();
     const inProgressKeys = new Set<string>();
+    const pendingReviewByCell = new Map<string, string>();
 
     for (const a of attemptRows ?? []) {
       const matchingCols = columns.filter(
@@ -901,6 +902,8 @@ export async function getMatrixGradebookData(
           }
         } else if (a.status === "in_progress") {
           inProgressKeys.add(cellKey);
+        } else if (a.status === "pending_review") {
+          pendingReviewByCell.set(cellKey, a.id);
         }
       }
     }
@@ -929,6 +932,15 @@ export async function getMatrixGradebookData(
       const cell = cells[cellKey];
       if (!cell || cell.status === "completed") continue;
       cell.status = "in_progress";
+    }
+
+    for (const [cellKey, attemptId] of pendingReviewByCell) {
+      const cell = cells[cellKey];
+      if (!cell) continue;
+      cell.status = "pending";
+      cell.attemptId = attemptId;
+      cell.grade10 = null;
+      cell.gradingVisuals = null;
     }
   }
 

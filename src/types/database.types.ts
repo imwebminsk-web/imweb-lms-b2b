@@ -729,6 +729,7 @@ export type Database = {
           max_score: number
           save_to_journal: boolean
           test_type: string
+          time_limit: number
           title: string
           title_student: string | null
           title_teacher: string | null
@@ -745,6 +746,7 @@ export type Database = {
           max_score?: number
           save_to_journal?: boolean
           test_type?: string
+          time_limit?: number
           title: string
           title_student?: string | null
           title_teacher?: string | null
@@ -761,6 +763,7 @@ export type Database = {
           max_score?: number
           save_to_journal?: boolean
           test_type?: string
+          time_limit?: number
           title?: string
           title_student?: string | null
           title_teacher?: string | null

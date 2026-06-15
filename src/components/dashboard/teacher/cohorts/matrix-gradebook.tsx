@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckSquare, FileText, HourglassIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type {
@@ -42,6 +43,7 @@ function MatrixCell({
   studentName,
   onOpenTest,
   onOpenAssignment,
+  onOpenGrading,
 }: {
   cell: MatrixGradebookCell | undefined;
   column: MatrixGradebookColumn;
@@ -57,13 +59,18 @@ function MatrixCell({
     blockId: string;
     studentName: string;
   }) => void;
+  onOpenGrading: (attemptId: string) => void;
 }) {
   const status = cell?.status ?? "not_started";
   const grade10 = cell?.grade10 ?? null;
   const isForKids = cell?.isForKids ?? false;
   const gradingVisuals = cell?.gradingVisuals ?? null;
 
+  const isPendingReview =
+    column.type === "test" && status === "pending" && Boolean(cell?.attemptId);
+
   const isClickable =
+    isPendingReview ||
     (column.type === "test" &&
       cell?.testId &&
       (status === "completed" || status === "in_progress")) ||
@@ -73,6 +80,10 @@ function MatrixCell({
 
   function handleClick() {
     if (!cell || !isClickable) return;
+    if (isPendingReview && cell.attemptId) {
+      onOpenGrading(cell.attemptId);
+      return;
+    }
     if (column.type === "test" && cell.testId) {
       onOpenTest({
         studentId: cell.studentId,
@@ -103,7 +114,7 @@ function MatrixCell({
         type="button"
         onClick={handleClick}
         className="inline-flex size-full min-h-8 items-center justify-center rounded-sm hover:bg-muted/60"
-        aria-label="На проверке — открыть сдачу"
+        aria-label="На проверке — открыть страницу проверки"
       >
         <HourglassIcon
           className="size-4 text-amber-500 dark:text-amber-400"
@@ -187,6 +198,7 @@ function MatrixCell({
 }
 
 export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
+  const router = useRouter();
   const { students, columns, cells } = data;
 
   const [selectedTest, setSelectedTest] = useState<{
@@ -282,6 +294,11 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
                         studentName={student.name}
                         onOpenTest={setSelectedTest}
                         onOpenAssignment={setSelectedAssignment}
+                        onOpenGrading={(attemptId) => {
+                          router.push(
+                            `/dashboard/gradebook/attempts/${attemptId}/grade`,
+                          );
+                        }}
                       />
                     </TableCell>
                   );
