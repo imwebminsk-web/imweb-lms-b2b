@@ -1,5 +1,6 @@
 "use client";
 
+import { FillBlanksParsedHtmlQuestion } from "@/components/quiz/FillBlanksParsedHtmlQuestion";
 import { FillBlanksTypingQuestion } from "@/components/quiz/FillBlanksTypingQuestion";
 import { FillInTheBlanksQuestion } from "@/components/quiz/FillInTheBlanksQuestion";
 import { TextInputQuestion } from "@/components/quiz/TextInputQuestion";
@@ -36,6 +37,45 @@ function itemToTextInputContent(item: GroupedFillBlanksPlayerItem): TextInputCon
     wordBank: item.wordBank,
     correctMapping: item.correctMapping,
   };
+}
+
+function renderLegacyItem(
+  item: GroupedFillBlanksPlayerItem,
+  mode: GroupedFillBlanksMode,
+  groupedTyping: Record<string, Record<string, string>>,
+  groupedAssignments: Record<string, Record<string, string>>,
+  isReviewMode: boolean,
+  onTypingChange?: (itemId: string, next: Record<string, string>) => void,
+  onAssignmentsChange?: (itemId: string, next: Record<string, string>) => void,
+) {
+  if (mode === "dnd") {
+    return (
+      <FillInTheBlanksQuestion
+        content={itemToTypingContent(item)}
+        value={groupedAssignments[item.id]}
+        onChange={(next) => onAssignmentsChange?.(item.id, next)}
+        isReviewMode={isReviewMode}
+      />
+    );
+  }
+  if (mode === "text_input") {
+    return (
+      <TextInputQuestion
+        content={itemToTextInputContent(item)}
+        value={groupedTyping[item.id]}
+        onChange={(next) => onTypingChange?.(item.id, next)}
+        isReviewMode={isReviewMode}
+      />
+    );
+  }
+  return (
+    <FillBlanksTypingQuestion
+      content={itemToTypingContent(item)}
+      value={groupedTyping[item.id]}
+      onChange={(next) => onTypingChange?.(item.id, next)}
+      isReviewMode={isReviewMode}
+    />
+  );
 }
 
 export function GroupedFillBlanksTaskQuestion({
@@ -76,27 +116,35 @@ export function GroupedFillBlanksTaskQuestion({
               Вопрос {index + 1}
             </p>
           ) : null}
-          {mode === "dnd" ? (
-            <FillInTheBlanksQuestion
-              content={itemToTypingContent(item)}
-              value={groupedAssignments[item.id]}
-              onChange={(next) => updateItemAssignments(item.id, next)}
-              isReviewMode={isReviewMode}
-            />
-          ) : mode === "text_input" ? (
-            <TextInputQuestion
-              content={itemToTextInputContent(item)}
-              value={groupedTyping[item.id]}
-              onChange={(next) => updateItemTyping(item.id, next)}
+          {item.parsedHtml ? (
+            <FillBlanksParsedHtmlQuestion
+              parsedHtml={item.parsedHtml}
+              mode={mode}
+              segments={item.segments}
+              wordBank={item.wordBank}
+              correctMapping={item.correctMapping}
+              value={
+                mode === "dnd"
+                  ? groupedAssignments[item.id]
+                  : groupedTyping[item.id]
+              }
+              onChange={(next) =>
+                mode === "dnd"
+                  ? updateItemAssignments(item.id, next)
+                  : updateItemTyping(item.id, next)
+              }
               isReviewMode={isReviewMode}
             />
           ) : (
-            <FillBlanksTypingQuestion
-              content={itemToTypingContent(item)}
-              value={groupedTyping[item.id]}
-              onChange={(next) => updateItemTyping(item.id, next)}
-              isReviewMode={isReviewMode}
-            />
+            renderLegacyItem(
+              item,
+              mode,
+              groupedTyping,
+              groupedAssignments,
+              isReviewMode,
+              updateItemTyping,
+              updateItemAssignments,
+            )
           )}
         </section>
       ))}

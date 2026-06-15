@@ -1,3 +1,10 @@
+import {
+  isGapFillPartialScoringQuestionType,
+  isPartialPairScoringType,
+  sumQuestionsMaxPoints,
+} from "@/lib/utils/scoring-utils";
+import type { Json } from "@/types/database.types";
+
 export type GradingColor = "green" | "yellow" | "red";
 
 export type GradingVisuals = {
@@ -54,8 +61,48 @@ export function resolveQuestionPoints(points: number | null | undefined): number
 }
 
 export function sumQuestionPoints(
-  questions: { points?: number | null }[],
+  questions: {
+    id?: string;
+    type?: string | null;
+    points?: number | null;
+    content?: Json | null;
+    options?: { id: string; content: Json | null }[];
+  }[],
+  flatAllOptions?: {
+    id: string;
+    question_id: string;
+    content: Json | null;
+  }[],
 ): number {
+  const hasPartialTypes = questions.some(
+    (q) =>
+      isPartialPairScoringType(q.type ?? null) ||
+      isGapFillPartialScoringQuestionType(q.type ?? null),
+  );
+  const allOptions =
+    flatAllOptions ??
+    questions.flatMap((q) =>
+      q.id
+        ? (q.options ?? []).map((option) => ({
+            id: option.id,
+            question_id: q.id!,
+            content: option.content,
+          }))
+        : [],
+    );
+
+  if (hasPartialTypes && questions.every((q) => typeof q.id === "string")) {
+    return sumQuestionsMaxPoints(
+      questions as {
+        id: string;
+        type: string | null;
+        points?: number | null;
+        content?: Json | null;
+      }[],
+      allOptions,
+    );
+  }
+
   return questions.reduce(
     (sum, q) => sum + resolveQuestionPoints(q.points),
     0,

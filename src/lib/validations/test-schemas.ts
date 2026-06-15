@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+export {
+  choiceOptionSchema,
+  groupedChoiceContentSchema,
+} from "@/lib/validations/grouped-choice-schema";
+
 // -----------------------------------------------------------------------------
 // JSONB-контент вопросов и вариантов (MVP: без жёсткой формы структуры)
 // -----------------------------------------------------------------------------
@@ -31,8 +36,12 @@ export const QUESTION_TYPE_SLUGS = [
   "image_labeling",
   /** Заполнение пропусков в тексте (DnD слов); контент см. FillInTheBlanksContentSchema. */
   "fill_in_the_blanks",
+  /** Несколько предложений с пропусками (DnD). */
+  "fill_in_the_blanks_multi",
   /** Пропуски вручную: ввод текста в inline-поля; контент тот же JSON. */
   "fill_blanks_typing",
+  /** Несколько предложений с ручным вводом пропусков. */
+  "fill_blanks_typing_multi",
   /** Легаси после ENUM */
   "single",
   "multiple",

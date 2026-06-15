@@ -1,10 +1,14 @@
 "use client";
 
+import parse, { type DOMNode, type Element } from "html-react-parser";
 import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Editor } from "@/components/ui/editor";
 import {
+  isGapFillSingleTextQuestionType,
+  isGapFillDndQuestionType,
   parseGroupedFillBlanksItemText,
   resolveGroupedFillBlanksMode,
 } from "@/lib/grouped-fill-blanks-utils";
@@ -13,7 +17,9 @@ import type { GroupedFillBlanksItemField } from "@/types/create-test-form";
 
 export type GroupedFillBlanksQuestionType =
   | "fill_in_the_blanks"
+  | "fill_in_the_blanks_multi"
   | "fill_blanks_typing"
+  | "fill_blanks_typing_multi"
   | "text_input";
 
 export type GroupedFillBlanksItemsEditorProps = {
@@ -22,18 +28,23 @@ export type GroupedFillBlanksItemsEditorProps = {
   onItemsChange: (items: GroupedFillBlanksItemField[]) => void;
 };
 
+function isDomElement(node: DOMNode): node is Element {
+  return node.type === "tag" && "attribs" in node;
+}
+
 export function createDefaultGroupedFillBlanksItem(
   questionType: GroupedFillBlanksQuestionType,
 ): GroupedFillBlanksItemField {
   const text =
     questionType === "text_input"
-      ? "Ответьте на вопрос: []"
-      : "Мама [мыла] раму.";
+      ? "<p>Ответьте на вопрос: []</p>"
+      : "<p>Мама [мыла] раму.</p>";
   const mode = resolveGroupedFillBlanksMode(questionType);
   const parsed = parseGroupedFillBlanksItemText(text, mode, []);
   return {
     id: crypto.randomUUID(),
     text,
+    parsedHtml: parsed?.parsedHtml,
     points: 1,
     segments: parsed?.segments ?? [],
     wordBank: parsed?.wordBank ?? [],
@@ -55,6 +66,7 @@ function parseItemFields(
   if (!parsed) {
     return {
       ...item,
+      parsedHtml: undefined,
       segments: [],
       wordBank: [],
       correctMapping: {},
@@ -62,6 +74,7 @@ function parseItemFields(
   }
   return {
     ...item,
+    parsedHtml: parsed.parsedHtml,
     segments: parsed.segments,
     wordBank: parsed.wordBank,
     correctMapping: parsed.correctMapping,
@@ -75,7 +88,9 @@ export function GroupedFillBlanksItemsEditor({
 }: GroupedFillBlanksItemsEditorProps) {
   const baseId = useId();
   const isTextInput = questionType === "text_input";
-  const isDnd = questionType === "fill_in_the_blanks";
+  const isDnd = isGapFillDndQuestionType(questionType);
+  const isSingleTextMode = isGapFillSingleTextQuestionType(questionType);
+  const displayItems = isSingleTextMode ? items.slice(0, 1) : items;
   const [distractorInputs, setDistractorInputs] = useState<Record<string, string>>(
     {},
   );
@@ -94,11 +109,12 @@ export function GroupedFillBlanksItemsEditor({
   }
 
   function addItem() {
+    if (isSingleTextMode) return;
     onItemsChange([...items, createDefaultGroupedFillBlanksItem(questionType)]);
   }
 
   function removeItem(itemIndex: number) {
-    if (items.length <= 1) return;
+    if (isSingleTextMode || items.length <= 1) return;
     onItemsChange(items.filter((_, idx) => idx !== itemIndex));
   }
 
@@ -123,13 +139,16 @@ export function GroupedFillBlanksItemsEditor({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm font-medium">Вопросы задания</span>
-        <Button type="button" variant="outline" size="sm" onClick={addItem}>
-          + Добавить вопрос
-        </Button>
+        {!isSingleTextMode ? (
+          <Button type="button" variant="outline" size="sm" onClick={addItem}>
+            + Добавить вопрос
+          </Button>
+        ) : null}
       </div>
 
-      {items.map((item, itemIndex) => {
+      {displayItems.map((item, itemIndex) => {
         const isValid = item.segments.some((seg) => seg.type === "blank");
+        const previewHtml = item.parsedHtml ?? item.text;
 
         return (
           <div
@@ -143,7 +162,7 @@ export function GroupedFillBlanksItemsEditor({
                   htmlFor={`${baseId}-points-${itemIndex}`}
                   className="text-muted-foreground text-xs whitespace-nowrap"
                 >
-                  Баллы:
+                  {isTextInput ? "Баллы:" : "Баллы за 1 пропуск:"}
                 </Label>
                 <Input
                   id={`${baseId}-points-${itemIndex}`}
@@ -162,50 +181,38 @@ export function GroupedFillBlanksItemsEditor({
                   }
                 />
               </div>
-              <div className="ml-auto">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removeItem(itemIndex)}
-                  disabled={items.length <= 1}
-                >
-                  Удалить
-                </Button>
-              </div>
+              {!isSingleTextMode ? (
+                <div className="ml-auto">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeItem(itemIndex)}
+                    disabled={items.length <= 1}
+                  >
+                    Удалить
+                  </Button>
+                </div>
+              ) : null}
             </div>
 
-            <div className="space-y-2">
-              <label
-                className="text-sm font-medium"
-                htmlFor={`${baseId}-raw-${itemIndex}`}
-              >
-                Текст со скобками{" "}
-                <span className="text-muted-foreground font-normal">
-                  {isTextInput ? (
-                    <>
-                      (поля ответа: <code className="text-xs">[]</code>)
-                    </>
-                  ) : (
-                    <>
-                      (пропуски: <code className="text-xs">[слово]</code>)
-                    </>
-                  )}
-                </span>
-              </label>
-              <textarea
-                id={`${baseId}-raw-${itemIndex}`}
+            <div className="space-y-1">
+              <Label htmlFor={`${baseId}-text-${itemIndex}`}>
+                Текст вопроса *
+              </Label>
+              <p className="text-muted-foreground text-xs">
+                Введите текст, добавляйте картинки/аудио, и используйте скобки{" "}
+                {isTextInput ? (
+                  <code className="text-xs">[]</code>
+                ) : (
+                  <code className="text-xs">[слово]</code>
+                )}{" "}
+                для пропусков.
+              </p>
+              <Editor
+                id={`${baseId}-text-${itemIndex}`}
                 value={item.text}
-                onChange={(e) => updateItem(itemIndex, { text: e.target.value })}
-                placeholder={
-                  isTextInput
-                    ? "Введите текст задания. Для добавления поля ввода используйте пустые скобки []"
-                    : "Введите текст задания. Для пропуска используйте скобки [слово]"
-                }
-                rows={4}
-                className={cn(
-                  "border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring flex min-h-[100px] w-full rounded-lg border px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm",
-                )}
+                onChange={(next) => updateItem(itemIndex, { text: next })}
               />
             </div>
 
@@ -280,20 +287,29 @@ export function GroupedFillBlanksItemsEditor({
                 </p>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-foreground text-sm leading-relaxed">
-                    {item.segments.map((seg, i) =>
-                      seg.type === "text" ? (
-                        <span key={i}>{seg.value}</span>
-                      ) : (
-                        <span
-                          key={i}
-                          className="border-primary/40 bg-primary/10 text-primary mx-0.5 inline-block min-w-[4rem] rounded border px-2 py-0.5 text-center text-xs font-medium"
-                        >
-                          Пропуск
-                        </span>
-                      ),
+                  <div
+                    className={cn(
+                      "prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed",
+                      "[&_.blank-placeholder]:border-primary/40 [&_.blank-placeholder]:bg-primary/10 [&_.blank-placeholder]:text-primary [&_.blank-placeholder]:mx-0.5 [&_.blank-placeholder]:inline-flex [&_.blank-placeholder]:min-h-[1.25rem] [&_.blank-placeholder]:min-w-[4rem] [&_.blank-placeholder]:items-center [&_.blank-placeholder]:justify-center [&_.blank-placeholder]:rounded [&_.blank-placeholder]:border [&_.blank-placeholder]:px-2 [&_.blank-placeholder]:text-xs [&_.blank-placeholder]:font-medium",
                     )}
-                  </p>
+                  >
+                    {parse(previewHtml, {
+                      replace(domNode) {
+                        if (!isDomElement(domNode)) return undefined;
+                        if (domNode.attribs["data-blank-id"]) {
+                          return (
+                            <span
+                              key={domNode.attribs["data-blank-id"]}
+                              className="blank-placeholder"
+                            >
+                              Пропуск
+                            </span>
+                          );
+                        }
+                        return undefined;
+                      },
+                    })}
+                  </div>
                   {isDnd && item.wordBank.length > 0 ? (
                     <div>
                       <p className="text-muted-foreground mb-1 text-xs font-medium uppercase tracking-wide">

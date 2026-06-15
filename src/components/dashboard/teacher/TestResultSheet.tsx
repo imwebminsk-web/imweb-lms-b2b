@@ -10,6 +10,7 @@ import {
   overrideTestAttemptGrade,
   type GradebookBestAttemptDetails,
 } from "@/app/actions/gradebook-actions";
+import { ManualTestGradingPanel } from "@/components/dashboard/teacher/ManualTestGradingPanel";
 import { QuizResultView } from "@/components/quiz/QuizResultView";
 import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -179,6 +180,25 @@ export function TestResultSheet({
             </Alert>
           ) : null}
 
+          {details?.attemptId &&
+          details.resultSummary?.requiresManualReview &&
+          isTeacher &&
+          reviewMaps != null ? (
+            <ManualTestGradingPanel
+              attemptId={details.attemptId}
+              targets={details.manualGradingTargets}
+              autoGradedScores={details.autoGradedScores}
+              questions={details.questions}
+              reviewGroupedFillTypingByQuestionId={
+                reviewMaps.reviewGroupedFillTypingByQuestionId
+              }
+              onCompleted={() => {
+                router.refresh();
+                loadDetails();
+              }}
+            />
+          ) : null}
+
           {details?.attemptId && details.resultSummary && reviewMaps != null ? (
             <>
               {details.gradingVisuals ? (
@@ -198,7 +218,9 @@ export function TestResultSheet({
                 </div>
               ) : null}
 
-              {isTeacher && !details.isForKids ? (
+              {isTeacher &&
+              !details.isForKids &&
+              !details.resultSummary.requiresManualReview ? (
                 <section className="border-border space-y-3 rounded-xl border p-4">
                   <h3 className="text-sm font-semibold">
                     Скорректировать оценку (0–10)

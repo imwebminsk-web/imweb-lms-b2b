@@ -15,6 +15,7 @@ import {
   resolveGroupedFillBlanksPlayerView,
 } from "@/lib/grouped-fill-blanks-utils";
 import { resolveGroupedChoicePlayerView, LEGACY_GROUPED_ITEM_ID } from "@/lib/grouped-choice-utils";
+import { resolveOrderingPlayerView } from "@/lib/ordering-utils";
 import {
   buildReviewMaps,
   type ReviewAnswerRow,
@@ -45,6 +46,10 @@ import {
   isGroupedChoiceSelectionComplete,
 } from "./GroupedChoiceTaskQuestion";
 import { GroupedFillBlanksTaskQuestion } from "./GroupedFillBlanksTaskQuestion";
+import {
+  OrderingTaskQuestion,
+  isOrderingSelectionComplete,
+} from "./OrderingTaskQuestion";
 import { QuizResultView } from "./QuizResultView";
 import { QuizTaskInstruction } from "./QuizTaskInstruction";
 
@@ -166,6 +171,8 @@ export function QuizPlayer({
     useState<Map<string, Record<string, Record<string, string>>> | null>(null);
   const [reviewGroupedFillAssignmentsByQuestionId, setReviewGroupedFillAssignmentsByQuestionId] =
     useState<Map<string, Record<string, Record<string, string>>> | null>(null);
+  const [reviewOrderingAssignmentsByQuestionId, setReviewOrderingAssignmentsByQuestionId] =
+    useState<Map<string, Record<string, string[]>> | null>(null);
 
   const total = questions.length;
   const current = questions[currentIndex];
@@ -179,9 +186,14 @@ export function QuizPlayer({
   const isDndPuzzle = current?.type === "dnd_puzzle";
   const isAnyPairPuzzle = isClickPuzzle || isDndPuzzle;
   const isImageLabeling = current?.type === "image_labeling";
-  const isFillInTheBlanks = current?.type === "fill_in_the_blanks";
-  const isFillBlanksTyping = current?.type === "fill_blanks_typing";
+  const isFillInTheBlanks =
+    current?.type === "fill_in_the_blanks" ||
+    current?.type === "fill_in_the_blanks_multi";
+  const isFillBlanksTyping =
+    current?.type === "fill_blanks_typing" ||
+    current?.type === "fill_blanks_typing_multi";
   const isTextInput = current?.type === "text_input";
+  const isOrdering = current?.type === "ordering";
   const isAnyGroupedFillBlanks =
     isFillInTheBlanks || isFillBlanksTyping || isTextInput;
 
@@ -207,6 +219,9 @@ export function QuizPlayer({
   const [groupedSelections, setGroupedSelections] = useState<
     Record<string, string[]>
   >({});
+  const [orderingAssignments, setOrderingAssignments] = useState<
+    Record<string, string[]>
+  >({});
 
   const choicePlayerView = useMemo(() => {
     if (!current || !isChoiceQuestion) return null;
@@ -216,6 +231,13 @@ export function QuizPlayer({
       legacyOptions: current.options,
     });
   }, [current, isChoiceQuestion]);
+
+  const orderingPlayerView = useMemo(() => {
+    if (!current || !isOrdering) return null;
+    return resolveOrderingPlayerView({
+      content: current.content,
+    });
+  }, [current, isOrdering]);
 
   const imageLabelingMeta = useMemo(() => {
     if (!current || current.type !== "image_labeling") return null;
@@ -273,6 +295,9 @@ export function QuizPlayer({
         setReviewGroupedFillAssignmentsByQuestionId(
           built.reviewGroupedFillAssignmentsByQuestionId,
         );
+        setReviewOrderingAssignmentsByQuestionId(
+          built.reviewOrderingAssignmentsByQuestionId,
+        );
       }
     })();
     return () => {
@@ -305,6 +330,11 @@ export function QuizPlayer({
                 choicePlayerView.items,
                 groupedSelections,
                 multiple,
+              )
+          : isOrdering && orderingPlayerView
+            ? isOrderingSelectionComplete(
+                orderingPlayerView.items,
+                orderingAssignments,
               )
           : false;
 
@@ -348,6 +378,10 @@ export function QuizPlayer({
                         ? (groupedSelections[LEGACY_GROUPED_ITEM_ID] ?? [])
                         : groupedSelections[LEGACY_GROUPED_ITEM_ID]?.[0],
                     )
+              : isOrdering && orderingPlayerView
+                ? await submitAnswer(attemptId, current.id, undefined, {
+                    orderingAssignments,
+                  })
               : { success: false as const, error: "Неподдерживаемый тип задания" };
       if (!sub.success) {
         setActionError(sub.error);
@@ -360,6 +394,7 @@ export function QuizPlayer({
         setGroupedFillAssignments({});
         setGroupedFillTyping({});
         setGroupedSelections({});
+        setOrderingAssignments({});
         setCurrentIndex((i) => i + 1);
         return;
       }
@@ -397,6 +432,9 @@ export function QuizPlayer({
         reviewGroupedFillTypingByQuestionId={reviewGroupedFillTypingByQuestionId}
         reviewGroupedFillAssignmentsByQuestionId={
           reviewGroupedFillAssignmentsByQuestionId
+        }
+        reviewOrderingAssignmentsByQuestionId={
+          reviewOrderingAssignmentsByQuestionId
         }
       />
     );
@@ -440,6 +478,8 @@ export function QuizPlayer({
                       ? TEXT_INPUT_FALLBACK_HEADING
                     : isChoiceQuestion
                       ? choicePlayerView?.taskInstruction ?? "Вопрос"
+                      : isOrdering
+                        ? orderingPlayerView?.taskInstruction ?? "Вопрос"
                       : textFromContent(current.content)
               }
             />
@@ -497,6 +537,17 @@ export function QuizPlayer({
             selections={groupedSelections}
             onSelectionsChange={setGroupedSelections}
           />
+        ) : current && isOrdering && orderingPlayerView ? (
+          <OrderingTaskQuestion
+            key={current.id}
+            items={orderingPlayerView.items}
+            assignments={orderingAssignments}
+            onAssignmentsChange={setOrderingAssignments}
+          />
+        ) : current && isOrdering ? (
+          <p className="text-destructive text-sm" role="alert">
+            Не удалось загрузить задание с упорядочиванием.
+          </p>
         ) : null}
       </div>
 

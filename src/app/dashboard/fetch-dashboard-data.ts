@@ -77,22 +77,60 @@ export type DashboardData = {
 async function fetchTeacherMetrics(
   supabase: Awaited<ReturnType<typeof createClient>>,
   courseIds: string[],
+  userId: string,
 ): Promise<TeacherDashboardMetrics> {
   const totalCourses = courseIds.length;
 
+  const pendingAssignmentReviewsQuery = supabase
+    .from("assignment_submissions")
+    .select(
+      "id, lesson_blocks!inner(lessons!inner(modules!inner(courses!inner(teacher_id))))",
+      { count: "exact", head: true },
+    )
+    .eq("status", "pending")
+    .eq("lesson_blocks.lessons.modules.courses.teacher_id", userId);
+
+  const pendingTestReviewsQuery = supabase
+    .from("student_attempts")
+    .select("id, tests!inner(user_id)", { count: "exact", head: true })
+    .eq("status", "pending_review")
+    .eq("tests.user_id", userId);
+
   if (courseIds.length === 0) {
+    const [
+      { count: pendingAssignments, error: pendingAssignmentsError },
+      { count: pendingTestAttempts, error: pendingTestsError },
+    ] = await Promise.all([
+      pendingAssignmentReviewsQuery,
+      pendingTestReviewsQuery,
+    ]);
+
+    if (pendingAssignmentsError) {
+      console.error(
+        "[fetchDashboardData] teacher pending assignment reviews",
+        JSON.stringify(pendingAssignmentsError, null, 2),
+      );
+    }
+    if (pendingTestsError) {
+      console.error(
+        "[fetchDashboardData] teacher pending test reviews",
+        JSON.stringify(pendingTestsError, null, 2),
+      );
+    }
+
     return {
       totalCourses: 0,
       totalCohorts: 0,
       totalStudents: 0,
-      pendingReviews: 0,
+      pendingReviews: (pendingAssignments ?? 0) + (pendingTestAttempts ?? 0),
     };
   }
 
   const [
     { count: totalCohorts, error: cohortsError },
     { data: enrollmentRows, error: enrollmentsError },
-    { count: pendingReviews, error: pendingError },
+    { count: pendingAssignments, error: pendingAssignmentsError },
+    { count: pendingTestAttempts, error: pendingTestsError },
   ] = await Promise.all([
     supabase
       .from("cohorts")
@@ -100,14 +138,8 @@ async function fetchTeacherMetrics(
       .in("course_id", courseIds)
       .eq("is_active", true),
     supabase.from("enrollments").select("user_id").in("course_id", courseIds),
-    supabase
-      .from("assignment_submissions")
-      .select(
-        "id, lesson_blocks!inner(lessons!inner(modules!inner(course_id)))",
-        { count: "exact", head: true },
-      )
-      .eq("status", "pending")
-      .in("lesson_blocks.lessons.modules.course_id", courseIds),
+    pendingAssignmentReviewsQuery,
+    pendingTestReviewsQuery,
   ]);
 
   if (cohortsError) {
@@ -119,10 +151,16 @@ async function fetchTeacherMetrics(
       enrollmentsError.message,
     );
   }
-  if (pendingError) {
+  if (pendingAssignmentsError) {
     console.error(
-      "[fetchDashboardData] teacher pending reviews",
-      pendingError.message,
+      "[fetchDashboardData] teacher pending assignment reviews",
+      JSON.stringify(pendingAssignmentsError, null, 2),
+    );
+  }
+  if (pendingTestsError) {
+    console.error(
+      "[fetchDashboardData] teacher pending test reviews",
+      JSON.stringify(pendingTestsError, null, 2),
     );
   }
 
@@ -134,7 +172,7 @@ async function fetchTeacherMetrics(
     totalCourses,
     totalCohorts: totalCohorts ?? 0,
     totalStudents,
-    pendingReviews: pendingReviews ?? 0,
+    pendingReviews: (pendingAssignments ?? 0) + (pendingTestAttempts ?? 0),
   };
 }
 
@@ -209,7 +247,10 @@ export async function getPendingReviewsForTeacher(
     .limit(limit);
 
   if (error) {
-    console.error("[getPendingReviewsForTeacher]", error.message);
+    console.error(
+      "[getPendingReviewsForTeacher]",
+      JSON.stringify(error, null, 2),
+    );
     return [];
   }
 
@@ -280,7 +321,7 @@ export async function fetchDashboardData(
     const courseIds = (courses ?? []).map((c) => c.id);
 
     const [teacherMetrics, pendingReviews, activityEvents] = await Promise.all([
-      fetchTeacherMetrics(supabase, courseIds),
+      fetchTeacherMetrics(supabase, courseIds, userId),
       getPendingReviewsForTeacher(userId, 5),
       getRecentActivity(userId, 15),
     ]);

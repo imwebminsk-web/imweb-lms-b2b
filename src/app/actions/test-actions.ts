@@ -18,6 +18,7 @@ import {
   scoreGroupedFillBlanksTypingQuestion,
   sumGroupedFillBlanksPoints,
   newGroupedFillBlanksId,
+  normalizeGroupedFillBlanksItemText,
   parseGroupedFillBlanksItemText,
 } from "@/lib/grouped-fill-blanks-utils";
 import {
@@ -32,10 +33,14 @@ import {
   sanitizeGroupedChoiceContentForClient,
 } from "@/lib/grouped-choice-utils";
 import {
-  parseFillAssignmentsFromAnswerData,
-  parseFillTypingFromAnswerData,
-  parseLabelPairsFromAnswerData,
-} from "@/lib/quiz-helpers";
+  GROUPED_ORDERING_ANCHOR_TEXT,
+  groupedCorrectOrderingMapFromContent,
+  isOrderingAssignmentsComplete,
+  newOrderingId,
+  parseOrderingItems,
+  resolveOrderingPlayerView,
+  sumOrderingItemPoints,
+} from "@/lib/ordering-utils";
 import { createClient } from "@/lib/supabase/server";
 import {
   saveFullTestPayloadSchema,
@@ -49,6 +54,12 @@ import {
   groupedFillInTheBlanksContentSchema,
   groupedTextInputContentSchema,
 } from "@/lib/validations/grouped-fill-blanks-schema";
+import { orderingContentSchema } from "@/lib/validations/ordering-schema";
+import {
+  parseFillAssignmentsFromAnswerData,
+  parseFillTypingFromAnswerData,
+  parseLabelPairsFromAnswerData,
+} from "@/lib/quiz-helpers";
 import {
   FillInTheBlanksContentSchema,
   TextInputContentSchema,
@@ -64,6 +75,14 @@ import {
   resolveQuestionPoints,
   sumQuestionPoints,
 } from "@/lib/utils/grading";
+import {
+  getAttemptQuestionEarnedPoints,
+  getImageLabelingPairOptionIds,
+  parsePairAssignmentsFromAnswerData,
+  pickRepresentativeAttemptAnswerRow,
+  resolveQuestionMaxPoints,
+  validateMatchingPairsStructure,
+} from "@/lib/utils/scoring-utils";
 import { mergeLegacyAudioUrlIntoHtml } from "@/lib/utils/task-content";
 import type {
   CreateTestFormInitialData,
@@ -210,6 +229,10 @@ function validateGroupedFillAssignmentsSubmission(params: {
   return { ok: true };
 }
 
+const groupedOrderingAnswerPayloadSchema = z.object({
+  orderingAssignments: z.record(z.string(), z.array(z.string().min(1))),
+});
+
 const groupedChoiceAnswerPayloadSchema = z.object({
   groupedSelections: z.record(z.string(), z.array(z.string().min(1))),
 });
@@ -217,9 +240,15 @@ const groupedChoiceAnswerPayloadSchema = z.object({
 function isFillGapQuestionType(type: string | null | undefined): boolean {
   return (
     type === "fill_in_the_blanks" ||
+    type === "fill_in_the_blanks_multi" ||
     type === "fill_blanks_typing" ||
+    type === "fill_blanks_typing_multi" ||
     type === "text_input"
   );
+}
+
+function isOrderingQuestionType(type: string | null | undefined): boolean {
+  return type === "ordering";
 }
 
 function isChoiceQuestionType(type: string | null | undefined): boolean {
@@ -271,16 +300,6 @@ function partitionImageLabelingOptionIdsLegacy(
   return { imageIds, wordIds };
 }
 
-function getImageLabelingPairOptionIds(
-  rows: { id: string; content: Json | null }[],
-): Set<string> {
-  const ids = new Set<string>();
-  for (const o of rows) {
-    if (isImageLabelingPairRow(o.content)) ids.add(o.id);
-  }
-  return ids;
-}
-
 function validateImageLabelingPairs(
   pairs: { imageId: string; wordId: string }[],
   imageIds: Set<string>,
@@ -304,56 +323,6 @@ function validateImageLabelingPairsPairedMode(
   pairIds: Set<string>,
 ): boolean {
   return validateImageLabelingPairs(pairs, pairIds, pairIds);
-}
-
-function validateMatchingPairsStructure(
-  pairs: { leftOptionId: string; rightOptionId: string }[],
-  validIds: Set<string>,
-): boolean {
-  if (pairs.length !== validIds.size || validIds.size === 0) {
-    return false;
-  }
-  const leftUsed = new Set<string>();
-  const rightUsed = new Set<string>();
-  for (const p of pairs) {
-    if (!validIds.has(p.leftOptionId) || !validIds.has(p.rightOptionId)) {
-      return false;
-    }
-    if (leftUsed.has(p.leftOptionId) || rightUsed.has(p.rightOptionId)) {
-      return false;
-    }
-    leftUsed.add(p.leftOptionId);
-    rightUsed.add(p.rightOptionId);
-  }
-  return leftUsed.size === validIds.size && rightUsed.size === validIds.size;
-}
-
-/** Читает пары из `answer_data`: сначала `pairs` (dnd_puzzle), затем `matchingPairs`. */
-function parsePairAssignmentsFromAnswerData(
-  data: Json | null,
-): { leftOptionId: string; rightOptionId: string }[] | null {
-  if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return null;
-  }
-  const raw =
-    (data as { pairs?: unknown }).pairs ??
-    (data as { matchingPairs?: unknown }).matchingPairs;
-  if (!Array.isArray(raw)) {
-    return null;
-  }
-  const out: { leftOptionId: string; rightOptionId: string }[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      return null;
-    }
-    const l = (item as { leftOptionId?: unknown }).leftOptionId;
-    const r = (item as { rightOptionId?: unknown }).rightOptionId;
-    if (typeof l !== "string" || typeof r !== "string") {
-      return null;
-    }
-    out.push({ leftOptionId: l, rightOptionId: r });
-  }
-  return out;
 }
 
 const testIdSchema = z.string().uuid("Некорректный ID теста");
@@ -1396,7 +1365,7 @@ export async function submitAnswer(
     return { success: true };
   }
 
-  if (question.type === "fill_in_the_blanks") {
+  if (question.type === "fill_in_the_blanks" || question.type === "fill_in_the_blanks_multi") {
     const payloadParsed =
       groupedFillAssignmentsAnswerPayloadSchema.safeParse(answerData);
     if (!payloadParsed.success) {
@@ -1471,7 +1440,7 @@ export async function submitAnswer(
     return { success: true };
   }
 
-  if (question.type === "fill_blanks_typing") {
+  if (question.type === "fill_blanks_typing" || question.type === "fill_blanks_typing_multi") {
     const payloadParsed =
       groupedFillTypingAnswerPayloadSchema.safeParse(answerData);
     if (!payloadParsed.success) {
@@ -1722,6 +1691,96 @@ export async function submitAnswer(
     return { success: true };
   }
 
+  if (isOrderingQuestionType(question.type)) {
+    const payloadParsed =
+      groupedOrderingAnswerPayloadSchema.safeParse(answerData);
+    if (!payloadParsed.success) {
+      return {
+        success: false,
+        error:
+          payloadParsed.error.issues[0]?.message ??
+          "Некорректные ответы для упорядочивания",
+      };
+    }
+
+    const playerView = resolveOrderingPlayerView({
+      content: question.content,
+    });
+    if (!playerView) {
+      return { success: false, error: "Вопрос повреждён (контент упорядочивания)" };
+    }
+
+    const assignments = payloadParsed.data.orderingAssignments;
+    if (
+      !isOrderingAssignmentsComplete(playerView.items, assignments)
+    ) {
+      return {
+        success: false,
+        error: "Выстройте порядок для каждого вопроса",
+      };
+    }
+
+    for (const item of playerView.items) {
+      const order = assignments[item.id];
+      const validIds = new Set(item.elements.map((el) => el.id));
+      if (
+        !Array.isArray(order) ||
+        order.length !== item.elements.length ||
+        order.some((id) => !validIds.has(id)) ||
+        new Set(order).size !== order.length
+      ) {
+        return {
+          success: false,
+          error: "Недопустимый порядок элементов",
+        };
+      }
+    }
+
+    const { data: anchorOpts, error: anchorErr } = await supabase
+      .from("options")
+      .select("id")
+      .eq("question_id", question_id)
+      .order("order_index", { ascending: true })
+      .limit(1);
+
+    if (anchorErr) {
+      return { success: false, error: anchorErr.message };
+    }
+    const anchorId = anchorOpts?.[0]?.id;
+    if (!anchorId) {
+      return {
+        success: false,
+        error: "У вопроса нет служебной записи варианта ответа",
+      };
+    }
+
+    const deleteError = await deleteAttemptAnswersForQuestion(
+      supabase,
+      attempt_id,
+      question_id,
+    );
+    if (deleteError) {
+      return { success: false, error: deleteError };
+    }
+
+    const answerJson: Json = { orderingAssignments: assignments };
+
+    const { error: insertErr } = await supabase
+      .from("attempt_answers")
+      .insert({
+        attempt_id,
+        question_id,
+        option_id: anchorId,
+        answer_data: answerJson,
+      });
+
+    if (insertErr && insertErr.code !== "23505") {
+      return { success: false, error: insertErr.message };
+    }
+
+    return { success: true };
+  }
+
   const isExplicitEmptySelection =
     Array.isArray(optionIdOrComplex) && optionIdOrComplex.length === 0;
   if (isExplicitEmptySelection) {
@@ -1834,82 +1893,6 @@ export async function submitAnswer(
 }
 
 /**
- * Несколько строк `attempt_answers` на один вопрос (напр. multiple_choice) —
- * берём строку с полным `answer_data.selectedOptionIds`, иначе последнюю.
- */
-function pickRepresentativeAttemptAnswerRow(
-  questionType: string | null,
-  rowsForQuestion: {
-    option_id: string;
-    answer_data: Json | null;
-  }[],
-):
-  | { option_id: string; answer_data: Json | null }
-  | undefined {
-  if (rowsForQuestion.length === 0) {
-    return undefined;
-  }
-  if (rowsForQuestion.length === 1) {
-    return rowsForQuestion[0];
-  }
-  const isMultiple =
-    questionType === "multiple_choice" || questionType === "multiple";
-  if (!isMultiple) {
-    return rowsForQuestion[0];
-  }
-  const withSel = rowsForQuestion.find((r) => {
-    if (!r.answer_data || typeof r.answer_data !== "object") {
-      return false;
-    }
-    if (Array.isArray(r.answer_data)) {
-      return false;
-    }
-    const raw = (r.answer_data as { selectedOptionIds?: unknown })
-      .selectedOptionIds;
-    return Array.isArray(raw) && raw.length > 0;
-  });
-  return withSel ?? rowsForQuestion[rowsForQuestion.length - 1];
-}
-
-function parseSelectedIdsFromAnswerRow(
-  optionId: string,
-  answerData: Json | null,
-  questionType: string | null,
-): string[] {
-  const isMultiple =
-    questionType === "multiple_choice" || questionType === "multiple";
-  if (
-    isMultiple &&
-    answerData &&
-    typeof answerData === "object" &&
-    !Array.isArray(answerData)
-  ) {
-    const raw = (answerData as { selectedOptionIds?: unknown })
-      .selectedOptionIds;
-    if (Array.isArray(raw)) {
-      const ids = raw.filter((x): x is string => typeof x === "string");
-      if (ids.length > 0) {
-        return [...new Set(ids)];
-      }
-    }
-  }
-  return [optionId];
-}
-
-function setsOfStringsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  const sa = new Set(a);
-  for (const x of b) {
-    if (!sa.has(x)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
  * Ответы попытки для экрана разбора (после `completed`).
  * Клиент сам парсит `answer_data` (например `labelPairs` для image_labeling).
  */
@@ -2000,6 +1983,13 @@ export async function getAttemptReviewAnswers(
     }
 
     for (const q of questionRows ?? []) {
+      if (q.type === "ordering") {
+        const map = groupedCorrectOrderingMapFromContent(q.content);
+        if (map) {
+          groupedCorrectByQuestionId[q.id] = map;
+        }
+        continue;
+      }
       if (!isChoiceQuestionType(q.type) || !isGroupedChoiceContent(q.content)) {
         continue;
       }
@@ -2069,194 +2059,6 @@ function totalGradableUnitsForAttempt(
     }
   }
   return n;
-}
-
-/** Задание засчитывается целиком: все пары / пропуски / варианты верны. */
-function getAttemptQuestionEarnedPoints(
-  q: {
-    id: string;
-    type: string | null;
-    content: Json | null;
-    points?: number | null;
-  },
-  answerRow:
-    | { option_id: string | null; answer_data: Json | null }
-    | undefined,
-  allOptions: {
-    id: string;
-    question_id: string;
-    is_correct: boolean | null;
-    content: Json | null;
-  }[],
-  correctIdsByQuestion: Map<string, string[]>,
-): number {
-  if (q.type === "text_input") {
-    return 0;
-  }
-
-  if (q.type === "fill_in_the_blanks") {
-    const groupedAssignments = parseGroupedFillAssignmentsFromAnswerData(
-      answerRow?.answer_data ?? null,
-    );
-    if (!groupedAssignments) return 0;
-    return scoreGroupedFillInTheBlanksQuestion({
-      content: q.content,
-      questionType: q.type,
-      groupedAssignments,
-      questionPoints: q.points,
-    });
-  }
-
-  if (q.type === "fill_blanks_typing") {
-    const groupedTyping = parseGroupedFillTypingFromAnswerData(
-      answerRow?.answer_data ?? null,
-    );
-    if (!groupedTyping) return 0;
-    return scoreGroupedFillBlanksTypingQuestion({
-      content: q.content,
-      questionType: q.type,
-      groupedTyping,
-      questionPoints: q.points,
-    });
-  }
-
-  if (isGroupedChoiceContent(q.content)) {
-    const selections = parseGroupedSelectionsFromAnswerData(
-      answerRow?.answer_data ?? null,
-    );
-    if (!selections) return 0;
-    return scoreGroupedChoiceQuestion({
-      content: q.content,
-      questionType: q.type,
-      selections,
-      questionPoints: q.points,
-    });
-  }
-
-  if (
-    isAttemptQuestionFullyCorrect(
-      q,
-      answerRow,
-      allOptions,
-      correctIdsByQuestion,
-    )
-  ) {
-    return resolveQuestionPoints(q.points);
-  }
-
-  return 0;
-}
-
-function isAttemptQuestionFullyCorrect(
-  q: {
-    id: string;
-    type: string | null;
-    content: Json | null;
-    points?: number | null;
-  },
-  answerRow:
-    | { option_id: string | null; answer_data: Json | null }
-    | undefined,
-  allOptions: {
-    id: string;
-    question_id: string;
-    is_correct: boolean | null;
-    content: Json | null;
-  }[],
-  correctIdsByQuestion: Map<string, string[]>,
-): boolean {
-  if (!answerRow) return false;
-
-  if (q.type === "text_input") {
-    return false;
-  }
-
-  if (isGroupedChoiceContent(q.content)) {
-    const selections = parseGroupedSelectionsFromAnswerData(
-      answerRow.answer_data,
-    );
-    if (!selections) return false;
-    const items = parseGroupedChoiceItems(q.content);
-    const total = items
-      ? sumGroupedItemPoints(items)
-      : resolveQuestionPoints(q.points);
-    const earned = scoreGroupedChoiceQuestion({
-      content: q.content,
-      questionType: q.type,
-      selections,
-      questionPoints: q.points,
-    });
-    return earned >= total;
-  }
-
-  if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
-    const pairs = parsePairAssignmentsFromAnswerData(answerRow.answer_data);
-    const optionIdsForQ = allOptions
-      .filter((o) => o.question_id === q.id)
-      .map((o) => o.id);
-    const setQ = new Set(optionIdsForQ);
-    return Boolean(
-      pairs &&
-        validateMatchingPairsStructure(pairs, setQ) &&
-        pairs.every((p) => p.leftOptionId === p.rightOptionId),
-    );
-  }
-
-  if (q.type === "image_labeling") {
-    const qopts = allOptions.filter((o) => o.question_id === q.id);
-    const pairIds = getImageLabelingPairOptionIds(qopts);
-    if (pairIds.size === 0) return false;
-    const lp = parseLabelPairsFromAnswerData(answerRow.answer_data);
-    if (!lp || lp.length !== pairIds.size) return false;
-    const byImage = new Map(lp.map((p) => [p.imageId, p.wordId]));
-    return [...pairIds].every((pid) => byImage.get(pid) === pid);
-  }
-
-  if (q.type === "fill_in_the_blanks") {
-    const groupedAssignments = parseGroupedFillAssignmentsFromAnswerData(
-      answerRow.answer_data,
-    );
-    if (!groupedAssignments) return false;
-    return isGroupedFillInTheBlanksFullyCorrect({
-      content: q.content,
-      questionType: q.type,
-      groupedAssignments,
-      questionPoints: q.points,
-    });
-  }
-
-  if (q.type === "fill_blanks_typing") {
-    const groupedTyping = parseGroupedFillTypingFromAnswerData(
-      answerRow.answer_data,
-    );
-    if (!groupedTyping) return false;
-    return isGroupedFillBlanksFullyCorrect({
-      content: q.content,
-      questionType: q.type,
-      groupedTyping,
-      questionPoints: q.points,
-    });
-  }
-
-  const studentIds = parseSelectedIdsFromAnswerRow(
-    answerRow.option_id ?? "",
-    answerRow.answer_data,
-    q.type ?? "single_choice",
-  );
-  const correctIds = correctIdsByQuestion.get(q.id) ?? [];
-  const isMultiple = q.type === "multiple_choice" || q.type === "multiple";
-
-  if (isMultiple) {
-    const a = [...new Set(studentIds)].sort();
-    const b = [...new Set(correctIds)].sort();
-    return setsOfStringsEqual(a, b);
-  }
-
-  if (studentIds.length === 1) {
-    return correctIds.includes(studentIds[0]);
-  }
-
-  return false;
 }
 
 function buildAttemptResult(params: {
@@ -2344,7 +2146,31 @@ export async function completeAttempt(
 
   const questionsOrdered = questionRows ?? [];
   const questionCount = questionsOrdered.length;
-  const totalPossiblePoints = Math.max(sumQuestionPoints(questionsOrdered), 1);
+  const questionIds = questionsOrdered.map((q) => q.id);
+
+  let allOptions: {
+    id: string;
+    question_id: string;
+    is_correct: boolean | null;
+    content: Json | null;
+  }[] = [];
+
+  if (questionIds.length > 0) {
+    const { data: opts, error: allOptionsError } = await supabase
+      .from("options")
+      .select("id, question_id, is_correct, content")
+      .in("question_id", questionIds);
+
+    if (allOptionsError) {
+      return { success: false, error: allOptionsError.message };
+    }
+    allOptions = opts ?? [];
+  }
+
+  const totalPossiblePoints = Math.max(
+    sumQuestionPoints(questionsOrdered, allOptions),
+    1,
+  );
 
   if (attempt.status === "completed" || attempt.status === "pending_review") {
     const storedScore = attempt.score ?? 0;
@@ -2386,26 +2212,6 @@ export async function completeAttempt(
 
   const rows = answers ?? [];
   const answeredCount = new Set(rows.map((r) => r.question_id)).size;
-  const questionIds = questionsOrdered.map((q) => q.id);
-
-  let allOptions: {
-    id: string;
-    question_id: string;
-    is_correct: boolean | null;
-    content: Json | null;
-  }[] = [];
-
-  if (questionIds.length > 0) {
-    const { data: opts, error: allOptionsError } = await supabase
-      .from("options")
-      .select("id, question_id, is_correct, content")
-      .in("question_id", questionIds);
-
-    if (allOptionsError) {
-      return { success: false, error: allOptionsError.message };
-    }
-    allOptions = opts ?? [];
-  }
 
   const zeroResult = buildAttemptResult({
     percentScore: 0,
@@ -2468,7 +2274,7 @@ export async function completeAttempt(
     const answerRow = listForQ
       ? pickRepresentativeAttemptAnswerRow(q.type, listForQ)
       : undefined;
-    const questionPoints = resolveQuestionPoints(q.points);
+    const maxForQuestion = resolveQuestionMaxPoints(q, allOptions);
     const earnedForQuestion = getAttemptQuestionEarnedPoints(
       q,
       answerRow,
@@ -2477,7 +2283,7 @@ export async function completeAttempt(
     );
 
     earnedPoints += earnedForQuestion;
-    if (earnedForQuestion >= questionPoints) {
+    if (earnedForQuestion >= maxForQuestion) {
       correctCount += 1;
     }
   }
@@ -2620,7 +2426,9 @@ function mapDbQuestionRowToQuestionField(row: {
 
   if (
     type === "fill_in_the_blanks" ||
+    type === "fill_in_the_blanks_multi" ||
     type === "fill_blanks_typing" ||
+    type === "fill_blanks_typing_multi" ||
     type === "text_input"
   ) {
     const mode = resolveGroupedFillBlanksMode(type);
@@ -2637,22 +2445,32 @@ function mapDbQuestionRowToQuestionField(row: {
         type,
         points: sumGroupedFillBlanksPoints(groupedParsed.data.items),
         exampleText,
-        items: groupedParsed.data.items.map((item) => ({
-          id: item.id,
-          text: item.text,
-          points: resolveQuestionPoints(item.points),
-          segments: item.segments,
-          wordBank: item.wordBank,
-          correctMapping: item.correctMapping,
-          extraWords:
+        items: groupedParsed.data.items.map((item) => {
+          const normalizedText = normalizeGroupedFillBlanksItemText(item);
+          const extraWords =
             mode === "dnd"
               ? extractExtraWordsFromFillContent({
                   segments: item.segments,
                   wordBank: item.wordBank,
                   correctMapping: item.correctMapping,
                 })
-              : [],
-        })),
+              : [];
+          const reparsed = parseGroupedFillBlanksItemText(
+            normalizedText,
+            mode,
+            extraWords,
+          );
+          return {
+            id: item.id,
+            text: normalizedText,
+            parsedHtml: item.parsedHtml ?? reparsed?.parsedHtml,
+            points: resolveQuestionPoints(item.points),
+            segments: reparsed?.segments ?? item.segments,
+            wordBank: reparsed?.wordBank ?? item.wordBank,
+            correctMapping: reparsed?.correctMapping ?? item.correctMapping,
+            extraWords,
+          };
+        }),
       };
     }
 
@@ -2663,8 +2481,8 @@ function mapDbQuestionRowToQuestionField(row: {
     if (!flatParsed.success) {
       const defaultText =
         mode === "text_input"
-          ? "Ответьте на вопрос: []"
-          : "Мама [мыла] раму.";
+          ? "<p>Ответьте на вопрос: []</p>"
+          : "<p>Мама [мыла] раму.</p>";
       const parsedItem = parseGroupedFillBlanksItemText(defaultText, mode, []);
       return {
         text: instructionText,
@@ -2675,6 +2493,7 @@ function mapDbQuestionRowToQuestionField(row: {
           {
             id: newGroupedFillBlanksId(),
             text: defaultText,
+            parsedHtml: parsedItem?.parsedHtml,
             points,
             segments: parsedItem?.segments ?? [],
             wordBank: parsedItem?.wordBank ?? [],
@@ -2687,6 +2506,8 @@ function mapDbQuestionRowToQuestionField(row: {
     const { fillRawText, fillExtraWords } = fillContentToFormFields(
       flatParsed.data,
     );
+    const legacyHtml = `<p>${fillRawText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+    const legacyParsed = parseGroupedFillBlanksItemText(legacyHtml, mode, fillExtraWords);
     return {
       text: instructionText,
       type,
@@ -2695,11 +2516,13 @@ function mapDbQuestionRowToQuestionField(row: {
       items: [
         {
           id: LEGACY_GROUPED_FILL_ITEM_ID,
-          text: fillRawText,
+          text: legacyHtml,
+          parsedHtml: legacyParsed?.parsedHtml,
           points,
-          segments: flatParsed.data.segments,
-          wordBank: flatParsed.data.wordBank,
-          correctMapping: flatParsed.data.correctMapping,
+          segments: legacyParsed?.segments ?? flatParsed.data.segments,
+          wordBank: legacyParsed?.wordBank ?? flatParsed.data.wordBank,
+          correctMapping:
+            legacyParsed?.correctMapping ?? flatParsed.data.correctMapping,
           extraWords: fillExtraWords,
         },
       ],
@@ -2746,6 +2569,46 @@ function mapDbQuestionRowToQuestionField(row: {
     };
   }
 
+  if (type === "ordering") {
+    const groupedParsed = orderingContentSchema.safeParse(row.content);
+    if (groupedParsed.success && groupedParsed.data.items?.length) {
+      return {
+        text: instructionText,
+        type: "ordering",
+        points: sumOrderingItemPoints(groupedParsed.data.items),
+        exampleText,
+        items: groupedParsed.data.items.map((item) => ({
+          id: item.id,
+          text: item.text ?? "",
+          points: resolveQuestionPoints(item.points),
+          elements: item.elements.map((el) => ({
+            id: el.id,
+            text: el.text,
+          })),
+        })),
+      };
+    }
+
+    const el1 = newOrderingId();
+    const el2 = newOrderingId();
+    const defaultItem = {
+      id: newOrderingId(),
+      text: "",
+      points: 1,
+      elements: [
+        { id: el1, text: "" },
+        { id: el2, text: "" },
+      ],
+    };
+    return {
+      text: instructionText,
+      type: "ordering",
+      points: 1,
+      exampleText,
+      items: [defaultItem],
+    };
+  }
+
   const qType: "single_choice" | "multiple_choice" =
     type === "multiple_choice" ? "multiple_choice" : "single_choice";
 
@@ -2769,6 +2632,7 @@ function mapDbQuestionRowToQuestionField(row: {
           id: o.id,
           text: o.text,
           isCorrect: o.is_correct,
+          ...(o.image_url?.trim() ? { imageUrl: o.image_url.trim() } : {}),
         })),
       })),
     };
@@ -2780,7 +2644,8 @@ function mapDbQuestionRowToQuestionField(row: {
       return (
         c.text !== "__fill_in_the_blanks__" &&
         c.text !== GROUPED_CHOICE_ANCHOR_TEXT &&
-        c.text !== GROUPED_FILL_BLANKS_ANCHOR_TEXT
+        c.text !== GROUPED_FILL_BLANKS_ANCHOR_TEXT &&
+        c.text !== GROUPED_ORDERING_ANCHOR_TEXT
       );
     })
     .map((o) => {
@@ -2813,7 +2678,9 @@ function hasGroupedFillBlanksItemsInPayload(
 ): boolean {
   if (
     q.type !== "fill_in_the_blanks" &&
+    q.type !== "fill_in_the_blanks_multi" &&
     q.type !== "fill_blanks_typing" &&
+    q.type !== "fill_blanks_typing_multi" &&
     q.type !== "text_input"
   ) {
     return false;
@@ -2826,6 +2693,14 @@ function hasGroupedFillBlanksItemsInPayload(
         ? groupedFillInTheBlanksContentSchema
         : groupedFillBlanksContentSchema;
   const parsed = schema.safeParse(q.content);
+  return Boolean(parsed.success && parsed.data.items && parsed.data.items.length > 0);
+}
+
+function hasGroupedOrderingItemsInPayload(
+  q: SaveFullTestPayload["questions"][number],
+): boolean {
+  if (q.type !== "ordering") return false;
+  const parsed = orderingContentSchema.safeParse(q.content);
   return Boolean(parsed.success && parsed.data.items && parsed.data.items.length > 0);
 }
 
@@ -2846,13 +2721,13 @@ async function insertQuestionsAndOptionsForTest(
   const questionInserts = questions.map((q, i) => ({
     test_id: testId,
     content:
-      isFillGapQuestionType(q.type)
+      isFillGapQuestionType(q.type) ||
+      hasGroupedChoiceItemsInPayload(q) ||
+      hasGroupedOrderingItemsInPayload(q)
         ? (q.content as Json)
-        : hasGroupedChoiceItemsInPayload(q)
-          ? (q.content as Json)
-          : buildTextQuestionContent(
-              q.content as { text: string; example_text?: string },
-            ),
+        : buildTextQuestionContent(
+            q.content as { text: string; example_text?: string },
+          ),
     order_index: i,
     type: q.type,
     points: resolveQuestionPoints(q.points),
@@ -2934,6 +2809,16 @@ async function insertQuestionsAndOptionsForTest(
         {
           question_id: qRow.id,
           content: { text: GROUPED_CHOICE_ANCHOR_TEXT } as Json,
+          order_index: 0,
+          is_correct: true,
+        },
+      ];
+    }
+    if (hasGroupedOrderingItemsInPayload(q)) {
+      return [
+        {
+          question_id: qRow.id,
+          content: { text: GROUPED_ORDERING_ANCHOR_TEXT } as Json,
           order_index: 0,
           is_correct: true,
         },

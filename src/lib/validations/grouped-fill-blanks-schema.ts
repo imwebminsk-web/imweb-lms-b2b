@@ -10,10 +10,29 @@ import {
 export const GROUPED_FILL_BLANKS_ANCHOR_TEXT = "__grouped_fill_blanks__";
 export const LEGACY_GROUPED_FILL_ITEM_ID = "__legacy__";
 
+/** Дополнительные URL медиа на уровне подвопроса (опционально; основной контент — в `description`). */
+export const groupedFillBlanksItemAssetsSchema = z
+  .object({
+    image_url: z.string().optional(),
+    audio_url: z.string().optional(),
+    video_url: z.string().optional(),
+  })
+  .optional();
+
 const groupedFillBlanksItemBaseSchema = z.object({
   id: z.string().min(1),
-  /** Сырой текст со скобками `[слово]` или `[]` — не HTML. */
-  text: z.string().min(1, "Текст вопроса не может быть пустым"),
+  /** Rich-text HTML со скобками `[слово]` или `[]` внутри контента. */
+  text: z
+    .string()
+    .refine(
+      (value) => hasRichTextContent(value) || /\[[^\]]*\]/.test(value),
+      "Текст вопроса не может быть пустым",
+    ),
+  /** HTML с `<span data-blank-id>` — генерируется парсером при сохранении. */
+  parsedHtml: z.string().optional(),
+  /** @deprecated Phase 272 — объединено в `text`; оставлено для обратной совместимости. */
+  description: z.string().optional(),
+  assets: groupedFillBlanksItemAssetsSchema,
   points: z.coerce
     .number()
     .int("Баллы вопроса — целое число")
@@ -94,6 +113,9 @@ export const groupedTextInputContentSchema = z.object({
 
 export type GroupedFillBlanksItem = z.infer<
   typeof groupedFillBlanksTypingItemSchema
+>;
+export type GroupedFillBlanksItemAssets = z.infer<
+  typeof groupedFillBlanksItemAssetsSchema
 >;
 export type GroupedFillInTheBlanksContent = z.infer<
   typeof groupedFillInTheBlanksContentSchema

@@ -13,6 +13,7 @@ import {
   isGroupedFillBlanksFullyCorrect,
   isGroupedFillInTheBlanksFullyCorrect,
   resolveGroupedFillBlanksPlayerView,
+  sumGroupedFillBlanksItemPoints,
 } from "@/lib/grouped-fill-blanks-utils";
 import {
   isGroupedChoiceContent,
@@ -22,11 +23,23 @@ import {
   scoreGroupedChoiceQuestion,
   sumGroupedItemPoints,
 } from "@/lib/grouped-choice-utils";
+import {
+  parseOrderingAssignmentsFromAnswerData,
+  parseOrderingItems,
+  resolveOrderingPlayerView,
+  scoreOrderingQuestion,
+  sumOrderingItemPoints,
+} from "@/lib/ordering-utils";
 import type { Json } from "@/types/database.types";
+import {
+  parseManualItemGradesFromAnswerData,
+  sumManualItemGrades,
+} from "@/lib/manual-grading-utils";
 import type { ReactNode } from "react";
 
 import { GroupedFillBlanksTaskQuestion } from "./GroupedFillBlanksTaskQuestion";
 import { GroupedChoiceTaskQuestion } from "./GroupedChoiceTaskQuestion";
+import { OrderingTaskQuestion } from "./OrderingTaskQuestion";
 import {
   buildAssignmentsFromLabelPairs,
   ImageLabelingQuestion,
@@ -282,6 +295,7 @@ export type QuizResultViewProps = {
   reviewAnswersByQuestionId: Map<string, Record<string, string | null>> | null;
   reviewGroupedSelectionsByQuestionId?: Map<string, Record<string, string[]>> | null;
   reviewGroupedCorrectByQuestionId?: Map<string, Record<string, string[]>> | null;
+  reviewOrderingAssignmentsByQuestionId?: Map<string, Record<string, string[]>> | null;
   /** Например кнопки «Вернуться к уроку» под разбором — для Sheet не передаётся. */
   children?: ReactNode;
 };
@@ -300,6 +314,7 @@ export function QuizResultView({
   reviewAnswersByQuestionId,
   reviewGroupedSelectionsByQuestionId,
   reviewGroupedCorrectByQuestionId,
+  reviewOrderingAssignmentsByQuestionId,
   children,
 }: QuizResultViewProps) {
   function getSelectedIdsForQuestion(questionId: string) {
@@ -362,7 +377,7 @@ export function QuizResultView({
       return selected.every((id, i) => id === correct[i]);
     }
 
-    if (q.type === "fill_in_the_blanks") {
+    if (q.type === "fill_in_the_blanks" || q.type === "fill_in_the_blanks_multi") {
       const view = resolveGroupedFillBlanksPlayerView({
         content: q.content,
         questionType: q.type,
@@ -382,7 +397,7 @@ export function QuizResultView({
       });
     }
 
-    if (q.type === "fill_blanks_typing") {
+    if (q.type === "fill_blanks_typing" || q.type === "fill_blanks_typing_multi") {
       const view = resolveGroupedFillBlanksPlayerView({
         content: q.content,
         questionType: q.type,
@@ -401,7 +416,42 @@ export function QuizResultView({
     }
 
     if (q.type === "text_input") {
+      const manualGrades = parseManualItemGradesFromAnswerData(answerData);
+      if (manualGrades && !result.requiresManualReview) {
+        const view = resolveGroupedFillBlanksPlayerView({
+          content: q.content,
+          questionType: q.type,
+        });
+        const maxPoints = view
+          ? sumGroupedFillBlanksItemPoints(
+              view.items.map((item) => ({
+                id: item.id,
+                text: "",
+                points: item.points,
+                segments: item.segments,
+                wordBank: item.wordBank,
+                correctMapping: item.correctMapping,
+              })),
+            )
+          : 1;
+        return sumManualItemGrades(manualGrades) >= maxPoints;
+      }
       return false;
+    }
+
+    if (q.type === "ordering") {
+      const fromMap = reviewOrderingAssignmentsByQuestionId?.get(q.id);
+      const assignments =
+        (fromMap && Object.keys(fromMap).length > 0
+          ? fromMap
+          : parseOrderingAssignmentsFromAnswerData(answerData)) ?? {};
+      const items = parseOrderingItems(q.content);
+      const total = items ? sumOrderingItemPoints(items) : 1;
+      const earned = scoreOrderingQuestion({
+        content: q.content,
+        assignments,
+      });
+      return earned >= total;
     }
 
     if (q.type === "image_labeling") {
@@ -526,6 +576,14 @@ export function QuizResultView({
             const answerData = pickAnswerDataFromRows(rows);
             const questionFullyCorrect = isQuestionFullyCorrect(q);
             const selectedIds = getSelectedIdsForQuestion(q.id);
+            const textInputManualGrades =
+              q.type === "text_input"
+                ? parseManualItemGradesFromAnswerData(answerData)
+                : null;
+            const textInputGraded =
+              q.type === "text_input" &&
+              textInputManualGrades &&
+              !result.requiresManualReview;
 
             return (
               <div key={q.id} className="mb-6 space-y-4 rounded-xl border p-6">
@@ -535,14 +593,14 @@ export function QuizResultView({
                   </h4>
                   <Badge
                     variant={
-                      q.type === "text_input"
+                      q.type === "text_input" && !textInputGraded
                         ? "outline"
                         : questionFullyCorrect
                           ? "secondary"
                           : "destructive"
                     }
                     className={
-                      q.type === "text_input"
+                      q.type === "text_input" && !textInputGraded
                         ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
                         : questionFullyCorrect
                           ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
@@ -550,7 +608,11 @@ export function QuizResultView({
                     }
                   >
                     {q.type === "text_input"
-                      ? "На проверке"
+                      ? textInputGraded
+                        ? questionFullyCorrect
+                          ? "Верно"
+                          : "Частично / неверно"
+                        : "На проверке"
                       : questionFullyCorrect
                         ? "Верно"
                         : "Ошибка"}
@@ -690,6 +752,37 @@ export function QuizResultView({
                     );
                   })()}
 
+                {q.type === "ordering" &&
+                  (() => {
+                    const playerView = resolveOrderingPlayerView({
+                      content: q.content,
+                    });
+                    if (!playerView) {
+                      return (
+                        <p className="text-muted-foreground text-sm">
+                          Не удалось показать разбор этого вопроса.
+                        </p>
+                      );
+                    }
+                    const fromMap = reviewOrderingAssignmentsByQuestionId?.get(q.id);
+                    const assignments =
+                      (fromMap && Object.keys(fromMap).length > 0
+                        ? fromMap
+                        : parseOrderingAssignmentsFromAnswerData(
+                            pickAnswerDataFromRows(rows),
+                          )) ?? {};
+                    const correctByItemId =
+                      reviewGroupedCorrectByQuestionId?.get(q.id) ?? {};
+                    return (
+                      <OrderingTaskQuestion
+                        items={playerView.items}
+                        assignments={assignments}
+                        isReviewMode
+                        correctByItemId={correctByItemId}
+                      />
+                    );
+                  })()}
+
                 {q.type === "image_labeling" &&
                   (() => {
                     const meta = parseImageLabelingOptions(q.options);
@@ -708,7 +801,8 @@ export function QuizResultView({
                     );
                   })()}
 
-                {q.type === "fill_in_the_blanks" &&
+                {(q.type === "fill_in_the_blanks" ||
+                  q.type === "fill_in_the_blanks_multi") &&
                   (() => {
                     const view = resolveGroupedFillBlanksPlayerView({
                       content: q.content,
@@ -739,7 +833,8 @@ export function QuizResultView({
                     );
                   })()}
 
-                {q.type === "fill_blanks_typing" &&
+                {(q.type === "fill_blanks_typing" ||
+                  q.type === "fill_blanks_typing_multi") &&
                   (() => {
                     const view = resolveGroupedFillBlanksPlayerView({
                       content: q.content,

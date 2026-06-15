@@ -14,6 +14,10 @@ import {
   createDefaultChoiceSubItem,
 } from "@/components/admin/questions/ChoiceTaskItemsEditor";
 import {
+  OrderingItemsEditor,
+  createDefaultOrderingSubItem,
+} from "@/components/admin/questions/OrderingItemsEditor";
+import {
   GroupedFillBlanksItemsEditor,
   createDefaultGroupedFillBlanksItem,
   type GroupedFillBlanksQuestionType,
@@ -31,6 +35,11 @@ import {
 } from "@/components/ui/command";
 import { hasRichTextContent } from "@/lib/utils/rich-text-content";
 import { buildTaskContentPayload } from "@/lib/utils/task-content";
+import {
+  countBlanksInGroupedFillBlanksItem,
+  isGapFillPartialScoringQuestionType,
+  isGapFillSingleTextQuestionType,
+} from "@/lib/grouped-fill-blanks-utils";
 import { saveFullTestPayloadSchema } from "@/lib/validations/admin-test-schema";
 import type {
   CreateTestFormInitialData,
@@ -80,9 +89,12 @@ const QUESTION_TYPE_LABELS: Record<QuestionKind, string> = {
   matching_puzzle: "Сопоставление пар (клик)",
   dnd_puzzle: "Визуальный пазл (стыковка)",
   image_labeling: "Метки на картинке",
-  fill_in_the_blanks: "Заполнение пропусков",
-  fill_blanks_typing: "Пропуски вручную",
+  fill_in_the_blanks: "Пропуски из списка (Единый текст)",
+  fill_in_the_blanks_multi: "Пропуски из списка (Отдельные предложения)",
+  fill_blanks_typing: "Пропуски вручную (Единый текст)",
+  fill_blanks_typing_multi: "Пропуски вручную (Отдельные предложения)",
   text_input: "Развернутый ответ",
+  ordering: "Упорядочивание",
 };
 
 function defaultOptionsForType(
@@ -90,8 +102,11 @@ function defaultOptionsForType(
     QuestionKind,
     | "image_labeling"
     | "fill_in_the_blanks"
+    | "fill_in_the_blanks_multi"
     | "fill_blanks_typing"
+    | "fill_blanks_typing_multi"
     | "text_input"
+    | "ordering"
     | "single_choice"
     | "multiple_choice"
   >,
@@ -122,12 +137,33 @@ function defaultGroupedFillBlanksQuestion(
   type: GroupedFillBlanksQuestionType,
 ): Extract<
   QuestionField,
-  { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
+  {
+    type:
+      | "fill_in_the_blanks"
+      | "fill_in_the_blanks_multi"
+      | "fill_blanks_typing"
+      | "fill_blanks_typing_multi"
+      | "text_input";
+  }
 > {
   const item = createDefaultGroupedFillBlanksItem(type);
   return {
     text: "",
     type,
+    points: item.points,
+    exampleText: "",
+    items: [item],
+  };
+}
+
+function defaultOrderingQuestion(): Extract<
+  QuestionField,
+  { type: "ordering" }
+> {
+  const item = createDefaultOrderingSubItem();
+  return {
+    text: "",
+    type: "ordering",
     points: item.points,
     exampleText: "",
     items: [item],
@@ -166,6 +202,21 @@ function isChoiceQuestion(
   return q.type === "single_choice" || q.type === "multiple_choice";
 }
 
+function isOrderingQuestion(
+  q: QuestionField,
+): q is Extract<QuestionField, { type: "ordering" }> {
+  return q.type === "ordering";
+}
+
+function sumOrderingTaskPoints(
+  q: Extract<QuestionField, { type: "ordering" }>,
+): number {
+  return q.items.reduce(
+    (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
+    0,
+  );
+}
+
 function parsePositiveInt(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -193,15 +244,75 @@ function isImageLabelingQuestion(
   return q.type === "image_labeling";
 }
 
+function isPartialPairScoringQuestion(q: QuestionField): boolean {
+  return isPuzzleQuestion(q) || isImageLabelingQuestion(q);
+}
+
+/** Типы с баллами на уровне вложенных items (корневой input не показываем). */
+function isItemLevelScoringQuestion(q: QuestionField): boolean {
+  return (
+    isChoiceQuestion(q) ||
+    isOrderingQuestion(q) ||
+    isGroupedFillBlanksQuestion(q)
+  );
+}
+
+/** Сумма баллов задания в форме админки (аналог resolveQuestionMaxPoints для QuestionField). */
+function resolveAdminQuestionMaxPoints(q: QuestionField): number {
+  if (isChoiceQuestion(q)) {
+    return sumChoiceTaskPoints(q);
+  }
+  if (isOrderingQuestion(q)) {
+    return sumOrderingTaskPoints(q);
+  }
+  if (isGroupedFillBlanksQuestion(q)) {
+    return sumGroupedFillBlanksPoints(q);
+  }
+  if (isPartialPairScoringQuestion(q)) {
+    return sumPartialPairQuestionPoints(q);
+  }
+  return parsePositiveInt(String(q.points ?? 1), 1);
+}
+
+function taskUnitPointsLabel(q: QuestionField): string {
+  if (isPuzzleQuestion(q)) {
+    return "Баллы за каждую пару";
+  }
+  if (isImageLabelingQuestion(q)) {
+    return "Баллы за каждую метку";
+  }
+  return "Баллы за вопрос";
+}
+
+function sumPartialPairQuestionPoints(q: QuestionField): number {
+  const unitPoints = parsePositiveInt(String(q.points ?? 1), 1);
+  if (isPuzzleQuestion(q)) {
+    return unitPoints * Math.max(q.options.length, 1);
+  }
+  if (isImageLabelingQuestion(q)) {
+    return unitPoints * Math.max(q.labelingPairs.length, 1);
+  }
+  return unitPoints;
+}
+
 function isGroupedFillBlanksQuestion(
   q: QuestionField,
 ): q is Extract<
   QuestionField,
-  { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
+  {
+    type:
+      | "fill_in_the_blanks"
+      | "fill_in_the_blanks_multi"
+      | "fill_blanks_typing"
+      | "fill_blanks_typing_multi"
+      | "text_input";
+  }
 > {
   return (
     q.type === "fill_in_the_blanks" ||
+    q.type === "fill_in_the_blanks_multi" ||
     q.type === "fill_blanks_typing" ||
+    q.type === "fill_blanks_typing_multi" ||
     q.type === "text_input"
   );
 }
@@ -209,13 +320,25 @@ function isGroupedFillBlanksQuestion(
 function sumGroupedFillBlanksPoints(
   q: Extract<
     QuestionField,
-    { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
+    {
+      type:
+        | "fill_in_the_blanks"
+        | "fill_in_the_blanks_multi"
+        | "fill_blanks_typing"
+        | "fill_blanks_typing_multi"
+        | "text_input";
+    }
   >,
 ): number {
-  return q.items.reduce(
-    (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
-    0,
-  );
+  return q.items.reduce((sum, item) => {
+    const unitPoints = parsePositiveInt(String(item.points ?? 1), 1);
+    if (isGapFillPartialScoringQuestionType(q.type)) {
+      return (
+        sum + unitPoints * countBlanksInGroupedFillBlanksItem(item)
+      );
+    }
+    return sum + unitPoints;
+  }, 0);
 }
 
 type CreateTestFormProps = {
@@ -299,15 +422,10 @@ export function CreateTestForm({
 
   const distributedPoints = useMemo(
     () =>
-      questions.reduce((sum, q) => {
-        if (isChoiceQuestion(q)) {
-          return sum + sumChoiceTaskPoints(q);
-        }
-        if (isGroupedFillBlanksQuestion(q)) {
-          return sum + sumGroupedFillBlanksPoints(q);
-        }
-        return sum + parsePositiveInt(String(q.points ?? 1), 1);
-      }, 0),
+      questions.reduce(
+        (sum, q) => sum + resolveAdminQuestionMaxPoints(q),
+        0,
+      ),
     [questions],
   );
 
@@ -358,22 +476,44 @@ export function CreateTestForm({
         }
         if (
           kind === "fill_in_the_blanks" ||
+          kind === "fill_in_the_blanks_multi" ||
           kind === "fill_blanks_typing" ||
+          kind === "fill_blanks_typing_multi" ||
           kind === "text_input"
         ) {
           if (isGroupedFillBlanksQuestion(q)) {
-            return {
+            const items = isGapFillSingleTextQuestionType(kind)
+              ? q.items.slice(0, 1)
+              : q.items;
+            const next = {
               ...q,
               type: kind,
               text: q.text,
-              points: sumGroupedFillBlanksPoints(q),
+              items,
               exampleText: questionExample,
+            };
+            return {
+              ...next,
+              points: sumGroupedFillBlanksPoints(next),
             };
           }
           return {
             ...defaultGroupedFillBlanksQuestion(kind),
             text: q.text,
             points: questionPoints,
+            exampleText: questionExample,
+          };
+        }
+        if (kind === "ordering") {
+          if (isOrderingQuestion(q)) {
+            return {
+              ...q,
+              points: sumOrderingTaskPoints(q),
+            };
+          }
+          return {
+            ...defaultOrderingQuestion(),
+            text: q.text,
             exampleText: questionExample,
           };
         }
@@ -404,6 +544,15 @@ export function CreateTestForm({
             options: defaultOptionsForType(kind),
           } as QuestionField;
         }
+        if (isOrderingQuestion(q)) {
+          return {
+            text: q.text,
+            type: kind,
+            points: questionPoints,
+            exampleText: questionExample,
+            options: defaultOptionsForType(kind),
+          } as QuestionField;
+        }
         return {
           text: q.text,
           type: kind,
@@ -419,19 +568,29 @@ export function CreateTestForm({
     qi: number,
     items: Extract<
       QuestionField,
-      { type: "fill_in_the_blanks" | "fill_blanks_typing" | "text_input" }
+      {
+        type:
+          | "fill_in_the_blanks"
+          | "fill_in_the_blanks_multi"
+          | "fill_blanks_typing"
+          | "fill_blanks_typing_multi"
+          | "text_input";
+      }
     >["items"],
   ) {
     setQuestions((prev) =>
       prev.map((q, idx) => {
         if (idx !== qi || !isGroupedFillBlanksQuestion(q)) return q;
+        const normalizedItems = isGapFillSingleTextQuestionType(q.type)
+          ? items.slice(0, 1)
+          : items;
         return {
           ...q,
-          items,
-          points: items.reduce(
-            (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
-            0,
-          ),
+          items: normalizedItems,
+          points: sumGroupedFillBlanksPoints({
+            ...q,
+            items: normalizedItems,
+          }),
         };
       }),
     );
@@ -447,6 +606,25 @@ export function CreateTestForm({
     setQuestions((prev) =>
       prev.map((q, idx) => {
         if (idx !== qi || !isChoiceQuestion(q)) return q;
+        return {
+          ...q,
+          items,
+          points: items.reduce(
+            (sum, item) => sum + parsePositiveInt(String(item.points ?? 1), 1),
+            0,
+          ),
+        };
+      }),
+    );
+  }
+
+  function updateOrderingItems(
+    qi: number,
+    items: Extract<QuestionField, { type: "ordering" }>["items"],
+  ) {
+    setQuestions((prev) =>
+      prev.map((q, idx) => {
+        if (idx !== qi || !isOrderingQuestion(q)) return q;
         return {
           ...q,
           items,
@@ -541,7 +719,7 @@ export function CreateTestForm({
             options: [...q.options, { left: "", right: "" }],
           } as QuestionField;
         }
-        if (isImageLabelingQuestion(q) || isGroupedFillBlanksQuestion(q) || isChoiceQuestion(q)) {
+        if (isImageLabelingQuestion(q) || isGroupedFillBlanksQuestion(q) || isChoiceQuestion(q) || isOrderingQuestion(q)) {
           return q;
         }
         return q;
@@ -557,6 +735,7 @@ export function CreateTestForm({
           isImageLabelingQuestion(q) ||
           isGroupedFillBlanksQuestion(q) ||
           isChoiceQuestion(q) ||
+          isOrderingQuestion(q) ||
           !isPuzzleQuestion(q)
         ) {
           return q;
@@ -626,10 +805,36 @@ export function CreateTestForm({
             setPending(false);
             return;
           }
-          const emptyOption = item.options.find((o) => !o.text.trim());
+          const emptyOption = item.options.find(
+            (o) => !o.text.trim() && !o.imageUrl?.trim(),
+          );
           if (emptyOption) {
             setError(
-              `Заполните все варианты ответа в вопросе ${itemIndex + 1}.`,
+              `У каждого варианта в вопросе ${itemIndex + 1} должен быть текст или изображение.`,
+            );
+            setPending(false);
+            return;
+          }
+        }
+      }
+      if (isOrderingQuestion(q)) {
+        if (q.items.length === 0) {
+          setError("Добавьте хотя бы один вопрос в задании с упорядочиванием.");
+          setPending(false);
+          return;
+        }
+        for (const [itemIndex, item] of q.items.entries()) {
+          const emptyElement = item.elements.find((el) => !el.text.trim());
+          if (emptyElement) {
+            setError(
+              `Заполните текст всех элементов в вопросе ${itemIndex + 1}.`,
+            );
+            setPending(false);
+            return;
+          }
+          if (item.elements.length < 2) {
+            setError(
+              `Добавьте минимум два элемента в вопросе ${itemIndex + 1}.`,
             );
             setPending(false);
             return;
@@ -711,14 +916,20 @@ export function CreateTestForm({
                 ...taskMedia,
                 includeExample: false,
               }),
-              items: q.items.map((item) => ({
-                id: item.id,
-                text: item.text.trim(),
-                points: parsePositiveInt(String(item.points ?? 1), 1),
-                segments: item.segments,
-                wordBank: item.wordBank,
-                correctMapping: item.correctMapping,
-              })),
+              items: q.items.map((item) => {
+                const payload: Record<string, unknown> = {
+                  id: item.id,
+                  text: item.text,
+                  points: parsePositiveInt(String(item.points ?? 1), 1),
+                  segments: item.segments,
+                  wordBank: item.wordBank,
+                  correctMapping: item.correctMapping,
+                };
+                if (item.parsedHtml?.trim()) {
+                  payload.parsedHtml = item.parsedHtml;
+                }
+                return payload;
+              }),
             },
             type: q.type,
             points: taskPoints,
@@ -741,10 +952,36 @@ export function CreateTestForm({
                   id: o.id,
                   text: o.text.trim(),
                   is_correct: o.isCorrect,
+                  ...(o.imageUrl?.trim()
+                    ? { image_url: o.imageUrl.trim() }
+                    : {}),
                 })),
               })),
             },
             type: q.type,
+            points: taskPoints,
+            options: [],
+          };
+        }
+        if (isOrderingQuestion(q)) {
+          const taskPoints = sumOrderingTaskPoints(q);
+          return {
+            content: {
+              ...buildTaskContentPayload({
+                ...taskMedia,
+                includeExample: false,
+              }),
+              items: q.items.map((item) => ({
+                id: item.id,
+                text: item.text,
+                points: parsePositiveInt(String(item.points ?? 1), 1),
+                elements: item.elements.map((el) => ({
+                  id: el.id,
+                  text: el.text.trim(),
+                })),
+              })),
+            },
+            type: "ordering" as const,
             points: taskPoints,
             options: [],
           };
@@ -1010,30 +1247,37 @@ export function CreateTestForm({
             <div className="flex flex-wrap items-center gap-3">
               <CardTitle>Задание {qi + 1}</CardTitle>
               <div className="flex items-center gap-2">
-                <Label
-                  htmlFor={`q-points-${qi}`}
-                  className="text-muted-foreground text-xs font-normal"
-                >
-                  {isChoiceQuestion(q) ? "Баллы за задание" : "Баллы за вопрос"}
-                </Label>
-                {isChoiceQuestion(q) ? (
-                  <Badge variant="secondary" className="tabular-nums">
-                    {sumChoiceTaskPoints(q)}
-                  </Badge>
+                {isItemLevelScoringQuestion(q) ? (
+                  <span className="text-muted-foreground text-xs tabular-nums">
+                    Баллы за задание: {resolveAdminQuestionMaxPoints(q)}
+                  </span>
                 ) : (
-                  <Input
-                    id={`q-points-${qi}`}
-                    type="number"
-                    min={1}
-                    step={1}
-                    className="h-8 w-20"
-                    value={q.points ?? 1}
-                    onChange={(e) =>
-                      updateQuestion(qi, {
-                        points: parsePositiveInt(e.target.value, 1),
-                      })
-                    }
-                  />
+                  <>
+                    <Label
+                      htmlFor={`q-points-${qi}`}
+                      className="text-muted-foreground text-xs font-normal"
+                    >
+                      {taskUnitPointsLabel(q)}
+                    </Label>
+                    <Input
+                      id={`q-points-${qi}`}
+                      type="number"
+                      min={1}
+                      step={1}
+                      className="h-8 w-20"
+                      value={q.points ?? 1}
+                      onChange={(e) =>
+                        updateQuestion(qi, {
+                          points: parsePositiveInt(e.target.value, 1),
+                        })
+                      }
+                    />
+                    {isPartialPairScoringQuestion(q) ? (
+                      <Badge variant="secondary" className="tabular-nums">
+                        {resolveAdminQuestionMaxPoints(q)}
+                      </Badge>
+                    ) : null}
+                  </>
                 )}
               </div>
             </div>
@@ -1099,11 +1343,20 @@ export function CreateTestForm({
                   <SelectItem value="fill_in_the_blanks">
                     {QUESTION_TYPE_LABELS.fill_in_the_blanks}
                   </SelectItem>
+                  <SelectItem value="fill_in_the_blanks_multi">
+                    {QUESTION_TYPE_LABELS.fill_in_the_blanks_multi}
+                  </SelectItem>
                   <SelectItem value="fill_blanks_typing">
                     {QUESTION_TYPE_LABELS.fill_blanks_typing}
                   </SelectItem>
+                  <SelectItem value="fill_blanks_typing_multi">
+                    {QUESTION_TYPE_LABELS.fill_blanks_typing_multi}
+                  </SelectItem>
                   <SelectItem value="text_input">
                     {QUESTION_TYPE_LABELS.text_input}
+                  </SelectItem>
+                  <SelectItem value="ordering">
+                    {QUESTION_TYPE_LABELS.ordering}
                   </SelectItem>
                 </SelectContent>
               </Select>
@@ -1120,6 +1373,11 @@ export function CreateTestForm({
                 items={q.items}
                 isMultiple={q.type === "multiple_choice"}
                 onItemsChange={(items) => updateChoiceItems(qi, items)}
+              />
+            ) : isOrderingQuestion(q) ? (
+              <OrderingItemsEditor
+                items={q.items}
+                onItemsChange={(items) => updateOrderingItems(qi, items)}
               />
             ) : isImageLabelingQuestion(q) ? (
               <div className="space-y-3">

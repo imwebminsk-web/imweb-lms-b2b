@@ -9,6 +9,7 @@ import {
   parseLabelPairsFromAnswerData,
 } from "@/lib/quiz-helpers";
 import { parseGroupedSelectionsFromAnswerData } from "@/lib/grouped-choice-utils";
+import { parseOrderingAssignmentsFromAnswerData } from "@/lib/ordering-utils";
 import type { Json } from "@/types/database.types";
 
 /** Одна строка ответа попытки + справочно верные option id по вопросу (как в `getAttemptReviewAnswers`). */
@@ -61,6 +62,7 @@ export type ReviewMaps = {
   reviewAnswersByQuestionId: Map<string, Record<string, string | null>>;
   reviewGroupedSelectionsByQuestionId: Map<string, Record<string, string[]>>;
   reviewGroupedCorrectByQuestionId: Map<string, Record<string, string[]>>;
+  reviewOrderingAssignmentsByQuestionId: Map<string, Record<string, string[]>>;
 };
 
 /**
@@ -90,6 +92,10 @@ export function buildReviewMaps(
     Record<string, string[]>
   >();
   const reviewGroupedCorrectByQuestionId = new Map<
+    string,
+    Record<string, string[]>
+  >();
+  const reviewOrderingAssignmentsByQuestionId = new Map<
     string,
     Record<string, string[]>
   >();
@@ -140,7 +146,10 @@ export function buildReviewMaps(
       parseGroupedFillAssignmentsFromAnswerData(parsedData);
     if (groupedAssignments && Object.keys(groupedAssignments).length > 0) {
       const q = questions.find((x) => x.id === row.question_id);
-      if (q?.type === "fill_in_the_blanks") {
+      if (
+        q?.type === "fill_in_the_blanks" ||
+        q?.type === "fill_in_the_blanks_multi"
+      ) {
         const prev =
           reviewGroupedFillAssignmentsByQuestionId.get(row.question_id) ?? {};
         reviewGroupedFillAssignmentsByQuestionId.set(row.question_id, {
@@ -153,7 +162,11 @@ export function buildReviewMaps(
     const groupedTyping = parseGroupedFillTypingFromAnswerData(parsedData);
     if (groupedTyping && Object.keys(groupedTyping).length > 0) {
       const q = questions.find((x) => x.id === row.question_id);
-      if (q?.type === "fill_blanks_typing" || q?.type === "text_input") {
+      if (
+        q?.type === "fill_blanks_typing" ||
+        q?.type === "fill_blanks_typing_multi" ||
+        q?.type === "text_input"
+      ) {
         const prev =
           reviewGroupedFillTypingByQuestionId.get(row.question_id) ?? {};
         reviewGroupedFillTypingByQuestionId.set(row.question_id, {
@@ -174,6 +187,19 @@ export function buildReviewMaps(
         });
       }
     }
+
+    const orderingAssignments = parseOrderingAssignmentsFromAnswerData(parsedData);
+    if (orderingAssignments && Object.keys(orderingAssignments).length > 0) {
+      const q = questions.find((x) => x.id === row.question_id);
+      if (q?.type === "ordering") {
+        const prev =
+          reviewOrderingAssignmentsByQuestionId.get(row.question_id) ?? {};
+        reviewOrderingAssignmentsByQuestionId.set(row.question_id, {
+          ...prev,
+          ...orderingAssignments,
+        });
+      }
+    }
   }
 
   for (const [questionId, correctMap] of Object.entries(
@@ -191,5 +217,6 @@ export function buildReviewMaps(
     reviewAnswersByQuestionId,
     reviewGroupedSelectionsByQuestionId,
     reviewGroupedCorrectByQuestionId,
+    reviewOrderingAssignmentsByQuestionId,
   };
 }

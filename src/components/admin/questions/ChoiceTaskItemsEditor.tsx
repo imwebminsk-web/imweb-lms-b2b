@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Editor } from "@/components/ui/editor";
+import { ChoiceOptionImageUpload } from "@/components/admin/questions/ChoiceOptionImageUpload";
 import type { ChoiceOptionField, ChoiceSubItemField } from "@/types/create-test-form";
 
 export type ChoiceTaskItemsEditorProps = {
@@ -162,14 +163,24 @@ export function ChoiceTaskItemsEditor({
                 key={opt.id}
                 className="flex flex-wrap items-center gap-2 sm:flex-nowrap"
               >
+                <ChoiceOptionImageUpload
+                  value={opt.imageUrl}
+                  onUrlChange={(url) =>
+                    updateOption(itemIndex, optionIndex, { imageUrl: url })
+                  }
+                />
                 <Input
                   className="min-w-0 flex-1"
                   value={opt.text}
                   onChange={(e) =>
                     updateOption(itemIndex, optionIndex, { text: e.target.value })
                   }
-                  placeholder={`Вариант ${optionIndex + 1}`}
-                  required
+                  placeholder={
+                    opt.imageUrl
+                      ? `Подпись к варианту ${optionIndex + 1} (необязательно)`
+                      : `Вариант ${optionIndex + 1}`
+                  }
+                  required={!opt.imageUrl}
                 />
                 <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
                   <input

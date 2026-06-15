@@ -12,11 +12,17 @@ export {
   LEGACY_GROUPED_ITEM_ID,
 } from "@/lib/validations/grouped-choice-schema";
 
+export type GroupedChoicePlayerOption = {
+  id: string;
+  text: string;
+  image_url?: string;
+};
+
 export type GroupedChoicePlayerItem = {
   id: string;
   text: string;
   points: number;
-  options: { id: string; text: string }[];
+  options: GroupedChoicePlayerOption[];
 };
 
 export type GroupedChoicePlayerView = {
@@ -53,7 +59,12 @@ export function sumGroupedItemPoints(items: GroupedChoiceItem[]): number {
 export function buildLegacyGroupedItem(params: {
   text: string;
   points: number;
-  options: { id: string; text: string; is_correct: boolean | null }[];
+  options: {
+    id: string;
+    text: string;
+    is_correct: boolean | null;
+    image_url?: string;
+  }[];
 }): GroupedChoiceItem {
   return {
     id: LEGACY_GROUPED_ITEM_ID,
@@ -63,7 +74,20 @@ export function buildLegacyGroupedItem(params: {
       id: o.id,
       text: o.text,
       is_correct: Boolean(o.is_correct),
+      ...(o.image_url?.trim() ? { image_url: o.image_url.trim() } : {}),
     })),
+  };
+}
+
+function mapChoiceOptionForPlayer(o: {
+  id: string;
+  text: string;
+  image_url?: string;
+}): GroupedChoicePlayerOption {
+  return {
+    id: o.id,
+    text: o.text,
+    ...(o.image_url?.trim() ? { image_url: o.image_url.trim() } : {}),
   };
 }
 
@@ -90,7 +114,7 @@ export function resolveGroupedChoicePlayerView(params: {
         id: item.id,
         text: item.text,
         points: resolveQuestionPoints(item.points),
-        options: item.options.map((o) => ({ id: o.id, text: o.text })),
+        options: item.options.map((o) => mapChoiceOptionForPlayer(o)),
       })),
     };
   }
@@ -104,11 +128,14 @@ export function resolveGroupedChoicePlayerView(params: {
     text: taskInstruction,
     points: resolveQuestionPoints(params.questionPoints),
     options: legacyOpts.map((o) => {
-      const rec = o.content as { text?: unknown };
+      const rec = o.content as { text?: unknown; image_url?: unknown };
       return {
         id: o.id,
         text: typeof rec.text === "string" ? rec.text : "",
         is_correct: o.is_correct ?? false,
+        ...(typeof rec.image_url === "string" && rec.image_url.trim()
+          ? { image_url: rec.image_url.trim() }
+          : {}),
       };
     }),
   });
@@ -122,7 +149,7 @@ export function resolveGroupedChoicePlayerView(params: {
         id: legacyItem.id,
         text: legacyItem.text,
         points: legacyItem.points,
-        options: legacyItem.options.map((o) => ({ id: o.id, text: o.text })),
+        options: legacyItem.options.map((o) => mapChoiceOptionForPlayer(o)),
       },
     ],
   };
@@ -227,11 +254,14 @@ export function scoreGroupedChoiceQuestion(params: {
                 return rec.text !== GROUPED_CHOICE_ANCHOR_TEXT;
               })
               .map((o) => {
-                const rec = o.content as { text?: unknown };
+                const rec = o.content as { text?: unknown; image_url?: unknown };
                 return {
                   id: o.id,
                   text: typeof rec.text === "string" ? rec.text : "",
                   is_correct: o.is_correct ?? false,
+                  ...(typeof rec.image_url === "string" && rec.image_url.trim()
+                    ? { image_url: rec.image_url.trim() }
+                    : {}),
                 };
               }),
           }),

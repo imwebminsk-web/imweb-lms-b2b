@@ -1,10 +1,12 @@
-import { parseFillInTheBlanks } from "@/lib/fill-in-the-blanks-parser";
-import { isFillBlanksTypingFullyCorrect } from "@/lib/fill-blanks-scoring";
+import {
+  blankIdsFromFillContent,
+  correctTextForBlank,
+} from "@/lib/fill-blanks-scoring";
 import {
   parseFillAssignmentsFromAnswerData,
   parseFillTypingFromAnswerData,
 } from "@/lib/quiz-helpers";
-import { resolveQuestionPoints } from "@/lib/utils/grading";
+import { hasRichTextContent } from "@/lib/utils/rich-text-content";
 import {
   FillInTheBlanksContentSchema,
   TextInputContentSchema,
@@ -22,6 +24,7 @@ import {
   type GroupedFillBlanksItem,
 } from "@/lib/validations/grouped-fill-blanks-schema";
 import type { Json } from "@/types/database.types";
+import { resolveQuestionPoints } from "@/lib/utils/grading";
 
 export {
   GROUPED_FILL_BLANKS_ANCHOR_TEXT,
@@ -33,10 +36,109 @@ export type GroupedFillBlanksMode = "dnd" | "typing" | "text_input";
 export type GroupedFillBlanksPlayerItem = {
   id: string;
   points: number;
+  /** HTML с `<span data-blank-id>` вместо `[слово]`; null — fallback на segments. */
+  parsedHtml: string | null;
   segments: FillInTheBlanksSegment[];
   wordBank: FillInTheBlanksWord[];
   correctMapping: Record<string, string>;
 };
+
+/** Убирает HTML-теги из строки (для ответов внутри скобок). */
+export function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
+function escapePlainTextForHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Объединяет legacy `description` + plain `text` в единый HTML для редактора. */
+export function normalizeGroupedFillBlanksItemText(item: {
+  text?: string | null;
+  description?: string | null;
+}): string {
+  const text = item.text?.trim() ?? "";
+  const description = item.description?.trim() ?? "";
+
+  if (text && (text.includes("<") || hasRichTextContent(text))) {
+    return text;
+  }
+
+  if (description && text) {
+    const bracketBlock = text.includes("[")
+      ? `<p>${escapePlainTextForHtml(text)}</p>`
+      : "";
+    return description + bracketBlock;
+  }
+
+  if (description) return description;
+
+  if (text) {
+    return `<p>${escapePlainTextForHtml(text)}</p>`;
+  }
+
+  return "";
+}
+
+function shuffleInPlace<T>(items: T[]): T[] {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i];
+    a[i] = a[j]!;
+    a[j] = t!;
+  }
+  return a;
+}
+
+function newBlankId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `b-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function mapItemToPlayerItem(
+  item: Pick<
+    GroupedFillBlanksItem,
+    | "id"
+    | "points"
+    | "text"
+    | "description"
+    | "parsedHtml"
+    | "segments"
+    | "wordBank"
+    | "correctMapping"
+  >,
+  mode: GroupedFillBlanksMode,
+): GroupedFillBlanksPlayerItem {
+  const normalizedText = normalizeGroupedFillBlanksItemText(item);
+  const storedParsed = item.parsedHtml?.trim() || null;
+  const reparsed =
+    !storedParsed && normalizedText
+      ? parseGroupedFillBlanksItemText(normalizedText, mode, [])
+      : null;
+
+  return {
+    id: item.id,
+    points: resolveQuestionPoints(item.points),
+    parsedHtml: storedParsed ?? reparsed?.parsedHtml ?? null,
+    segments: item.segments,
+    wordBank: item.wordBank,
+    correctMapping: item.correctMapping,
+  };
+}
 
 export type GroupedFillBlanksPlayerView = {
   taskInstruction: string;
@@ -46,12 +148,43 @@ export type GroupedFillBlanksPlayerView = {
   mode: GroupedFillBlanksMode;
 };
 
+export function isGapFillPartialScoringQuestionType(
+  type: string | null,
+): boolean {
+  return (
+    type === "fill_in_the_blanks" ||
+    type === "fill_in_the_blanks_multi" ||
+    type === "fill_blanks_typing" ||
+    type === "fill_blanks_typing_multi"
+  );
+}
+
+export function isGapFillSingleTextQuestionType(type: string | null): boolean {
+  return type === "fill_in_the_blanks" || type === "fill_blanks_typing";
+}
+
+export function isGapFillDndQuestionType(type: string | null): boolean {
+  return (
+    type === "fill_in_the_blanks" || type === "fill_in_the_blanks_multi"
+  );
+}
+
 export function resolveGroupedFillBlanksMode(
   questionType: string | null,
 ): GroupedFillBlanksMode {
   if (questionType === "text_input") return "text_input";
-  if (questionType === "fill_in_the_blanks") return "dnd";
+  if (isGapFillDndQuestionType(questionType)) return "dnd";
   return "typing";
+}
+
+export function countBlanksInGroupedFillBlanksItem(item: {
+  segments: FillInTheBlanksSegment[];
+  correctMapping: Record<string, string>;
+}): number {
+  const mappingCount = Object.keys(item.correctMapping).length;
+  if (mappingCount > 0) return mappingCount;
+  const segmentCount = blankIdsFromSegments(item.segments).length;
+  return segmentCount > 0 ? segmentCount : 1;
 }
 
 function schemaForMode(mode: GroupedFillBlanksMode) {
@@ -77,31 +210,97 @@ export function extractExtraWordsFromFillContent(
 }
 
 export function parseGroupedFillBlanksItemText(
-  rawText: string,
+  rawHtml: string,
   mode: GroupedFillBlanksMode,
   extraWords: string[] = [],
 ): Pick<
   GroupedFillBlanksItem,
-  "segments" | "wordBank" | "correctMapping"
+  "segments" | "wordBank" | "correctMapping" | "parsedHtml"
 > | null {
-  const draft = parseFillInTheBlanks(rawText, mode === "dnd" ? extraWords : []);
+  const regex = /\[(.*?)\]/g;
+  const matches = Array.from(rawHtml.matchAll(regex));
+
+  const segments: FillInTheBlanksSegment[] = [];
+  const wordBank: FillInTheBlanksWord[] = [];
+  const correctMapping: Record<string, string> = {};
+  let wordCounter = 1;
+
+  const wordIdForText = (wordText: string): string => {
+    const existing = wordBank.find((w) => w.text === wordText);
+    if (existing) return existing.id;
+    const wordId = `w-${wordCounter++}`;
+    wordBank.push({ id: wordId, text: wordText });
+    return wordId;
+  };
+
+  let parsedHtml = rawHtml;
+  const forwardMatches: Array<{
+    index: number;
+    full: string;
+    innerPlain: string;
+    blankId: string;
+  }> = [];
+
+  for (const match of [...matches].reverse()) {
+    const full = match[0]!;
+    const index = match.index!;
+    const innerPlain = stripHtmlTags(match[1] ?? "");
+    const blankId = newBlankId();
+    const placeholder = `<span data-blank-id="${blankId}" class="blank-placeholder"></span>`;
+    parsedHtml =
+      parsedHtml.slice(0, index) +
+      placeholder +
+      parsedHtml.slice(index + full.length);
+    forwardMatches.unshift({ index, full, innerPlain, blankId });
+  }
+
+  let lastIndex = 0;
+  for (const { index, full, innerPlain, blankId } of forwardMatches) {
+    if (index > lastIndex) {
+      segments.push({
+        type: "text",
+        value: rawHtml.slice(lastIndex, index),
+      });
+    }
+    segments.push({ type: "blank", id: blankId });
+    if (innerPlain) {
+      correctMapping[blankId] = wordIdForText(innerPlain);
+    }
+    lastIndex = index + full.length;
+  }
+
+  if (lastIndex < rawHtml.length) {
+    segments.push({
+      type: "text",
+      value: rawHtml.slice(lastIndex),
+    });
+  }
+
+  if (mode === "dnd") {
+    for (const w of extraWords) {
+      const trimmed = w.trim();
+      if (!trimmed || wordBank.some((x) => x.text === trimmed)) continue;
+      wordBank.push({ id: `w-${wordCounter++}`, text: trimmed });
+    }
+  }
+
+  const shuffledBank = mode === "dnd" ? shuffleInPlace(wordBank) : wordBank;
+  const draft = {
+    segments,
+    wordBank: shuffledBank,
+    correctMapping,
+  };
+
   if (mode === "text_input") {
     const parsed = TextInputContentSchema.safeParse(draft);
     return parsed.success
-      ? {
-          segments: parsed.data.segments,
-          wordBank: parsed.data.wordBank,
-          correctMapping: parsed.data.correctMapping,
-        }
+      ? { ...parsed.data, parsedHtml }
       : null;
   }
+
   const parsed = FillInTheBlanksContentSchema.safeParse(draft);
   return parsed.success
-    ? {
-        segments: parsed.data.segments,
-        wordBank: parsed.data.wordBank,
-        correctMapping: parsed.data.correctMapping,
-      }
+    ? { ...parsed.data, parsedHtml }
     : null;
 }
 
@@ -154,11 +353,66 @@ export function parseGroupedFillBlanksItems(
   return parsed.data.items;
 }
 
-export function sumGroupedFillBlanksPoints(items: GroupedFillBlanksItem[]): number {
+/** Сумма баллов за подзадания (без умножения на пропуски) — для `text_input`. */
+export function sumGroupedFillBlanksItemPoints(
+  items: GroupedFillBlanksItem[],
+): number {
   return items.reduce(
     (sum, item) => sum + resolveQuestionPoints(item.points),
     0,
   );
+}
+
+/** Максимум баллов за пропуски: `points × число пропусков` на каждый item. */
+export function sumGroupedFillBlanksPoints(items: GroupedFillBlanksItem[]): number {
+  return items.reduce((sum, item) => {
+    const unitPoints = resolveQuestionPoints(item.points);
+    return sum + unitPoints * countBlanksInGroupedFillBlanksItem(item);
+  }, 0);
+}
+
+export function resolveGroupedFillBlanksQuestionMaxPoints(params: {
+  content: Json | null;
+  questionType: string | null;
+  questionPoints?: number | null;
+}): number {
+  if (params.questionType === "text_input") {
+    const view = resolveGroupedFillBlanksPlayerView({
+      content: params.content ?? {},
+      questionType: params.questionType,
+      questionPoints: params.questionPoints,
+    });
+    if (!view) return resolveQuestionPoints(params.questionPoints);
+    return sumGroupedFillBlanksItemPoints(
+      view.items.map((item) => ({
+        id: item.id,
+        text: "",
+        points: item.points,
+        segments: item.segments,
+        wordBank: item.wordBank,
+        correctMapping: item.correctMapping,
+      })),
+    );
+  }
+
+  if (!isGapFillPartialScoringQuestionType(params.questionType)) {
+    return resolveQuestionPoints(params.questionPoints);
+  }
+
+  const view = resolveGroupedFillBlanksPlayerView({
+    content: params.content ?? {},
+    questionType: params.questionType,
+    questionPoints: params.questionPoints,
+  });
+  if (!view) return resolveQuestionPoints(params.questionPoints);
+
+  return view.items.reduce((sum, item) => {
+    return (
+      sum +
+      resolveQuestionPoints(item.points) *
+        countBlanksInGroupedFillBlanksItem(item)
+    );
+  }, 0);
 }
 
 export function resolveGroupedFillBlanksPlayerView(params: {
@@ -182,13 +436,7 @@ export function resolveGroupedFillBlanksPlayerView(params: {
       exampleText,
       isGrouped: true,
       mode,
-      items: groupedItems.map((item) => ({
-        id: item.id,
-        points: resolveQuestionPoints(item.points),
-        segments: item.segments,
-        wordBank: item.wordBank,
-        correctMapping: item.correctMapping,
-      })),
+      items: groupedItems.map((item) => mapItemToPlayerItem(item, mode)),
     };
   }
 
@@ -205,15 +453,7 @@ export function resolveGroupedFillBlanksPlayerView(params: {
       exampleText,
       isGrouped: false,
       mode,
-      items: [
-        {
-          id: legacyItem.id,
-          points: legacyItem.points,
-          segments: legacyItem.segments,
-          wordBank: legacyItem.wordBank,
-          correctMapping: legacyItem.correctMapping,
-        },
-      ],
+      items: [mapItemToPlayerItem(legacyItem, mode)],
     };
   }
 
@@ -231,15 +471,7 @@ export function resolveGroupedFillBlanksPlayerView(params: {
     exampleText,
     isGrouped: false,
     mode,
-    items: [
-      {
-        id: legacyItem.id,
-        points: legacyItem.points,
-        segments: legacyItem.segments,
-        wordBank: legacyItem.wordBank,
-        correctMapping: legacyItem.correctMapping,
-      },
-    ],
+    items: [mapItemToPlayerItem(legacyItem, mode)],
   };
 }
 
@@ -307,20 +539,45 @@ export function parseGroupedFillTypingFromAnswerData(
   return null;
 }
 
-function isFillInTheBlanksItemFullyCorrect(
+function countCorrectDnDBlanksInItem(
   item: GroupedFillBlanksPlayerItem,
   itemAssignments: Record<string, string>,
-): boolean {
+): number {
   const blankIds = blankIdsFromSegments(item.segments);
-  if (blankIds.length === 0) return false;
+  const idsToCheck =
+    blankIds.length > 0 ? blankIds : Object.keys(item.correctMapping);
+  if (idsToCheck.length === 0) return 0;
   const wordIds = new Set(item.wordBank.map((w) => w.id));
-  return blankIds.every((blankId) => {
+  let correct = 0;
+  for (const blankId of idsToCheck) {
     const expectedWordId = item.correctMapping[blankId];
     const assignedWordId = itemAssignments[blankId];
-    if (!expectedWordId || !assignedWordId) return false;
-    if (!wordIds.has(assignedWordId)) return false;
-    return assignedWordId === expectedWordId;
-  });
+    if (!expectedWordId || !assignedWordId) continue;
+    if (!wordIds.has(assignedWordId)) continue;
+    if (assignedWordId === expectedWordId) correct += 1;
+  }
+  return correct;
+}
+
+function countCorrectTypingBlanksInItem(
+  item: GroupedFillBlanksPlayerItem,
+  itemTyping: Record<string, string>,
+): number {
+  const itemContent: FillInTheBlanksContent = {
+    segments: item.segments,
+    wordBank: item.wordBank,
+    correctMapping: item.correctMapping,
+  };
+  const blankIds = blankIdsFromFillContent(itemContent);
+  if (blankIds.length === 0) return 0;
+  let correct = 0;
+  for (const blankId of blankIds) {
+    const expected = correctTextForBlank(itemContent, blankId);
+    if (expected == null) continue;
+    const typed = itemTyping[blankId];
+    if (typeof typed === "string" && typed === expected) correct += 1;
+  }
+  return correct;
 }
 
 export function scoreGroupedFillInTheBlanksQuestion(params: {
@@ -338,10 +595,8 @@ export function scoreGroupedFillInTheBlanksQuestion(params: {
 
   return view.items.reduce((sum, item) => {
     const itemAssignments = params.groupedAssignments[item.id] ?? {};
-    if (isFillInTheBlanksItemFullyCorrect(item, itemAssignments)) {
-      return sum + resolveQuestionPoints(item.points);
-    }
-    return sum;
+    const correctBlanks = countCorrectDnDBlanksInItem(item, itemAssignments);
+    return sum + correctBlanks * resolveQuestionPoints(item.points);
   }, 0);
 }
 
@@ -360,15 +615,8 @@ export function scoreGroupedFillBlanksTypingQuestion(params: {
 
   return view.items.reduce((sum, item) => {
     const itemTyping = params.groupedTyping[item.id] ?? {};
-    const itemContent: FillInTheBlanksContent = {
-      segments: item.segments,
-      wordBank: item.wordBank,
-      correctMapping: item.correctMapping,
-    };
-    if (isFillBlanksTypingFullyCorrect(itemContent, itemTyping)) {
-      return sum + resolveQuestionPoints(item.points);
-    }
-    return sum;
+    const correctBlanks = countCorrectTypingBlanksInItem(item, itemTyping);
+    return sum + correctBlanks * resolveQuestionPoints(item.points);
   }, 0);
 }
 
@@ -423,7 +671,10 @@ export function isGroupedFillInTheBlanksFullyCorrect(params: {
     questionPoints: params.questionPoints,
   });
   const total = view.items.reduce(
-    (sum, item) => sum + resolveQuestionPoints(item.points),
+    (sum, item) =>
+      sum +
+      resolveQuestionPoints(item.points) *
+        countBlanksInGroupedFillBlanksItem(item),
     0,
   );
   return earned >= total && total > 0;
@@ -449,7 +700,10 @@ export function isGroupedFillBlanksFullyCorrect(params: {
     questionPoints: params.questionPoints,
   });
   const total = view.items.reduce(
-    (sum, item) => sum + resolveQuestionPoints(item.points),
+    (sum, item) =>
+      sum +
+      resolveQuestionPoints(item.points) *
+        countBlanksInGroupedFillBlanksItem(item),
     0,
   );
   return earned >= total && total > 0;

@@ -9,11 +9,18 @@ import {
   grade10ToPercentScore,
   normalizeAttemptScoreToPercent,
   percentToGrade10,
+  resolveQuestionPoints,
   sumQuestionPoints,
   type GradingVisuals,
 } from "@/lib/utils/grading";
 import type { StudentProgressStatus } from "@/app/actions/student-dashboard-actions";
 import type { AttemptResult, SafeTestQuestion } from "@/app/actions/test-actions";
+import {
+  getAttemptQuestionEarnedPoints,
+  pickRepresentativeAttemptAnswerRow,
+  resolveQuestionMaxPoints,
+} from "@/lib/utils/scoring-utils";
+import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { createClient } from "@/lib/supabase/server";
 import type { ReviewAnswerRow } from "@/lib/learn/build-review-maps";
@@ -21,8 +28,26 @@ import type { Json } from "@/types/database.types";
 
 const uuidSchema = z.string().uuid("Некорректный идентификатор");
 
+export type ManualGradingTarget = {
+  questionId: string;
+  questionIndex: number;
+  itemId: string;
+  itemIndex: number;
+  maxPoints: number;
+  itemPreview: string;
+};
+
+export type AutoGradedQuestionScore = {
+  questionId: string;
+  questionIndex: number;
+  type: string;
+  earnedPoints: number;
+  maxPoints: number;
+};
+
 export type GradebookBestAttemptDetails = {
   attemptId: string | null;
+  attemptStatus: "in_progress" | "completed" | "pending_review" | null;
   score: number | null;
   completedAt: string | null;
   totalQuestions: number;
@@ -39,6 +64,10 @@ export type GradebookBestAttemptDetails = {
   reviewAnswers: ReviewAnswerRow[];
   testTitle: string | null;
   testDescription: string | null;
+  /** Подзадания text_input для ручной проверки (только при pending_review). */
+  manualGradingTargets: ManualGradingTarget[];
+  /** Автоматически проверенные вопросы с начисленными баллами. */
+  autoGradedScores: AutoGradedQuestionScore[];
 };
 
 export async function getBestTestAttemptDetails(
@@ -119,19 +148,38 @@ export async function getBestTestAttemptDetails(
   const totalPossiblePoints = Math.max(sumQuestionPoints(questionsOrdered), 1);
   const isForKids = testRow.is_for_kids ?? false;
 
-  const { data: attempt, error: attemptError } = await supabase
+  const { data: pendingAttempt, error: pendingError } = await supabase
     .from("student_attempts")
     .select("id, score, completed_at, status")
     .eq("student_id", sid.data)
     .eq("test_id", tid.data)
-    .eq("status", "completed")
-    .order("score", { ascending: false })
+    .eq("status", "pending_review")
     .order("completed_at", { ascending: false, nullsFirst: false })
     .limit(1)
     .maybeSingle();
 
-  if (attemptError) {
-    return { success: false, error: attemptError.message };
+  if (pendingError) {
+    return { success: false, error: pendingError.message };
+  }
+
+  let attempt = pendingAttempt;
+
+  if (!attempt) {
+    const { data: completedAttempt, error: attemptError } = await supabase
+      .from("student_attempts")
+      .select("id, score, completed_at, status")
+      .eq("student_id", sid.data)
+      .eq("test_id", tid.data)
+      .eq("status", "completed")
+      .order("score", { ascending: false })
+      .order("completed_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (attemptError) {
+      return { success: false, error: attemptError.message };
+    }
+    attempt = completedAttempt;
   }
 
   let answerRows: {
@@ -180,14 +228,112 @@ export async function getBestTestAttemptDetails(
     correct_option_ids: correctByQuestion.get(r.question_id) ?? [],
   }));
 
+  const rowsByQuestionId = new Map<string, typeof answerRows>();
+  for (const row of answerRows) {
+    const list = rowsByQuestionId.get(row.question_id) ?? [];
+    list.push(row);
+    rowsByQuestionId.set(row.question_id, list);
+  }
+
+  let allOptionsForScoring: {
+    id: string;
+    question_id: string;
+    is_correct: boolean | null;
+    content: Json | null;
+  }[] = [];
+
+  if (questionIds.length > 0) {
+    const { data: opts, error: optsErr } = await supabase
+      .from("options")
+      .select("id, question_id, is_correct, content")
+      .in("question_id", questionIds);
+    if (optsErr) {
+      return { success: false, error: optsErr.message };
+    }
+    allOptionsForScoring = opts ?? [];
+  }
+
+  let earnedPointsTotal = 0;
+  let correctCountTotal = 0;
+  const manualGradingTargets: ManualGradingTarget[] = [];
+  const autoGradedScores: AutoGradedQuestionScore[] = [];
+
+  questionsOrdered.forEach((q, questionIndex) => {
+    const listForQ = rowsByQuestionId.get(q.id) ?? [];
+    const answerRow = listForQ.length
+      ? pickRepresentativeAttemptAnswerRow(
+          q.type,
+          listForQ.map((r) => ({
+            option_id: r.option_id ?? "",
+            answer_data: r.answer_data,
+          })),
+        )
+      : undefined;
+    const maxPoints = resolveQuestionMaxPoints(q, allOptionsForScoring);
+    const earnedForQuestion = getAttemptQuestionEarnedPoints(
+      q,
+      answerRow,
+      allOptionsForScoring,
+      correctByQuestion,
+    );
+    earnedPointsTotal += earnedForQuestion;
+    if (earnedForQuestion >= maxPoints) {
+      correctCountTotal += 1;
+    }
+
+    if (q.type === "text_input" && attempt?.status === "pending_review") {
+      const view = resolveGroupedFillBlanksPlayerView({
+        content: q.content as Json,
+        questionType: q.type,
+        questionPoints: q.points,
+      });
+      if (view) {
+        view.items.forEach((item, itemIndex) => {
+          const preview =
+            item.segments
+              .filter((s) => s.type === "text")
+              .map((s) => s.value)
+              .join("")
+              .trim()
+              .slice(0, 120) || `Подзадание ${itemIndex + 1}`;
+          manualGradingTargets.push({
+            questionId: q.id,
+            questionIndex,
+            itemId: item.id,
+            itemIndex,
+            maxPoints: item.points,
+            itemPreview: preview,
+          });
+        });
+      }
+      return;
+    }
+
+    if (q.type !== "text_input") {
+      autoGradedScores.push({
+        questionId: q.id,
+        questionIndex,
+        type: q.type ?? "unknown",
+        earnedPoints: earnedForQuestion,
+        maxPoints,
+      });
+    }
+  });
+
   const scoreVal = attempt?.score ?? 0;
-  const scorePercent = normalizeAttemptScoreToPercent(
-    scoreVal,
-    totalPossiblePoints,
-  );
+  const scorePercent =
+    attempt?.status === "pending_review"
+      ? totalPossiblePoints > 0
+        ? Math.round((earnedPointsTotal / totalPossiblePoints) * 100)
+        : 0
+      : normalizeAttemptScoreToPercent(scoreVal, totalPossiblePoints);
   const grade10 = attempt ? percentToGrade10(scorePercent) : null;
   const gradingVisuals = attempt
-    ? getGradingVisuals(scoreVal, isForKids, totalPossiblePoints)
+    ? getGradingVisuals(
+        attempt.status === "pending_review" ? scorePercent : scoreVal,
+        isForKids,
+        totalPossiblePoints,
+      )
     : null;
 
   const answeredQuestionIds = new Set(answerRows.map((r) => r.question_id));
@@ -195,9 +341,15 @@ export async function getBestTestAttemptDetails(
   const resultSummary: AttemptResult | null = attempt
     ? {
         score: scorePercent,
-        correctCount: Math.round((scorePercent / 100) * totalQuestions),
+        correctCount:
+          attempt.status === "pending_review"
+            ? correctCountTotal
+            : Math.round((scorePercent / 100) * totalQuestions),
         totalQuestions,
-        earnedPoints: Math.round((scorePercent / 100) * totalPossiblePoints),
+        earnedPoints:
+          attempt.status === "pending_review"
+            ? earnedPointsTotal
+            : Math.round((scorePercent / 100) * totalPossiblePoints),
         totalPossiblePoints,
         answeredCount,
         percentCorrect: scorePercent,
@@ -233,6 +385,7 @@ export async function getBestTestAttemptDetails(
     success: true,
     data: {
       attemptId: attempt?.id ?? null,
+      attemptStatus: attempt?.status ?? null,
       score: attempt?.score ?? null,
       completedAt: attempt?.completed_at ?? null,
       totalQuestions,
@@ -245,6 +398,8 @@ export async function getBestTestAttemptDetails(
       reviewAnswers,
       testTitle: testRow.title ?? null,
       testDescription: testRow.description ?? null,
+      manualGradingTargets,
+      autoGradedScores,
     },
   };
 }

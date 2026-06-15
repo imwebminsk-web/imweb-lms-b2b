@@ -12,8 +12,11 @@ export type QuestionKind =
   | "dnd_puzzle"
   | "image_labeling"
   | "fill_in_the_blanks"
+  | "fill_in_the_blanks_multi"
   | "fill_blanks_typing"
-  | "text_input";
+  | "fill_blanks_typing_multi"
+  | "text_input"
+  | "ordering";
 
 export type TestTypeKind = "training" | "final";
 
@@ -21,6 +24,8 @@ export type ChoiceOptionField = {
   id: string;
   text: string;
   isCorrect: boolean;
+  /** Публичный URL изображения варианта (сохраняется в БД как `image_url`). */
+  imageUrl?: string;
 };
 
 export type ChoiceSubItemField = {
@@ -32,7 +37,9 @@ export type ChoiceSubItemField = {
 
 export type GroupedFillBlanksItemField = {
   id: string;
+  /** Единый TipTap HTML: текст, медиа и скобки `[слово]` / `[]`. */
   text: string;
+  parsedHtml?: string;
   points: number;
   segments: FillInTheBlanksSegment[];
   wordBank: FillInTheBlanksWord[];
@@ -53,14 +60,41 @@ export type FillInTheBlanksQuestionField = QuestionFieldBase & {
   items: GroupedFillBlanksItemField[];
 };
 
+export type FillInTheBlanksMultiQuestionField = QuestionFieldBase & {
+  type: "fill_in_the_blanks_multi";
+  items: GroupedFillBlanksItemField[];
+};
+
 export type FillBlanksTypingQuestionField = QuestionFieldBase & {
   type: "fill_blanks_typing";
+  items: GroupedFillBlanksItemField[];
+};
+
+export type FillBlanksTypingMultiQuestionField = QuestionFieldBase & {
+  type: "fill_blanks_typing_multi";
   items: GroupedFillBlanksItemField[];
 };
 
 export type TextInputQuestionField = QuestionFieldBase & {
   type: "text_input";
   items: GroupedFillBlanksItemField[];
+};
+
+export type OrderingElementField = {
+  id: string;
+  text: string;
+};
+
+export type OrderingSubItemField = {
+  id: string;
+  text: string;
+  points: number;
+  elements: OrderingElementField[];
+};
+
+export type OrderingQuestionField = QuestionFieldBase & {
+  type: "ordering";
+  items: OrderingSubItemField[];
 };
 
 export type ChoiceQuestionField = QuestionFieldBase & {
@@ -71,8 +105,11 @@ export type ChoiceQuestionField = QuestionFieldBase & {
 export type QuestionField =
   | ChoiceQuestionField
   | FillInTheBlanksQuestionField
+  | FillInTheBlanksMultiQuestionField
   | FillBlanksTypingQuestionField
+  | FillBlanksTypingMultiQuestionField
   | TextInputQuestionField
+  | OrderingQuestionField
   | (QuestionFieldBase & {
       type: "matching_puzzle" | "dnd_puzzle";
       options: PuzzleOptionField[];

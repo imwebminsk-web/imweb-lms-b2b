@@ -232,7 +232,10 @@ function evaluateQuestion(
     );
   }
 
-  if (questionType === "fill_in_the_blanks") {
+  if (
+    questionType === "fill_in_the_blanks" ||
+    questionType === "fill_in_the_blanks_multi"
+  ) {
     return isCorrectFillInTheBlanksAnswer(question.content, studentAnswer.answer_data);
   }
 
@@ -272,7 +275,8 @@ function buildAttemptAnswerRows(
       qType === "matching_puzzle" ||
       qType === "dnd_puzzle" ||
       qType === "image_labeling" ||
-      qType === "fill_in_the_blanks"
+      qType === "fill_in_the_blanks" ||
+      qType === "fill_in_the_blanks_multi"
     ) {
       if (!anchorId) {
         continue;

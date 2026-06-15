@@ -21,6 +21,10 @@ const WORD_PREFIX = "fitb-word-";
 const BLANK_PREFIX = "fitb-blank-";
 const BANK_DROP_ID = "fitb-bank";
 
+export const FITB_WORD_PREFIX = WORD_PREFIX;
+export const FITB_BLANK_PREFIX = BLANK_PREFIX;
+export const FITB_BANK_DROP_ID = BANK_DROP_ID;
+
 export function DroppableBlankSlot({
   blankId,
   assignedWord,
@@ -47,7 +51,7 @@ export function DroppableBlankSlot({
   );
 }
 
-function DraggableWordBankItem({ word }: { word: FillInTheBlanksWord }) {
+export function DraggableWordBankItem({ word }: { word: FillInTheBlanksWord }) {
   const id = `${WORD_PREFIX}${word.id}`;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
@@ -68,7 +72,7 @@ function DraggableWordBankItem({ word }: { word: FillInTheBlanksWord }) {
   );
 }
 
-function WordBankDropZone({ children }: { children: ReactNode }) {
+export function WordBankDropZone({ children }: { children: ReactNode }) {
   const { setNodeRef } = useDroppable({ id: BANK_DROP_ID });
   return (
     <div
@@ -115,7 +119,7 @@ function DraggableAssignedWord({
   );
 }
 
-function BlankSlotWithDrop({
+export function BlankSlotWithDrop({
   blankId,
   assignedWord,
 }: {
@@ -141,7 +145,7 @@ function BlankSlotWithDrop({
   );
 }
 
-function ReviewBlankSlot({
+export function ReviewBlankSlot({
   blankId,
   userWordId,
   correctWordId,

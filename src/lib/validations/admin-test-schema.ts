@@ -4,6 +4,7 @@ import {
   groupedTextInputContentSchema,
 } from "@/lib/validations/grouped-fill-blanks-schema";
 import { groupedChoiceContentSchema } from "@/lib/validations/grouped-choice-schema";
+import { orderingContentSchema } from "@/lib/validations/ordering-schema";
 import { taskInstructionFieldsSchema } from "@/lib/validations/task-content-schema";
 import { z } from "zod";
 
@@ -105,14 +106,32 @@ export const adminQuestionSchema = z.discriminatedUnion("type", [
     options: emptyOptionsSchema,
   }),
   z.object({
+    content: groupedFillInTheBlanksContentSchema,
+    type: z.literal("fill_in_the_blanks_multi"),
+    points: questionPointsSchema,
+    options: emptyOptionsSchema,
+  }),
+  z.object({
     content: groupedFillBlanksContentSchema,
     type: z.literal("fill_blanks_typing"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
   }),
   z.object({
+    content: groupedFillBlanksContentSchema,
+    type: z.literal("fill_blanks_typing_multi"),
+    points: questionPointsSchema,
+    options: emptyOptionsSchema,
+  }),
+  z.object({
     content: groupedTextInputContentSchema,
     type: z.literal("text_input"),
+    points: questionPointsSchema,
+    options: emptyOptionsSchema,
+  }),
+  z.object({
+    content: orderingContentSchema,
+    type: z.literal("ordering"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
   }),
@@ -154,8 +173,11 @@ export const saveFullTestPayloadSchema = z
         q.type === "dnd_puzzle" ||
         q.type === "image_labeling" ||
         q.type === "fill_in_the_blanks" ||
+        q.type === "fill_in_the_blanks_multi" ||
         q.type === "fill_blanks_typing" ||
-        q.type === "text_input"
+        q.type === "fill_blanks_typing_multi" ||
+        q.type === "text_input" ||
+        q.type === "ordering"
       ) {
         return;
       }
