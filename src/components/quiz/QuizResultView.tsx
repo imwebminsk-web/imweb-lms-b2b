@@ -164,6 +164,14 @@ function parsePairsFromAnswerData(answerData: Json | null): PuzzlePair[] {
   return [];
 }
 
+function parseOrderingAssignmentsBulletproof(
+  data: Json | null,
+): Record<string, string[]> | null {
+  const u = deepUnwrapJson(data);
+  if (!u) return null;
+  return parseOrderingAssignmentsFromAnswerData(u);
+}
+
 function parseGroupedSelectionsBulletproof(
   data: Json | null,
 ): Record<string, string[]> | null {
@@ -444,7 +452,7 @@ export function QuizResultView({
       const assignments =
         (fromMap && Object.keys(fromMap).length > 0
           ? fromMap
-          : parseOrderingAssignmentsFromAnswerData(answerData)) ?? {};
+          : parseOrderingAssignmentsBulletproof(answerData)) ?? {};
       const items = parseOrderingItems(q.content);
       const total = items ? sumOrderingItemPoints(items) : 1;
       const earned = scoreOrderingQuestion({
@@ -768,7 +776,7 @@ export function QuizResultView({
                     const assignments =
                       (fromMap && Object.keys(fromMap).length > 0
                         ? fromMap
-                        : parseOrderingAssignmentsFromAnswerData(
+                        : parseOrderingAssignmentsBulletproof(
                             pickAnswerDataFromRows(rows),
                           )) ?? {};
                     const correctByItemId =
@@ -885,12 +893,32 @@ export function QuizResultView({
                             pickAnswerDataFromRows(rows),
                           )) ?? {};
                     return (
-                      <GroupedFillBlanksTaskQuestion
-                        items={view.items}
-                        mode={view.mode}
-                        groupedTyping={saved}
-                        isReviewMode
-                      />
+                      <div className="space-y-3">
+                        <GroupedFillBlanksTaskQuestion
+                          items={view.items}
+                          mode={view.mode}
+                          groupedTyping={saved}
+                          isReviewMode
+                        />
+                        {textInputManualGrades &&
+                        !result.requiresManualReview ? (
+                          <ul className="text-muted-foreground space-y-1 text-xs">
+                            {view.items.map((item, itemIndex) => (
+                              <li key={item.id}>
+                                Вопрос {itemIndex + 1}:{" "}
+                                <span className="text-foreground tabular-nums font-medium">
+                                  {textInputManualGrades[item.id] ?? 0}
+                                </span>{" "}
+                                / {item.points} баллов
+                              </li>
+                            ))}
+                          </ul>
+                        ) : result.requiresManualReview ? (
+                          <p className="text-muted-foreground text-xs">
+                            Ответ отправлен на проверку преподавателю.
+                          </p>
+                        ) : null}
+                      </div>
                     );
                   })()}
               </div>

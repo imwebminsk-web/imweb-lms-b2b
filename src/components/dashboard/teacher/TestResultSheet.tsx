@@ -25,11 +25,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { buildReviewMaps } from "@/lib/learn/build-review-maps";
-import {
-  groupedCorrectMapFromContent,
-  isGroupedChoiceContent,
-} from "@/lib/grouped-choice-utils";
+import { buildGroupedCorrectByQuestionId, buildReviewMaps } from "@/lib/learn/build-review-maps";
 
 type TestResultSheetProps = {
   isOpen: boolean;
@@ -61,20 +57,10 @@ export function TestResultSheet({
 
   const reviewMaps = useMemo(() => {
     if (!details?.attemptId || !details.resultSummary) return null;
-    const groupedCorrectByQuestionId: Record<
-      string,
-      Record<string, string[]>
-    > = {};
-    for (const q of details.questions) {
-      if (isGroupedChoiceContent(q.content)) {
-        const map = groupedCorrectMapFromContent(q.content);
-        if (map) groupedCorrectByQuestionId[q.id] = map;
-      }
-    }
     return buildReviewMaps(
       details.reviewAnswers,
       details.questions,
-      groupedCorrectByQuestionId,
+      buildGroupedCorrectByQuestionId(details.questions),
     );
   }, [details]);
 
@@ -278,6 +264,9 @@ export function TestResultSheet({
                 }
                 reviewGroupedFillAssignmentsByQuestionId={
                   reviewMaps.reviewGroupedFillAssignmentsByQuestionId
+                }
+                reviewOrderingAssignmentsByQuestionId={
+                  reviewMaps.reviewOrderingAssignmentsByQuestionId
                 }
               />
             </>

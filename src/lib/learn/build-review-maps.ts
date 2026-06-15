@@ -8,9 +8,43 @@ import {
   parseGroupedFillTypingFromAnswerData,
   parseLabelPairsFromAnswerData,
 } from "@/lib/quiz-helpers";
-import { parseGroupedSelectionsFromAnswerData } from "@/lib/grouped-choice-utils";
-import { parseOrderingAssignmentsFromAnswerData } from "@/lib/ordering-utils";
+import {
+  groupedCorrectMapFromContent,
+  isGroupedChoiceContent,
+  parseGroupedSelectionsFromAnswerData,
+} from "@/lib/grouped-choice-utils";
+import {
+  groupedCorrectOrderingMapFromContent,
+  parseOrderingAssignmentsFromAnswerData,
+} from "@/lib/ordering-utils";
 import type { Json } from "@/types/database.types";
+
+function isChoiceReviewType(type: string | null | undefined): boolean {
+  return (
+    type === "single_choice" ||
+    type === "multiple_choice" ||
+    type === "multiple"
+  );
+}
+
+/** Верные ответы для grouped choice и ordering (для подсветки в QuizResultView). */
+export function buildGroupedCorrectByQuestionId(
+  questions: SafeTestQuestion[],
+): Record<string, Record<string, string[]>> {
+  const out: Record<string, Record<string, string[]>> = {};
+  for (const q of questions) {
+    if (q.type === "ordering") {
+      const map = groupedCorrectOrderingMapFromContent(q.content);
+      if (map) out[q.id] = map;
+      continue;
+    }
+    if (isChoiceReviewType(q.type) && isGroupedChoiceContent(q.content)) {
+      const map = groupedCorrectMapFromContent(q.content);
+      if (map) out[q.id] = map;
+    }
+  }
+  return out;
+}
 
 /** Одна строка ответа попытки + справочно верные option id по вопросу (как в `getAttemptReviewAnswers`). */
 export type ReviewAnswerRow = {
@@ -179,7 +213,7 @@ export function buildReviewMaps(
     const grouped = parseGroupedSelectionsFromAnswerData(parsedData);
     if (grouped && Object.keys(grouped).length > 0) {
       const q = questions.find((x) => x.id === row.question_id);
-      if (q?.type === "single_choice" || q?.type === "multiple_choice") {
+      if (q && isChoiceReviewType(q.type)) {
         const prev = reviewGroupedSelectionsByQuestionId.get(row.question_id) ?? {};
         reviewGroupedSelectionsByQuestionId.set(row.question_id, {
           ...prev,
