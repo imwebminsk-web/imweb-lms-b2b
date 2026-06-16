@@ -15,7 +15,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export type DndMatchingPair = {
   leftOptionId: string;
@@ -307,6 +307,7 @@ export function DndMatchingPuzzleQuestion({
   onPairsChange,
   readOnly = false,
 }: DndMatchingPuzzleQuestionProps) {
+  const dndId = useId();
   const leftOrdered = useMemo(
     () => [...options].sort((a, b) => a.order_index - b.order_index),
     [options],
@@ -456,6 +457,7 @@ export function DndMatchingPuzzleQuestion({
 
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={rectIntersection}
       onDragStart={handleDragStart}

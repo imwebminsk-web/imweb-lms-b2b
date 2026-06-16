@@ -77,6 +77,20 @@ export function resolveQuestionMaxPoints(
     }
   }
 
+  if (
+    q.type === "single_choice" ||
+    q.type === "multiple_choice" ||
+    q.type === "multiple"
+  ) {
+    if (isGroupedChoiceContent(q.content ?? null)) {
+      const items = parseGroupedChoiceItems(q.content ?? null);
+      if (items) {
+        return sumGroupedItemPoints(items);
+      }
+    }
+    return resolveQuestionPoints(q.points);
+  }
+
   const unitPoints = resolveQuestionPoints(q.points);
   if (!isPartialPairScoringType(q.type)) {
     return unitPoints;
@@ -101,20 +115,25 @@ export function sumQuestionsMaxPoints(
 }
 
 function scoreMatchingPuzzlePoints(
-  q: { id: string; points?: number | null },
+  q: { id: string; type?: string | null; points?: number | null },
   answerRow:
     | { option_id: string | null; answer_data: Json | null }
     | undefined,
+  allOptions: { id: string; question_id: string; content: Json | null }[],
 ): number {
   const pairs = parsePairAssignmentsFromAnswerData(answerRow?.answer_data ?? null);
   if (!pairs) return 0;
+
   const unitPoints = resolveQuestionPoints(q.points);
+  const optionsForQuestion = allOptions.filter((o) => o.question_id === q.id);
   let correctMatches = 0;
-  for (const pair of pairs) {
-    if (pair.leftOptionId === pair.rightOptionId) {
+  for (const leftOpt of optionsForQuestion) {
+    const pair = pairs.find((p) => p.leftOptionId === leftOpt.id);
+    if (pair && pair.rightOptionId === leftOpt.id) {
       correctMatches += 1;
     }
   }
+
   return correctMatches * unitPoints;
 }
 
@@ -344,7 +363,7 @@ function isAttemptQuestionFullyCorrect(
   }
 
   if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
-    const earned = scoreMatchingPuzzlePoints(q, answerRow);
+    const earned = scoreMatchingPuzzlePoints(q, answerRow, allOptions);
     const maxPoints = resolveQuestionMaxPoints(q, allOptions);
     return earned >= maxPoints && maxPoints > 0;
   }
@@ -496,7 +515,7 @@ export function getAttemptQuestionEarnedPoints(
   }
 
   if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
-    return scoreMatchingPuzzlePoints(q, answerRow);
+    return scoreMatchingPuzzlePoints(q, answerRow, allOptions);
   }
 
   if (q.type === "image_labeling") {

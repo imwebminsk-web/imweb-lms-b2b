@@ -336,7 +336,7 @@ export type SafeTestOption = Pick<
 
 export type SafeTestQuestion = Pick<
   Tables<"questions">,
-  "id" | "content" | "order_index" | "type" | "created_at" | "media_play_limit"
+  "id" | "content" | "order_index" | "type" | "created_at" | "media_play_limit" | "points"
 > & {
   options: SafeTestOption[];
 };
@@ -807,6 +807,7 @@ export async function getTestWithQuestions(
         type,
         created_at,
         media_play_limit,
+        points,
         options ( id, content, order_index )
       )
     `,
@@ -842,6 +843,7 @@ export async function getTestWithQuestions(
         type: q.type,
         created_at: q.created_at,
         media_play_limit: q.media_play_limit ?? 0,
+        points: q.points,
         options: [...opts].sort((a, b) => a.order_index - b.order_index),
       };
     });
@@ -903,6 +905,7 @@ export async function getSafeTestForClient(
         type,
         created_at,
         media_play_limit,
+        points,
         options ( id, content, order_index, is_correct )
       )
     `,
@@ -936,6 +939,7 @@ export async function getSafeTestForClient(
       type: q.type,
       created_at: q.created_at,
       media_play_limit: q.media_play_limit ?? 0,
+      points: q.points,
       options: [...(q.options ?? [])]
         .sort((a, b) => a.order_index - b.order_index)
         .map((o) => ({

@@ -374,6 +374,7 @@ export async function getBestTestAttemptDetails(
       type: q.type,
       created_at: q.created_at ?? null,
       media_play_limit: q.media_play_limit ?? 0,
+      points: q.points ?? null,
       options: optionsSorted.map((o) => ({
         id: o.id,
         content: o.content,

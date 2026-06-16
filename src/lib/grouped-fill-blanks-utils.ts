@@ -633,7 +633,7 @@ export function parseGroupedFillTypingFromAnswerData(
   return null;
 }
 
-function countCorrectDnDBlanksInItem(
+export function countCorrectDnDBlanksInItem(
   item: GroupedFillBlanksPlayerItem,
   itemAssignments: Record<string, string>,
 ): number {
@@ -651,7 +651,7 @@ function countCorrectDnDBlanksInItem(
   return correct;
 }
 
-function countCorrectTypingBlanksInItem(
+export function countCorrectTypingBlanksInItem(
   item: GroupedFillBlanksPlayerItem,
   itemTyping: Record<string, string>,
 ): number {

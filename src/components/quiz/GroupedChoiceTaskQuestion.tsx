@@ -1,7 +1,12 @@
 "use client";
 
+import { useLanguage } from "@/components/providers/language-provider";
+import { ReviewSubQuestionHeader } from "@/components/quiz/ReviewSubQuestionHeader";
+import { Badge } from "@/components/ui/badge";
 import type { GroupedChoicePlayerItem, GroupedChoicePlayerOption } from "@/lib/grouped-choice-utils";
+import type { ReviewItemScore } from "@/lib/quiz-result-scoring";
 import { cn } from "@/lib/utils";
+import { Check, X } from "lucide-react";
 import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
 import { richTextPlainLabel } from "@/components/quiz/RichTextHtml";
 
@@ -12,7 +17,26 @@ export type GroupedChoiceTaskQuestionProps = {
   onSelectionsChange?: (next: Record<string, string[]>) => void;
   isReviewMode?: boolean;
   correctByItemId?: Record<string, string[]>;
+  reviewItemScores?: Record<string, ReviewItemScore>;
 };
+
+type OptionReviewState =
+  | "correct_selected"
+  | "incorrect_selected"
+  | "correct_missed"
+  | "neutral";
+
+function resolveOptionReviewState(
+  correctIds: Set<string>,
+  optionId: string,
+  isSelected: boolean,
+): OptionReviewState {
+  const isCorrectAnswer = correctIds.has(optionId);
+  if (isCorrectAnswer && isSelected) return "correct_selected";
+  if (isCorrectAnswer && !isSelected) return "correct_missed";
+  if (!isCorrectAnswer && isSelected) return "incorrect_selected";
+  return "neutral";
+}
 
 function optionLabelClass(selected: boolean, isCorrect: boolean | null): string {
   if (isCorrect === null) {
@@ -24,6 +48,88 @@ function optionLabelClass(selected: boolean, isCorrect: boolean | null): string 
     return "border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100";
   }
   return "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-100";
+}
+
+function optionReviewContainerClass(reviewState: OptionReviewState): string {
+  switch (reviewState) {
+    case "correct_selected":
+      return "border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100";
+    case "incorrect_selected":
+      return "border-red-500 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-100";
+    case "correct_missed":
+      return "border-2 border-dashed border-emerald-400 bg-emerald-50/30 text-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100";
+    case "neutral":
+      return "opacity-70 bg-card";
+  }
+}
+
+function imageReviewContainerClass(reviewState: OptionReviewState): string {
+  switch (reviewState) {
+    case "correct_selected":
+      return "ring-4 ring-emerald-500 border-emerald-500";
+    case "incorrect_selected":
+      return "ring-4 ring-destructive border-destructive";
+    case "correct_missed":
+      return "border-4 border-dashed border-emerald-400";
+    case "neutral":
+      return "opacity-70";
+  }
+}
+
+function TextOptionMissedBadge() {
+  const { t } = useLanguage();
+  return (
+    <span className="ml-auto shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300">
+      {t("quizResult.missed")}
+    </span>
+  );
+}
+
+function ImageOptionReviewBadge({
+  reviewState,
+}: {
+  reviewState: OptionReviewState;
+}) {
+  const { t } = useLanguage();
+
+  if (reviewState === "correct_selected") {
+    return (
+      <Badge
+        className="absolute top-2 right-2 z-20 gap-1 border-emerald-600/30 bg-emerald-500/95 px-2 py-0.5 text-emerald-50 shadow-md hover:bg-emerald-500/95"
+        aria-hidden
+      >
+        <Check className="size-3.5 shrink-0" strokeWidth={2.5} />
+        {t("quizResult.correct")}
+      </Badge>
+    );
+  }
+
+  if (reviewState === "incorrect_selected") {
+    return (
+      <Badge
+        variant="destructive"
+        className="absolute top-2 right-2 z-20 gap-1 px-2 py-0.5 shadow-md"
+        aria-hidden
+      >
+        <X className="size-3.5 shrink-0" strokeWidth={2.5} />
+        {t("quizResult.incorrect")}
+      </Badge>
+    );
+  }
+
+  if (reviewState === "correct_missed") {
+    return (
+      <Badge
+        variant="outline"
+        className="absolute top-2 right-2 z-20 border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-emerald-800 shadow-md dark:text-emerald-200"
+        aria-hidden
+      >
+        {t("quizResult.missed")}
+      </Badge>
+    );
+  }
+
+  return null;
 }
 
 function itemUsesImageGrid(item: GroupedChoicePlayerItem): boolean {
@@ -42,6 +148,7 @@ function ChoiceImageCard({
   isCorrect,
   isMultiple,
   isReviewMode,
+  reviewState,
   onSelect,
 }: {
   opt: GroupedChoicePlayerOption;
@@ -49,12 +156,15 @@ function ChoiceImageCard({
   isCorrect: boolean | null;
   isMultiple: boolean;
   isReviewMode: boolean;
+  reviewState: OptionReviewState | null;
   onSelect: () => void;
 }) {
   const imageUrl = opt.image_url?.trim() ?? "";
   const hasText = Boolean(opt.text.trim());
 
-  const indicator = (
+  const showPlayerIndicator = !isReviewMode;
+
+  const indicator = showPlayerIndicator ? (
     <span
       className={cn(
         "absolute top-2 right-2 z-10 flex size-6 items-center justify-center rounded-full border bg-background/90 shadow-sm",
@@ -78,19 +188,26 @@ function ChoiceImageCard({
         />
       )}
     </span>
-  );
+  ) : null;
 
-  const cardBody = (
-    <>
+  const imageBlock = (
+    <div className="relative">
+      {reviewState ? <ImageOptionReviewBadge reviewState={reviewState} /> : null}
       {indicator}
-      <div className="aspect-[4/3] w-full overflow-hidden bg-muted/30">
+      <div className="aspect-square w-full overflow-hidden bg-slate-50 dark:bg-slate-900/50">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imageUrl}
           alt=""
-          className="size-full object-cover"
+          className="size-full object-contain"
         />
       </div>
+    </div>
+  );
+
+  const cardBody = (
+    <>
+      {imageBlock}
       {hasText ? (
         <div className="px-3 py-2 text-center text-sm leading-snug md:text-base">
           <TaskMediaRenderer html={opt.text} />
@@ -99,13 +216,18 @@ function ChoiceImageCard({
     </>
   );
 
+  const reviewSurfaceClass =
+    isReviewMode && reviewState
+      ? cn("border bg-card", imageReviewContainerClass(reviewState))
+      : optionLabelClass(isSelected, isCorrect);
+
   if (isMultiple) {
     return (
       <label
         className={cn(
           "relative block cursor-pointer overflow-hidden rounded-xl border transition-colors",
-          optionLabelClass(isSelected, isCorrect),
-          isReviewMode && isSelected && "ring-primary/30 ring-2",
+          reviewSurfaceClass,
+          !isReviewMode && isSelected && "ring-primary/30 ring-2",
           isReviewMode && "cursor-default",
         )}
       >
@@ -132,8 +254,8 @@ function ChoiceImageCard({
       onClick={onSelect}
       className={cn(
         "relative block w-full overflow-hidden rounded-xl border text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-        optionLabelClass(isSelected, isCorrect),
-        isReviewMode && isSelected && "ring-primary/30 ring-2",
+        reviewSurfaceClass,
+        !isReviewMode && isSelected && "ring-primary/30 ring-2",
         isReviewMode && "cursor-default",
       )}
     >
@@ -148,6 +270,7 @@ function ChoiceTextListOption({
   isCorrect,
   isMultiple,
   isReviewMode,
+  reviewState,
   onSelect,
 }: {
   opt: GroupedChoicePlayerOption;
@@ -155,15 +278,21 @@ function ChoiceTextListOption({
   isCorrect: boolean | null;
   isMultiple: boolean;
   isReviewMode: boolean;
+  reviewState: OptionReviewState | null;
   onSelect: () => void;
 }) {
+  const reviewSurfaceClass =
+    isReviewMode && reviewState
+      ? optionReviewContainerClass(reviewState)
+      : optionLabelClass(isSelected, isCorrect);
+
   if (isMultiple) {
     return (
       <label
         className={cn(
-          "border-input hover:bg-muted/60 focus-within:ring-ring flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-colors focus-within:ring-2 md:min-h-12",
-          optionLabelClass(isSelected, isCorrect),
-          isReviewMode && isSelected && "ring-primary/30 ring-2",
+          "border-input hover:bg-muted/60 focus-within:ring-ring flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors focus-within:ring-2 md:min-h-12",
+          reviewSurfaceClass,
+          !isReviewMode && isSelected && "ring-primary/30 ring-2",
           isReviewMode && "cursor-default",
         )}
       >
@@ -172,11 +301,12 @@ function ChoiceTextListOption({
           checked={isSelected}
           disabled={isReviewMode}
           onChange={onSelect}
-          className="border-input text-primary mt-1 size-4 shrink-0 rounded"
+          className="border-input text-primary size-4 shrink-0 rounded"
         />
-        <span className="text-left text-base leading-snug md:text-lg">
+        <span className="min-w-0 flex-1 text-left text-base leading-snug md:text-lg">
           <TaskMediaRenderer html={opt.text} />
         </span>
+        {reviewState === "correct_missed" ? <TextOptionMissedBadge /> : null}
       </label>
     );
   }
@@ -190,13 +320,16 @@ function ChoiceTextListOption({
       disabled={isReviewMode}
       onClick={onSelect}
       className={cn(
-        "border-input hover:bg-muted/60 focus-visible:ring-ring flex min-h-11 w-full items-center rounded-xl border px-4 py-3 text-left text-base transition-colors focus-visible:ring-2 focus-visible:outline-none md:min-h-12 md:text-lg",
-        optionLabelClass(isSelected, isCorrect),
-        isReviewMode && isSelected && "ring-primary/30 ring-2",
+        "border-input hover:bg-muted/60 focus-visible:ring-ring flex min-h-11 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-base transition-colors focus-visible:ring-2 focus-visible:outline-none md:min-h-12 md:text-lg",
+        reviewSurfaceClass,
+        !isReviewMode && isSelected && "ring-primary/30 ring-2",
         isReviewMode && "cursor-default",
       )}
     >
-      <TaskMediaRenderer html={opt.text} />
+      <span className="min-w-0 flex-1">
+        <TaskMediaRenderer html={opt.text} />
+      </span>
+      {reviewState === "correct_missed" ? <TextOptionMissedBadge /> : null}
     </button>
   );
 }
@@ -208,6 +341,7 @@ export function GroupedChoiceTaskQuestion({
   onSelectionsChange,
   isReviewMode = false,
   correctByItemId,
+  reviewItemScores,
 }: GroupedChoiceTaskQuestionProps) {
   function toggleSelection(itemId: string, optionId: string) {
     if (isReviewMode) return;
@@ -243,7 +377,15 @@ export function GroupedChoiceTaskQuestion({
             )}
           >
             <div className="space-y-1">
-              {items.length > 1 ? (
+              {isReviewMode && reviewItemScores?.[item.id] ? (
+                <ReviewSubQuestionHeader
+                  index={index}
+                  earnedPoints={reviewItemScores[item.id]!.earned}
+                  maxPoints={reviewItemScores[item.id]!.max}
+                  isCorrect={reviewItemScores[item.id]!.isCorrect}
+                  pendingReview={reviewItemScores[item.id]!.pendingReview}
+                />
+              ) : items.length > 1 ? (
                 <p className="mb-4 font-medium text-slate-500 dark:text-slate-400">
                   Вопрос {index + 1}
                 </p>
@@ -272,6 +414,10 @@ export function GroupedChoiceTaskQuestion({
                         ? false
                         : null
                     : null;
+                const optionReviewState =
+                  isReviewMode && correctByItemId
+                    ? resolveOptionReviewState(correctIds, opt.id, isSelected)
+                    : null;
 
                 const onSelect = () => toggleSelection(item.id, opt.id);
 
@@ -284,6 +430,7 @@ export function GroupedChoiceTaskQuestion({
                       isCorrect={isCorrect}
                       isMultiple={isMultiple}
                       isReviewMode={isReviewMode}
+                      reviewState={optionReviewState}
                       onSelect={onSelect}
                     />
                   );
@@ -297,6 +444,7 @@ export function GroupedChoiceTaskQuestion({
                     isCorrect={isCorrect}
                     isMultiple={isMultiple}
                     isReviewMode={isReviewMode}
+                    reviewState={optionReviewState}
                     onSelect={onSelect}
                   />
                 );

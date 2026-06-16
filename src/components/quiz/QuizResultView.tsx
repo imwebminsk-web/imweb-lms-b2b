@@ -2,7 +2,7 @@
 
 import type { AttemptResult, SafeTestQuestion } from "@/app/actions/test-actions";
 import { GradingDisplay } from "@/components/quiz/GradingDisplay";
-import { Badge } from "@/components/ui/badge";
+import { useLanguage } from "@/components/providers/language-provider";
 import { Progress } from "@/components/ui/progress";
 import {
   parseGroupedFillAssignmentsFromAnswerData,
@@ -11,40 +11,37 @@ import {
 } from "@/lib/quiz-helpers";
 import {
   alignGroupedFillAnswersToPlayerItems,
-  isGroupedFillBlanksFullyCorrect,
-  isGroupedFillInTheBlanksFullyCorrect,
   resolveGroupedFillBlanksPlayerView,
-  sumGroupedFillBlanksItemPoints,
 } from "@/lib/grouped-fill-blanks-utils";
 import {
-  isGroupedChoiceContent,
   LEGACY_GROUPED_ITEM_ID,
-  parseGroupedChoiceItems,
   parseGroupedSelectionsFromAnswerData,
   resolveGroupedChoicePlayerView,
-  scoreGroupedChoiceQuestion,
-  sumGroupedItemPoints,
 } from "@/lib/grouped-choice-utils";
 import {
   parseOrderingAssignmentsFromAnswerData,
-  parseOrderingItems,
   resolveOrderingPlayerView,
-  scoreOrderingQuestion,
-  sumOrderingItemPoints,
 } from "@/lib/ordering-utils";
 import type { Json } from "@/types/database.types";
 import { parseTaskPresentation } from "@/lib/utils/task-content";
 import { plainTextFromRichContent } from "@/lib/utils/rich-text-content";
 import {
   parseManualItemGradesFromAnswerData,
-  sumManualItemGrades,
 } from "@/lib/manual-grading-utils";
+import {
+  resolveGroupedChoiceItemScores,
+  resolveGroupedFillItemScores,
+  resolveOrderingItemScores,
+  resolveTaskPointsForReview,
+  type ReviewItemScore,
+} from "@/lib/quiz-result-scoring";
 import type { ReactNode } from "react";
 
 import { GroupedFillBlanksTaskQuestion } from "./GroupedFillBlanksTaskQuestion";
 import { GroupedChoiceTaskQuestion } from "./GroupedChoiceTaskQuestion";
 import { OrderingTaskQuestion } from "./OrderingTaskQuestion";
 import { QuizTaskInstruction } from "./QuizTaskInstruction";
+import { ReviewPuzzlePairCard } from "./ReviewPuzzlePairCard";
 import {
   buildAssignmentsFromLabelPairs,
   ImageLabelingQuestion,
@@ -276,14 +273,6 @@ function resolveImageLabelingAssignments(
   return Object.fromEntries(meta.images.map((i) => [i.id, null] as const));
 }
 
-function puzzlePartText(content: Json, side: "left" | "right"): string {
-  if (content && typeof content === "object" && !Array.isArray(content)) {
-    const v = (content as { left?: unknown; right?: unknown })[side];
-    if (typeof v === "string") return v;
-  }
-  return "—";
-}
-
 function resolveReviewGroupedFillSaved(
   rows: { option_id: string; answer_data: Json | null }[],
   fromMap: Record<string, Record<string, string>> | undefined,
@@ -421,6 +410,104 @@ export function QuizResultView({
   reviewOnly = false,
   questionIndexOffset = 0,
 }: QuizResultViewProps) {
+  const { t } = useLanguage();
+  const correctIdsMap = reviewCorrectIdsByQuestionId ?? new Map();
+
+  function buildReviewItemScores(
+    q: SafeTestQuestion,
+    rows: { option_id: string; answer_data: Json | null }[],
+    answerData: Json | null,
+  ): Record<string, ReviewItemScore> | undefined {
+    if (
+      q.type === "single_choice" ||
+      q.type === "multiple_choice" ||
+      q.type === "multiple"
+    ) {
+      const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
+      const selections = resolveReviewChoiceSelections(
+        rows,
+        fromMap,
+        getSelectedIdsForQuestion(q.id),
+      );
+      const correctByItemId = resolveReviewChoiceCorrect(
+        reviewGroupedCorrectByQuestionId?.get(q.id) ?? {},
+        reviewCorrectIdsByQuestionId?.get(q.id) ?? [],
+      );
+      return resolveGroupedChoiceItemScores({
+        question: q,
+        selections,
+        correctByItemId,
+      });
+    }
+
+    if (q.type === "ordering") {
+      const fromMap = reviewOrderingAssignmentsByQuestionId?.get(q.id);
+      const assignments =
+        (fromMap && Object.keys(fromMap).length > 0
+          ? fromMap
+          : parseOrderingAssignmentsBulletproof(answerData)) ?? {};
+      return resolveOrderingItemScores({ content: q.content, assignments });
+    }
+
+    if (
+      q.type === "fill_in_the_blanks" ||
+      q.type === "fill_in_the_blanks_multi"
+    ) {
+      const view = resolveGroupedFillBlanksPlayerView({
+        content: q.content,
+        questionType: q.type,
+      });
+      if (!view) return undefined;
+      const fromMap = reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
+      const saved = resolveReviewGroupedFillSaved(
+        rows,
+        fromMap,
+        parseGroupedFillAssignmentsBulletproof,
+        parseFillAssignmentsBulletproof,
+        view.items.map((item) => item.id),
+      );
+      return resolveGroupedFillItemScores({
+        question: q,
+        mode: view.mode,
+        groupedAssignments: saved,
+      });
+    }
+
+    if (
+      q.type === "fill_blanks_typing" ||
+      q.type === "fill_blanks_typing_multi" ||
+      q.type === "text_input"
+    ) {
+      const view = resolveGroupedFillBlanksPlayerView({
+        content: q.content,
+        questionType: q.type,
+      });
+      if (!view) return undefined;
+      const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
+      const saved = resolveReviewGroupedFillSaved(
+        rows,
+        fromMap,
+        parseGroupedFillTypingBulletproof,
+        parseFillTypingBulletproof,
+        view.items.map((item) => item.id),
+      );
+      const manualGrades =
+        q.type === "text_input"
+          ? parseManualItemGradesFromAnswerData(answerData)
+          : null;
+      return resolveGroupedFillItemScores({
+        question: q,
+        mode: view.mode,
+        groupedTyping: saved,
+        manualGrades,
+        pendingReview:
+          q.type === "text_input" ? result.requiresManualReview : false,
+      });
+    }
+
+    return undefined;
+  }
+
   function getSelectedIdsForQuestion(questionId: string) {
     const rows = reviewRowsByQuestionId?.get(questionId) ?? [];
     for (const row of rows) {
@@ -440,147 +527,6 @@ export function QuizResultView({
     return rows.map((r) => r.option_id).filter((id) => id.trim() !== "");
   }
 
-  function isQuestionFullyCorrect(q: SafeTestQuestion): boolean {
-    const rows = reviewRowsByQuestionId?.get(q.id) ?? [];
-    const answerData = pickAnswerDataFromRows(rows);
-
-    if (q.type === "matching_puzzle" || q.type === "dnd_puzzle") {
-      const pairs = parsePairsFromAnswerData(answerData);
-      if (pairs.length !== q.options.length) return false;
-      return q.options.every((leftOpt) =>
-        pairs.some(
-          (p) => p.leftOptionId === leftOpt.id && p.rightOptionId === leftOpt.id,
-        ),
-      );
-    }
-
-    if (
-      q.type === "single_choice" ||
-      q.type === "multiple_choice" ||
-      q.type === "multiple"
-    ) {
-      if (isGroupedChoiceContent(q.content)) {
-        const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
-        const selections =
-          (fromMap && Object.keys(fromMap).length > 0
-            ? fromMap
-            : parseGroupedSelectionsBulletproof(answerData)) ?? {};
-        const items = parseGroupedChoiceItems(q.content);
-        const total = items ? sumGroupedItemPoints(items) : 1;
-        const earned = scoreGroupedChoiceQuestion({
-          content: q.content,
-          questionType: q.type,
-          selections,
-        });
-        return earned >= total;
-      }
-
-      const selected = [...new Set(getSelectedIdsForQuestion(q.id))].sort();
-      const correct = [...new Set(reviewCorrectIdsByQuestionId?.get(q.id) ?? [])].sort();
-      if (selected.length !== correct.length) return false;
-      return selected.every((id, i) => id === correct[i]);
-    }
-
-    if (q.type === "fill_in_the_blanks" || q.type === "fill_in_the_blanks_multi") {
-      const view = resolveGroupedFillBlanksPlayerView({
-        content: q.content,
-        questionType: q.type,
-      });
-      if (!view) return false;
-      const fromMap = reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
-      const saved = resolveReviewGroupedFillSaved(
-        rows,
-        fromMap,
-        parseGroupedFillAssignmentsBulletproof,
-        parseFillAssignmentsBulletproof,
-        view.items.map((item) => item.id),
-      );
-      return isGroupedFillInTheBlanksFullyCorrect({
-        content: q.content,
-        questionType: q.type,
-        groupedAssignments: saved,
-      });
-    }
-
-    if (q.type === "fill_blanks_typing" || q.type === "fill_blanks_typing_multi") {
-      const view = resolveGroupedFillBlanksPlayerView({
-        content: q.content,
-        questionType: q.type,
-      });
-      if (!view) return false;
-      const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-      const saved = resolveReviewGroupedFillSaved(
-        rows,
-        fromMap,
-        parseGroupedFillTypingBulletproof,
-        parseFillTypingBulletproof,
-        view.items.map((item) => item.id),
-      );
-      return isGroupedFillBlanksFullyCorrect({
-        content: q.content,
-        questionType: q.type,
-        groupedTyping: saved,
-      });
-    }
-
-    if (q.type === "text_input") {
-      const manualGrades = parseManualItemGradesFromAnswerData(answerData);
-      if (manualGrades && !result.requiresManualReview) {
-        const view = resolveGroupedFillBlanksPlayerView({
-          content: q.content,
-          questionType: q.type,
-        });
-        const maxPoints = view
-          ? sumGroupedFillBlanksItemPoints(
-              view.items.map((item) => ({
-                id: item.id,
-                text: "",
-                points: item.points,
-                segments: item.segments,
-                wordBank: item.wordBank,
-                correctMapping: item.correctMapping,
-              })),
-            )
-          : 1;
-        return sumManualItemGrades(manualGrades) >= maxPoints;
-      }
-      return false;
-    }
-
-    if (q.type === "ordering") {
-      const fromMap = reviewOrderingAssignmentsByQuestionId?.get(q.id);
-      const assignments =
-        (fromMap && Object.keys(fromMap).length > 0
-          ? fromMap
-          : parseOrderingAssignmentsBulletproof(answerData)) ?? {};
-      const items = parseOrderingItems(q.content);
-      const total = items ? sumOrderingItemPoints(items) : 1;
-      const earned = scoreOrderingQuestion({
-        content: q.content,
-        assignments,
-      });
-      return earned >= total;
-    }
-
-    if (q.type === "image_labeling") {
-      const assignments = resolveImageLabelingAssignments(
-        q,
-        rows,
-        reviewAnswersByQuestionId,
-      );
-      const meta = parseImageLabelingOptions(q.options);
-      return (
-        meta.images.length > 0 &&
-        meta.images.every(
-          (img) => assignments[img.id] !== null && assignments[img.id] === img.id,
-        )
-      );
-    }
-
-    return false;
-  }
-
-  const totalCorrectQuestions = questions.filter((q) => isQuestionFullyCorrect(q)).length;
   const isForKids = result.isForKids;
   const requiresManualReview = result.requiresManualReview;
 
@@ -594,7 +540,7 @@ export function QuizResultView({
     >
       {!reviewOnly ? (
         <h3 className="text-foreground mb-4 text-lg font-semibold tracking-tight">
-          Разбор ответов
+          {t("quizResult.reviewBreakdown")}
         </h3>
       ) : null}
       <div className={reviewOnly ? "flex flex-col gap-0" : "flex flex-col gap-10"}>
@@ -602,23 +548,16 @@ export function QuizResultView({
           const displayIndex = questionIndexOffset + index;
           const rows = reviewRowsByQuestionId?.get(q.id) ?? [];
           const answerData = pickAnswerDataFromRows(rows);
-          const questionFullyCorrect = isQuestionFullyCorrect(q);
+          const taskPoints = resolveTaskPointsForReview(q, rows, correctIdsMap);
+          const reviewItemScores = buildReviewItemScores(q, rows, answerData);
           const selectedIds = getSelectedIdsForQuestion(q.id);
-          const textInputManualGrades =
-            q.type === "text_input"
-              ? parseManualItemGradesFromAnswerData(answerData)
-              : null;
-          const textInputGraded =
-            q.type === "text_input" &&
-            textInputManualGrades &&
-            !result.requiresManualReview;
 
           return (
             <div key={q.id} className="mb-6 space-y-4 rounded-xl border p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1 space-y-2">
                   <p className="text-muted-foreground text-sm font-medium">
-                    Вопрос {displayIndex + 1}
+                    {t("quizResult.task")} {displayIndex + 1}
                   </p>
                   <QuizTaskInstruction
                     task={parseTaskPresentation(q.content, 0)}
@@ -626,32 +565,9 @@ export function QuizResultView({
                     variant="section"
                   />
                 </div>
-                <Badge
-                  variant={
-                    q.type === "text_input" && !textInputGraded
-                      ? "outline"
-                      : questionFullyCorrect
-                        ? "secondary"
-                        : "destructive"
-                  }
-                  className={
-                    q.type === "text_input" && !textInputGraded
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-                      : questionFullyCorrect
-                        ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                        : undefined
-                  }
-                >
-                  {q.type === "text_input"
-                    ? textInputGraded
-                      ? questionFullyCorrect
-                        ? "Верно"
-                        : "Частично / неверно"
-                      : "На проверке"
-                    : questionFullyCorrect
-                      ? "Верно"
-                      : "Ошибка"}
-                </Badge>
+                <span className="text-muted-foreground shrink-0 text-sm tabular-nums">
+                  {t("quizResult.taskPoints")}: {taskPoints.earned} / {taskPoints.max}
+                </span>
               </div>
 
               {(q.type === "matching_puzzle" || q.type === "dnd_puzzle") &&
@@ -670,37 +586,15 @@ export function QuizResultView({
                           pair && pair.rightOptionId === leftOpt.id,
                         );
                         return (
-                          <div
+                          <ReviewPuzzlePairCard
                             key={`${q.id}-${leftOpt.id}`}
-                            className="rounded-md border bg-muted/50 p-2 text-sm"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">
-                                {puzzlePartText(leftOpt.content, "left")}
-                              </span>
-                              <span className="text-muted-foreground">—</span>
-                              <span>
-                                {userRight
-                                  ? puzzlePartText(userRight.content, "right")
-                                  : "— Нет ответа —"}
-                              </span>
-                              <Badge
-                                variant={isCorrect ? "secondary" : "destructive"}
-                                className={
-                                  isCorrect
-                                    ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                    : undefined
-                                }
-                              >
-                                {isCorrect ? "Верно" : "Ошибка"}
-                              </Badge>
-                            </div>
-                            {!isCorrect && correctRight ? (
-                              <p className="text-muted-foreground mt-1 text-xs">
-                                Правильно: {puzzlePartText(correctRight.content, "right")}
-                              </p>
-                            ) : null}
-                          </div>
+                            isCorrect={isCorrect}
+                            leftContent={leftOpt.content}
+                            userRightContent={userRight?.content ?? null}
+                            correctRightContent={
+                              !isCorrect && correctRight ? correctRight.content : null
+                            }
+                          />
                         );
                       })}
                     </div>
@@ -735,6 +629,7 @@ export function QuizResultView({
                       selections={selections}
                       isReviewMode
                       correctByItemId={correctByItemId}
+                      reviewItemScores={reviewItemScores}
                     />
                   );
                 })()}
@@ -766,6 +661,7 @@ export function QuizResultView({
                       assignments={assignments}
                       isReviewMode
                       correctByItemId={correctByItemId}
+                      reviewItemScores={reviewItemScores}
                     />
                   );
                 })()}
@@ -817,6 +713,7 @@ export function QuizResultView({
                       mode={view.mode}
                       groupedAssignments={saved}
                       isReviewMode
+                      reviewItemScores={reviewItemScores}
                     />
                   );
                 })()}
@@ -849,6 +746,7 @@ export function QuizResultView({
                       mode={view.mode}
                       groupedTyping={saved}
                       isReviewMode
+                      reviewItemScores={reviewItemScores}
                     />
                   );
                 })()}
@@ -881,22 +779,11 @@ export function QuizResultView({
                         mode={view.mode}
                         groupedTyping={saved}
                         isReviewMode
+                        reviewItemScores={reviewItemScores}
                       />
-                      {textInputManualGrades && !result.requiresManualReview ? (
-                        <ul className="text-muted-foreground space-y-1 text-xs">
-                          {view.items.map((item, itemIndex) => (
-                            <li key={item.id}>
-                              Вопрос {itemIndex + 1}:{" "}
-                              <span className="text-foreground tabular-nums font-medium">
-                                {textInputManualGrades[item.id] ?? 0}
-                              </span>{" "}
-                              / {item.points} баллов
-                            </li>
-                          ))}
-                        </ul>
-                      ) : result.requiresManualReview ? (
+                      {result.requiresManualReview ? (
                         <p className="text-muted-foreground text-xs">
-                          Ответ отправлен на проверку преподавателю.
+                          {t("quizResult.textInputPending")}
                         </p>
                       ) : null}
                     </div>
@@ -932,7 +819,9 @@ export function QuizResultView({
           <div className="flex w-full max-w-2xl flex-col gap-2">
             <div className="flex w-full items-center gap-2 text-sm">
               <span className="font-medium">
-                {requiresManualReview ? "Отправлено на проверку" : "Готово"}
+                {requiresManualReview
+                  ? t("quizResult.submittedForReview")
+                  : t("quizResult.performance")}
               </span>
               {!requiresManualReview ? (
                 <span className="text-muted-foreground ml-auto tabular-nums">
@@ -946,18 +835,19 @@ export function QuizResultView({
           </div>
         ) : null}
         <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight">Результат</h2>
+          <h2 className="text-2xl font-semibold tracking-tight">
+            {t("quizResult.result")}
+          </h2>
           {requiresManualReview ? (
             <p className="text-muted-foreground max-w-3xl text-sm">
-              В тесте есть развёрнутые ответы. Преподаватель проверит их вручную —
-              автоматическая оценка за эти задания не выставляется.
+              {t("quizResult.manualReviewHint")}
             </p>
           ) : null}
           {isForKids ? (
             <div className="flex flex-col items-center gap-3 py-2">
               {requiresManualReview ? (
                 <p className="text-muted-foreground text-sm">
-                  Ответы отправлены преподавателю. Жди проверки!
+                  {t("quizResult.kidsWaitReview")}
                 </p>
               ) : (
                 <>
@@ -967,7 +857,7 @@ export function QuizResultView({
                     totalPossiblePoints={result.totalPossiblePoints}
                   />
                   <p className="text-muted-foreground text-sm">
-                    Молодец! Посмотри разбор заданий ниже.
+                    {t("quizResult.kidsReviewBelow")}
                   </p>
                 </>
               )}
@@ -975,27 +865,20 @@ export function QuizResultView({
           ) : (
             <>
               {!requiresManualReview ? (
-                <>
-                  <p className="text-muted-foreground text-lg">
-                    Правильных заданий:{" "}
-                    <span className="text-foreground font-semibold tabular-nums">
-                      {totalCorrectQuestions}
-                    </span>{" "}
-                    из{" "}
-                    <span className="text-foreground font-semibold tabular-nums">
-                      {questions.length}
-                    </span>
-                  </p>
-                  <p className="text-muted-foreground text-sm">
-                    Набрано баллов: {result.earnedPoints} / {result.totalPossiblePoints}
-                    {" · "}
-                    Отвечено на заданий: {result.answeredCount}
-                  </p>
-                </>
+                <p className="text-muted-foreground text-lg">
+                  {t("quizResult.earnedPoints")}:{" "}
+                  <span className="text-foreground font-semibold tabular-nums">
+                    {result.earnedPoints}
+                  </span>{" "}
+                  {t("quiz.of")}{" "}
+                  <span className="text-foreground font-semibold tabular-nums">
+                    {result.totalPossiblePoints}
+                  </span>
+                </p>
               ) : (
                 <p className="text-muted-foreground text-sm">
-                  Автоматически проверенные задания: {result.earnedPoints} /{" "}
-                  {result.totalPossiblePoints} баллов (предварительно)
+                  {t("quizResult.preliminaryScore")}: {result.earnedPoints} /{" "}
+                  {result.totalPossiblePoints} {t("quizResult.preliminarySuffix")}
                 </p>
               )}
             </>

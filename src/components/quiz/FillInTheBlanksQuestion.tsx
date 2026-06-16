@@ -15,7 +15,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 
 const WORD_PREFIX = "fitb-word-";
 const BLANK_PREFIX = "fitb-blank-";
@@ -61,7 +61,7 @@ export function DraggableWordBankItem({ word }: { word: FillInTheBlanksWord }) {
     <span
       ref={setNodeRef}
       className={cn(
-        "touch-none cursor-grab rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-800 shadow-sm active:cursor-grabbing",
+        "inline-flex touch-none cursor-grab items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-center text-base font-medium text-slate-800 shadow-sm active:cursor-grabbing",
         isDragging && "opacity-50",
       )}
       {...listeners}
@@ -199,6 +199,7 @@ export function FillInTheBlanksQuestion({
   isReviewMode,
   correctMapping: correctMappingProp,
 }: FillInTheBlanksQuestionProps) {
+  const dndId = useId();
   const [internal, setInternal] = useState<Record<string, string>>({});
   const controlled = valueProp !== undefined;
   const assignments = controlled ? valueProp : internal;
@@ -290,6 +291,7 @@ export function FillInTheBlanksQuestion({
 
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={rectIntersection}
       onDragEnd={handleDragEnd}

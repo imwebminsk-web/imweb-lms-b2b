@@ -4,6 +4,8 @@ import { FillBlanksParsedHtmlQuestion } from "@/components/quiz/FillBlanksParsed
 import { FillBlanksTypingQuestion } from "@/components/quiz/FillBlanksTypingQuestion";
 import { FillInTheBlanksQuestion } from "@/components/quiz/FillInTheBlanksQuestion";
 import { TextInputQuestion } from "@/components/quiz/TextInputQuestion";
+import { ReviewSubQuestionHeader } from "@/components/quiz/ReviewSubQuestionHeader";
+import type { ReviewItemScore } from "@/lib/quiz-result-scoring";
 import type {
   GroupedFillBlanksMode,
   GroupedFillBlanksPlayerItem,
@@ -22,6 +24,7 @@ export type GroupedFillBlanksTaskQuestionProps = {
     groupedAssignments: Record<string, Record<string, string>>,
   ) => void;
   isReviewMode?: boolean;
+  reviewItemScores?: Record<string, ReviewItemScore>;
 };
 
 function itemToTypingContent(item: GroupedFillBlanksPlayerItem): FillInTheBlanksContent {
@@ -87,6 +90,7 @@ export function GroupedFillBlanksTaskQuestion({
   onTypingChange,
   onAssignmentsChange,
   isReviewMode = false,
+  reviewItemScores,
 }: GroupedFillBlanksTaskQuestionProps) {
   const groupedTyping = groupedTypingProp ?? {};
   const groupedAssignments = groupedAssignmentsProp ?? {};
@@ -123,7 +127,15 @@ export function GroupedFillBlanksTaskQuestion({
               "mb-10 border-b border-slate-200 pb-10 dark:border-slate-700",
           )}
         >
-          {items.length > 1 ? (
+          {isReviewMode && reviewItemScores?.[item.id] ? (
+            <ReviewSubQuestionHeader
+              index={index}
+              earnedPoints={reviewItemScores[item.id]!.earned}
+              maxPoints={reviewItemScores[item.id]!.max}
+              isCorrect={reviewItemScores[item.id]!.isCorrect}
+              pendingReview={reviewItemScores[item.id]!.pendingReview}
+            />
+          ) : items.length > 1 ? (
             <p className="mb-4 font-medium text-slate-500 dark:text-slate-400">
               Вопрос {index + 1}
             </p>

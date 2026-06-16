@@ -16,9 +16,11 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
+import { ReviewSubQuestionHeader } from "@/components/quiz/ReviewSubQuestionHeader";
+import type { ReviewItemScore } from "@/lib/quiz-result-scoring";
 import {
   type OrderingPlayerElement,
   type OrderingPlayerItem,
@@ -32,6 +34,7 @@ export type OrderingTaskQuestionProps = {
   onAssignmentsChange?: (next: Record<string, string[]>) => void;
   isReviewMode?: boolean;
   correctByItemId?: Record<string, string[]>;
+  reviewItemScores?: Record<string, ReviewItemScore>;
 };
 
 function arraysEqual(a: string[], b: string[]): boolean {
@@ -97,6 +100,7 @@ function OrderingSortableItem({
   isReviewMode: boolean;
   correctOrder?: string[];
 }) {
+  const dndId = useId();
   const elementById = useMemo(
     () => new Map(item.elements.map((el) => [el.id, el])),
     [item.elements],
@@ -158,6 +162,7 @@ function OrderingSortableItem({
       ) : null}
 
       <DndContext
+        id={dndId}
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragEnd={handleDragEnd}
@@ -204,6 +209,7 @@ export function OrderingTaskQuestion({
   onAssignmentsChange,
   isReviewMode = false,
   correctByItemId,
+  reviewItemScores,
 }: OrderingTaskQuestionProps) {
   function updateItemOrder(itemId: string, orderIds: string[]) {
     onAssignmentsChange?.({ ...assignments, [itemId]: orderIds });
@@ -224,7 +230,15 @@ export function OrderingTaskQuestion({
               "mb-10 border-b border-slate-200 pb-10 dark:border-slate-700",
           )}
         >
-          {items.length > 1 ? (
+          {isReviewMode && reviewItemScores?.[item.id] ? (
+            <ReviewSubQuestionHeader
+              index={index}
+              earnedPoints={reviewItemScores[item.id]!.earned}
+              maxPoints={reviewItemScores[item.id]!.max}
+              isCorrect={reviewItemScores[item.id]!.isCorrect}
+              pendingReview={reviewItemScores[item.id]!.pendingReview}
+            />
+          ) : items.length > 1 ? (
             <p className="mb-4 font-medium text-slate-500 dark:text-slate-400">
               Вопрос {index + 1}
             </p>

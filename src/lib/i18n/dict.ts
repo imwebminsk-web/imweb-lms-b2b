@@ -59,6 +59,32 @@ export const dict = {
       finishIncompleteConfirm: "Завершить тест",
       finishIncompleteCancel: "Продолжить",
     },
+    quizResult: {
+      performance: "Успеваемость",
+      result: "Результат",
+      task: "Задание",
+      question: "Вопрос",
+      correct: "Верно",
+      incorrect: "Ошибка",
+      partial: "Частично",
+      pointsUnit: "баллов",
+      earnedPoints: "Набрано баллов",
+      taskPoints: "Баллы",
+      pendingReview: "На проверке",
+      reviewBreakdown: "Разбор ответов",
+      submittedForReview: "Отправлено на проверку",
+      manualReviewHint:
+        "В тесте есть развёрнутые ответы. Преподаватель проверит их вручную — автоматическая оценка за эти задания не выставляется.",
+      kidsWaitReview: "Ответы отправлены преподавателю. Жди проверки!",
+      kidsReviewBelow: "Молодец! Посмотри разбор заданий ниже.",
+      preliminaryScore: "Автоматически проверенные задания",
+      preliminarySuffix: "баллов (предварительно)",
+      textInputPending: "Ответ отправлен на проверку преподавателю.",
+      puzzleNoAnswer: "— Нет ответа —",
+      puzzleCorrectAnswer: "Правильно",
+      missed: "Пропущено",
+      yourAnswer: "Ваш ответ",
+    },
     settings: {
       pageTitle: "Настройки профиля",
       pageSubtitle: "Обновите отображаемое имя и просмотрите данные аккаунта.",
@@ -231,6 +257,32 @@ export const dict = {
       finishIncompleteConfirm: "Finish test",
       finishIncompleteCancel: "Continue",
     },
+    quizResult: {
+      performance: "Performance",
+      result: "Result",
+      task: "Task",
+      question: "Question",
+      correct: "Correct",
+      incorrect: "Incorrect",
+      partial: "Partial",
+      pointsUnit: "pts",
+      earnedPoints: "Points earned",
+      taskPoints: "Points",
+      pendingReview: "Pending review",
+      reviewBreakdown: "Answer review",
+      submittedForReview: "Submitted for review",
+      manualReviewHint:
+        "This test includes open-ended responses. Your teacher will grade them manually — those tasks are not auto-scored.",
+      kidsWaitReview: "Answers sent to your teacher. Waiting for review!",
+      kidsReviewBelow: "Great job! Review your tasks below.",
+      preliminaryScore: "Auto-checked tasks",
+      preliminarySuffix: "points (preliminary)",
+      textInputPending: "Answer submitted for teacher review.",
+      puzzleNoAnswer: "— No answer —",
+      puzzleCorrectAnswer: "Correct answer",
+      missed: "Missed",
+      yourAnswer: "Your answer",
+    },
     settings: {
       pageTitle: "Profile Settings",
       pageSubtitle: "Update your display name and review account details.",
@@ -352,6 +404,7 @@ export type TranslationKey =
   | `course_view.${keyof (typeof dict)["ru"]["course_view"]}`
   | `lesson_view.${keyof (typeof dict)["ru"]["lesson_view"]}`
   | `quiz.${keyof (typeof dict)["ru"]["quiz"]}`
+  | `quizResult.${keyof (typeof dict)["ru"]["quizResult"]}`
   | `a11y.${keyof (typeof dict)["ru"]["a11y"]}`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

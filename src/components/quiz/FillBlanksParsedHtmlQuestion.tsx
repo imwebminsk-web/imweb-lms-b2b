@@ -9,7 +9,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import {
@@ -116,6 +116,7 @@ export function FillBlanksParsedHtmlQuestion({
   onChange,
   isReviewMode = false,
 }: FillBlanksParsedHtmlQuestionProps) {
+  const dndId = useId();
   const [internal, setInternal] = useState<Record<string, string>>({});
   const controlled = valueProp !== undefined;
   const assignments = controlled ? valueProp : internal;
@@ -302,6 +303,7 @@ export function FillBlanksParsedHtmlQuestion({
   if (mode === "dnd" && !isReviewMode) {
     return (
       <DndContext
+        id={dndId}
         sensors={sensors}
         collisionDetection={rectIntersection}
         onDragEnd={handleDragEnd}

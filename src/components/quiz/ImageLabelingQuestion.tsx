@@ -1,5 +1,6 @@
 "use client";
 
+import { useLanguage } from "@/components/providers/language-provider";
 import type { SafeTestOption } from "@/app/actions/test-actions";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,8 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import type { ReactNode } from "react";
+import { Check, X } from "lucide-react";
+import { useId, type ReactNode } from "react";
 
 export type ImageLabelingImage = {
   id: string;
@@ -162,7 +164,7 @@ function DraggableWordPill({ word }: { word: ImageLabelingWord }) {
     <span
       ref={setNodeRef}
       className={cn(
-        "touch-none cursor-grab rounded-full border border-border bg-secondary px-3 py-1.5 text-sm font-medium shadow-sm active:cursor-grabbing",
+        "inline-flex touch-none cursor-grab items-center justify-center rounded-full border border-border bg-secondary px-4 py-2 text-center text-base font-medium shadow-sm active:cursor-grabbing",
         isDragging && "opacity-50",
       )}
       {...listeners}
@@ -253,12 +255,74 @@ function WordBankDropZone({ children }: { children: ReactNode }) {
     <div
       ref={setNodeRef}
       className={cn(
-        "flex min-h-[72px] flex-wrap gap-2 rounded-lg border p-3 transition-colors",
+        "flex min-h-[72px] flex-wrap gap-3 rounded-lg border p-3 transition-colors",
         isOver ? "border-primary bg-primary/5" : "border-border bg-muted/30",
       )}
     >
       {children}
     </div>
+  );
+}
+
+type ImageLabelReviewState = "correct" | "incorrect" | "missed";
+
+function resolveImageLabelReviewState(
+  imageId: string,
+  assignedWordId: string | null,
+  pairStyle: boolean,
+): ImageLabelReviewState {
+  if (!assignedWordId) return "missed";
+  if (pairStyle && assignedWordId === imageId) return "correct";
+  return "incorrect";
+}
+
+function imageLabelReviewContainerClass(state: ImageLabelReviewState): string {
+  switch (state) {
+    case "correct":
+      return "border-transparent bg-emerald-50/30 ring-4 ring-emerald-500 dark:bg-emerald-950/20";
+    case "incorrect":
+      return "border-transparent bg-red-50/30 ring-4 ring-destructive dark:bg-red-950/20";
+    case "missed":
+      return "border-4 border-dashed border-destructive/50 bg-muted/30 ring-0";
+  }
+}
+
+function ImageLabelReviewBadge({ state }: { state: ImageLabelReviewState }) {
+  const { t } = useLanguage();
+
+  if (state === "correct") {
+    return (
+      <Badge
+        className="absolute top-2 right-2 z-20 gap-1 border-emerald-600/30 bg-emerald-500/95 px-2 py-0.5 text-emerald-50 shadow-md hover:bg-emerald-500/95"
+        aria-hidden
+      >
+        <Check className="size-3.5 shrink-0" strokeWidth={2.5} />
+        {t("quizResult.correct")}
+      </Badge>
+    );
+  }
+
+  if (state === "incorrect") {
+    return (
+      <Badge
+        variant="destructive"
+        className="absolute top-2 right-2 z-20 gap-1 px-2 py-0.5 shadow-md"
+        aria-hidden
+      >
+        <X className="size-3.5 shrink-0" strokeWidth={2.5} />
+        {t("quizResult.incorrect")}
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge
+      variant="outline"
+      className="absolute top-2 right-2 z-20 border-destructive/50 bg-destructive/10 px-2 py-0.5 text-destructive shadow-md"
+      aria-hidden
+    >
+      {t("quizResult.missed")}
+    </Badge>
   );
 }
 
@@ -271,6 +335,7 @@ function ImageLabelingReviewView({
   words: ImageLabelingWord[];
   assignments: Record<string, string | null>;
 }) {
+  const { t } = useLanguage();
   const wordById = new Map(words.map((w) => [w.id, w]));
   const pairStyle = isPairStyleLabeling(images, words);
 
@@ -281,41 +346,47 @@ function ImageLabelingReviewView({
           const assignedWordId = assignments[img.id] ?? null;
           const assignedText = assignedWordId
             ? (wordById.get(assignedWordId)?.text ?? "—")
-            : "—";
-          const isCorrect = pairStyle && assignedWordId === img.id;
+            : t("quizResult.puzzleNoAnswer");
+          const reviewState = resolveImageLabelReviewState(
+            img.id,
+            assignedWordId,
+            pairStyle,
+          );
+          const isCorrect = reviewState === "correct";
           const correctText = wordById.get(img.id)?.text ?? "—";
 
           return (
-            <li key={img.id} className="rounded-xl border border-border bg-card p-3">
-              <div className="flex items-center justify-between gap-2 pb-2">
-                <p className="line-clamp-1 text-sm font-medium">
-                  {img.title || "Изображение"}
-                </p>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    isCorrect
-                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      : "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300",
-                  )}
-                >
-                  {isCorrect ? "Верно" : "Ошибка"}
-                </Badge>
+            <li
+              key={img.id}
+              className={cn(
+                "overflow-hidden rounded-xl border bg-card p-3",
+                imageLabelReviewContainerClass(reviewState),
+              )}
+            >
+              <p className="mb-2 line-clamp-1 text-sm font-medium">
+                {img.title || "Изображение"}
+              </p>
+              <div className="relative overflow-hidden rounded-md">
+                <ImageLabelReviewBadge state={reviewState} />
+                <div className="aspect-square w-full overflow-hidden bg-slate-50 dark:bg-slate-900/50">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.url}
+                    alt={img.title ?? ""}
+                    className="size-full object-contain"
+                    draggable={false}
+                  />
+                </div>
               </div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={img.url}
-                alt={img.title ?? ""}
-                className="mx-auto max-h-80 w-full rounded-lg border border-border bg-muted/20 object-contain"
-                draggable={false}
-              />
-              <div className="mt-3 text-sm">
+              <div className="mt-3 space-y-1 text-sm">
                 <p>
-                  Ваш ответ: <span className="font-medium">{assignedText}</span>
+                  {t("quizResult.yourAnswer")}:{" "}
+                  <span className="font-medium">{assignedText}</span>
                 </p>
                 {!isCorrect ? (
                   <p className="text-muted-foreground">
-                    Правильно: <span className="font-medium">{correctText}</span>
+                    {t("quizResult.puzzleCorrectAnswer")}:{" "}
+                    <span className="font-medium text-foreground">{correctText}</span>
                   </p>
                 ) : null}
               </div>
@@ -338,6 +409,7 @@ function ImageLabelingPlayView({
   assignments: Record<string, string | null>;
   onAssignmentsChange: (next: Record<string, string | null>) => void;
 }) {
+  const dndId = useId();
   const wordById = new Map(words.map((w) => [w.id, w]));
   const assignedIds = new Set(
     Object.values(assignments).filter(
@@ -376,6 +448,7 @@ function ImageLabelingPlayView({
 
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={rectIntersection}
       onDragEnd={handleDragEnd}
