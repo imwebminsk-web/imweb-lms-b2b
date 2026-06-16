@@ -30,6 +30,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { toast } from "sonner";
 
 import {
   ImageLabelingQuestion,
@@ -187,6 +188,10 @@ export function QuizPlayer({
     useState<Map<string, Record<string, Record<string, string>>> | null>(null);
   const [reviewOrderingAssignmentsByQuestionId, setReviewOrderingAssignmentsByQuestionId] =
     useState<Map<string, Record<string, string[]>> | null>(null);
+  const [cheatWarnings, setCheatWarnings] = useState(0);
+
+  const cheatWarningsRef = useRef(0);
+  const handleSubmitQuizRef = useRef<() => void>(() => {});
 
   draftsRef.current = draftsByQuestionId;
   submittedRef.current = submittedQuestionIds;
@@ -336,6 +341,55 @@ export function QuizPlayer({
     finalizeQuiz();
   }, [finalizeQuiz, finished, isPending]);
 
+  handleSubmitQuizRef.current = handleSubmitQuiz;
+
+  useEffect(() => {
+    if (finished) return;
+
+    const preventClipboardAndContextMenu = (event: Event) => {
+      event.preventDefault();
+    };
+
+    window.addEventListener("contextmenu", preventClipboardAndContextMenu);
+    window.addEventListener("copy", preventClipboardAndContextMenu);
+    window.addEventListener("paste", preventClipboardAndContextMenu);
+
+    return () => {
+      window.removeEventListener("contextmenu", preventClipboardAndContextMenu);
+      window.removeEventListener("copy", preventClipboardAndContextMenu);
+      window.removeEventListener("paste", preventClipboardAndContextMenu);
+    };
+  }, [finished]);
+
+  useEffect(() => {
+    if (finished) return;
+
+    function handleTabHidden() {
+      if (!document.hidden) return;
+      if (finishingRef.current) return;
+
+      const next = cheatWarningsRef.current + 1;
+      cheatWarningsRef.current = next;
+      setCheatWarnings(next);
+
+      if (next === 1) {
+        toast.warning(t("quiz.cheatWarningFirst"), { duration: 8000 });
+        return;
+      }
+
+      if (next >= 2) {
+        toast.error(t("quiz.cheatAutoSubmit"), { duration: 10000 });
+        handleSubmitQuizRef.current();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleTabHidden);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleTabHidden);
+    };
+  }, [finished, t]);
+
   function goToTask(index: number) {
     if (index < 0 || index >= total || index === currentIndex) return;
     setCurrentIndex(index);
@@ -440,7 +494,14 @@ export function QuizPlayer({
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div
+      className={cn(
+        "flex flex-col gap-8 select-none",
+        "[&_input]:cursor-text [&_input]:select-text",
+        "[&_textarea]:cursor-text [&_textarea]:select-text",
+      )}
+      data-cheat-warnings={cheatWarnings > 0 ? cheatWarnings : undefined}
+    >
       <QuizTimer
         timeLimitMinutes={timeLimitMinutes}
         onExpire={handleSubmitQuiz}

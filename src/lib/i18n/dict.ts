@@ -49,6 +49,10 @@ export const dict = {
       taskNav: "Навигация по заданиям",
       noQuestions: "В этом тесте пока нет вопросов.",
       answerSentAria: ", ответ отправлен",
+      cheatWarningFirst:
+        "Вы покинули вкладку с тестом. Это запрещено. При следующем нарушении тест будет автоматически отправлен.",
+      cheatAutoSubmit:
+        "Тест принудительно завершён из-за повторного нарушения правил прохождения.",
     },
     settings: {
       pageTitle: "Настройки профиля",
@@ -212,6 +216,10 @@ export const dict = {
       taskNav: "Task navigation",
       noQuestions: "This test has no questions yet.",
       answerSentAria: ", answer submitted",
+      cheatWarningFirst:
+        "You left the test tab. This is not allowed. The test will be auto-submitted on the next violation.",
+      cheatAutoSubmit:
+        "The test was forcibly submitted due to a repeated rule violation.",
     },
     settings: {
       pageTitle: "Profile Settings",
