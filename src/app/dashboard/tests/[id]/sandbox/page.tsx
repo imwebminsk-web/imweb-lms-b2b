@@ -3,8 +3,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import {
-  getOrCreateAttempt,
   getTestWithQuestions,
+  resetAndCreatePreviewAttempt,
 } from "@/app/actions/test-actions";
 import { QuizPlayer } from "@/components/quiz/QuizPlayer";
 import { buttonVariants } from "@/components/ui/button";
@@ -63,7 +63,10 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
     redirect("/dashboard");
   }
 
-  const testRes = await getTestWithQuestions(id);
+  const [testRes, attempt] = await Promise.all([
+    getTestWithQuestions(id),
+    resetAndCreatePreviewAttempt(id),
+  ]);
 
   if (!testRes.success) {
     if (testRes.kind === "not_found") {
@@ -93,7 +96,6 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
   }
 
   const { data } = testRes;
-  const attempt = await getOrCreateAttempt(id);
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6">
@@ -129,6 +131,7 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
         </Card>
       ) : (
         <QuizPlayer
+          isSandbox
           attemptId={attempt.attemptId}
           testTitle={data.title}
           testDescription={data.description}

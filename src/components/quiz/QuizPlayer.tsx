@@ -16,6 +16,7 @@ import {
   type ReviewAnswerRow,
 } from "@/lib/learn/build-review-maps";
 import { parseTaskPresentation } from "@/lib/utils/task-content";
+import type { ReviewMaps } from "@/lib/learn/build-review-maps";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -152,6 +153,8 @@ export type QuizPlayerProps = {
   isForKids?: boolean;
   /** Лимит времени в минутах; 0 — без ограничения. */
   timeLimitMinutes?: number;
+  /** Песочница преподавателя: отключает античит, попытка в БД с is_training_mode. */
+  isSandbox?: boolean;
 };
 
 export function QuizPlayer({
@@ -161,6 +164,7 @@ export function QuizPlayer({
   questions,
   isForKids = false,
   timeLimitMinutes = 0,
+  isSandbox = false,
 }: QuizPlayerProps) {
   const { t } = useLanguage();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -204,6 +208,22 @@ export function QuizPlayer({
 
   const cheatWarningsRef = useRef(0);
   const handleSubmitQuizRef = useRef<() => void>(() => {});
+
+  const applyReviewMaps = useCallback((built: ReviewMaps) => {
+    setReviewAnswersByQuestionId(built.reviewAnswersByQuestionId);
+    setReviewFillByQuestionId(built.reviewFillByQuestionId);
+    setReviewRowsByQuestionId(built.reviewRowsByQuestionId);
+    setReviewCorrectIdsByQuestionId(built.reviewCorrectIdsByQuestionId);
+    setReviewGroupedSelectionsByQuestionId(built.reviewGroupedSelectionsByQuestionId);
+    setReviewGroupedCorrectByQuestionId(built.reviewGroupedCorrectByQuestionId);
+    setReviewGroupedFillTypingByQuestionId(built.reviewGroupedFillTypingByQuestionId);
+    setReviewGroupedFillAssignmentsByQuestionId(
+      built.reviewGroupedFillAssignmentsByQuestionId,
+    );
+    setReviewOrderingAssignmentsByQuestionId(
+      built.reviewOrderingAssignmentsByQuestionId,
+    );
+  }, []);
 
   draftsRef.current = draftsByQuestionId;
   submittedRef.current = submittedQuestionIds;
@@ -367,7 +387,7 @@ export function QuizPlayer({
   handleSubmitQuizRef.current = handleSubmitQuiz;
 
   useEffect(() => {
-    if (finished) return;
+    if (finished || isSandbox) return;
 
     const preventClipboardAndContextMenu = (event: Event) => {
       event.preventDefault();
@@ -382,10 +402,10 @@ export function QuizPlayer({
       window.removeEventListener("copy", preventClipboardAndContextMenu);
       window.removeEventListener("paste", preventClipboardAndContextMenu);
     };
-  }, [finished]);
+  }, [finished, isSandbox]);
 
   useEffect(() => {
-    if (finished) return;
+    if (finished || isSandbox) return;
 
     function handleTabHidden() {
       if (!document.hidden) return;
@@ -411,7 +431,7 @@ export function QuizPlayer({
     return () => {
       document.removeEventListener("visibilitychange", handleTabHidden);
     };
-  }, [finished, t]);
+  }, [finished, isSandbox, t]);
 
   function goToTask(index: number) {
     if (index < 0 || index >= total || index === currentIndex) return;
@@ -445,31 +465,13 @@ export function QuizPlayer({
         res.data.groupedCorrectByQuestionId,
       );
       if (!cancelled) {
-        setReviewAnswersByQuestionId(built.reviewAnswersByQuestionId);
-        setReviewFillByQuestionId(built.reviewFillByQuestionId);
-        setReviewRowsByQuestionId(built.reviewRowsByQuestionId);
-        setReviewCorrectIdsByQuestionId(built.reviewCorrectIdsByQuestionId);
-        setReviewGroupedSelectionsByQuestionId(
-          built.reviewGroupedSelectionsByQuestionId,
-        );
-        setReviewGroupedCorrectByQuestionId(
-          built.reviewGroupedCorrectByQuestionId,
-        );
-        setReviewGroupedFillTypingByQuestionId(
-          built.reviewGroupedFillTypingByQuestionId,
-        );
-        setReviewGroupedFillAssignmentsByQuestionId(
-          built.reviewGroupedFillAssignmentsByQuestionId,
-        );
-        setReviewOrderingAssignmentsByQuestionId(
-          built.reviewOrderingAssignmentsByQuestionId,
-        );
+        applyReviewMaps(built);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [finished, attemptId, questions]);
+  }, [applyReviewMaps, finished, attemptId, questions]);
 
   if (total === 0) {
     return (
@@ -504,12 +506,19 @@ export function QuizPlayer({
   return (
     <div
       className={cn(
-        "flex flex-col gap-8 select-none",
+        "flex flex-col gap-8",
+        !isSandbox && "select-none",
         "[&_input]:cursor-text [&_input]:select-text",
         "[&_textarea]:cursor-text [&_textarea]:select-text",
       )}
       data-cheat-warnings={cheatWarnings > 0 ? cheatWarnings : undefined}
     >
+      {isSandbox ? (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+          Режим песочницы — реальная попытка в базе данных. При повторном открытии
+          страницы предыдущая попытка будет удалена.
+        </p>
+      ) : null}
       <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 -mx-6 mb-4 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur sm:-mx-0 sm:rounded-lg sm:border">
         {timeLimitMinutes > 0 ? (
           <QuizTimer

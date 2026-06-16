@@ -1062,6 +1062,107 @@ export async function getOrCreateAttempt(
   };
 }
 
+/**
+ * Песочница преподавателя: удаляет все предыдущие попытки текущего пользователя
+ * по этому тесту (каскадом уходят `attempt_answers`) и создаёт новую тренировочную.
+ */
+export async function resetAndCreatePreviewAttempt(
+  testId: string,
+): Promise<
+  | { success: true; attemptId: string }
+  | { success: false; error: string; needAuth?: boolean }
+> {
+  const idResult = testIdSchema.safeParse(testId);
+  if (!idResult.success) {
+    const msg = idResult.error.issues[0]?.message ?? "Некорректный ID теста";
+    return { success: false, error: msg };
+  }
+
+  const forbiddenMessage =
+    "Доступ запрещён. Песочницу могут открывать только преподаватели или администраторы.";
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      success: false,
+      error: "Войдите, чтобы открыть песочницу",
+      needAuth: true,
+    };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  if (profile.role !== "admin" && profile.role !== "teacher") {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  const tid = idResult.data;
+
+  const { data: testRow, error: testError } = await supabase
+    .from("tests")
+    .select("id, user_id")
+    .eq("id", tid)
+    .maybeSingle();
+
+  if (testError) {
+    return { success: false, error: testError.message };
+  }
+
+  if (!testRow) {
+    return { success: false, error: "Тест не найден" };
+  }
+
+  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("student_attempts")
+    .delete()
+    .eq("student_id", user.id)
+    .eq("test_id", tid);
+
+  if (deleteError) {
+    return {
+      success: false,
+      error: deleteError.message ?? "Не удалось сбросить предыдущую попытку",
+    };
+  }
+
+  const { data: row, error: insertError } = await supabase
+    .from("student_attempts")
+    .insert({
+      student_id: user.id,
+      test_id: tid,
+      status: "in_progress",
+      started_at: new Date().toISOString(),
+      is_training_mode: true,
+    })
+    .select("id")
+    .single();
+
+  if (!insertError && row) {
+    return { success: true, attemptId: row.id };
+  }
+
+  return {
+    success: false,
+    error: insertError?.message ?? "Не удалось начать попытку в песочнице",
+  };
+}
+
 /** @deprecated Используйте `getOrCreateAttempt` */
 export const getOrCreateInProgressAttempt = getOrCreateAttempt;
 

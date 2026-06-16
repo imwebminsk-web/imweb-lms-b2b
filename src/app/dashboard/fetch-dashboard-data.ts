@@ -106,6 +106,7 @@ async function fetchTeacherMetrics(
     .from("student_attempts")
     .select("id, tests!inner(user_id)", { count: "exact", head: true })
     .eq("status", "pending_review")
+    .eq("is_training_mode", false)
     .eq("tests.user_id", userId);
 
   if (courseIds.length === 0) {
@@ -397,6 +398,7 @@ async function getPendingTestReviewsForTeacher(
     `,
     )
     .eq("status", "pending_review")
+    .eq("is_training_mode", false)
     .eq("tests.user_id", userId)
     .order("completed_at", { ascending: false, nullsFirst: false })
     .limit(limit);

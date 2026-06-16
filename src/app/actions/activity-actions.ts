@@ -185,9 +185,10 @@ export async function getRecentActivity(
           .select("id, completed_at, student_id, test_id, tests(title)")
           .in("test_id", testIds)
           .eq("status", "completed")
+          .eq("is_training_mode", false)
           .not("completed_at", "is", null)
           .order("completed_at", { ascending: false })
-          .limit(limit)
+          .limit(limit * 2)
       : Promise.resolve({ data: [], error: null }),
     supabase
       .from("assignment_submissions")
@@ -221,6 +222,27 @@ export async function getRecentActivity(
     console.error("[getRecentActivity] submissions", submissionsError.message);
   }
 
+  const attemptStudentIds = [
+    ...new Set((attemptRows ?? []).map((row) => row.student_id)),
+  ];
+  const studentRoleIds = new Set<string>();
+
+  if (attemptStudentIds.length > 0) {
+    const { data: roleRows, error: rolesError } = await supabase
+      .from("profiles")
+      .select("id")
+      .in("id", attemptStudentIds)
+      .eq("role", "student");
+
+    if (rolesError) {
+      console.error("[getRecentActivity] attempt profile roles", rolesError.message);
+    } else {
+      for (const row of roleRows ?? []) {
+        studentRoleIds.add(row.id);
+      }
+    }
+  }
+
   const rawEvents: RawActivityEvent[] = [];
 
   for (const row of enrollmentRows ?? []) {
@@ -237,6 +259,10 @@ export async function getRecentActivity(
   }
 
   for (const row of attemptRows ?? []) {
+    if (!studentRoleIds.has(row.student_id)) {
+      continue;
+    }
+
     const testsRel = row.tests as { title?: string } | { title?: string }[] | null;
     const testTitle = Array.isArray(testsRel)
       ? testsRel[0]?.title

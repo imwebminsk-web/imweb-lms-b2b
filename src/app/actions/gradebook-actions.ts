@@ -864,7 +864,8 @@ export async function getMatrixGradebookData(
       .from("student_attempts")
       .select("id, student_id, test_id, score, status, completed_at")
       .in("student_id", studentIds)
-      .in("test_id", testIds);
+      .in("test_id", testIds)
+      .eq("is_training_mode", false);
 
     if (attemptsErr) {
       return { success: false, error: attemptsErr.message };
