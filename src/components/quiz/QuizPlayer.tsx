@@ -265,7 +265,10 @@ export function QuizPlayer({
 
   const taskPresentation = useMemo(() => {
     if (!current) return null;
-    return parseTaskPresentation(current.content);
+    return parseTaskPresentation(
+      current.content,
+      current.media_play_limit ?? 0,
+    );
   }, [current]);
 
   const groupedFillBlanksView = useMemo(() => {

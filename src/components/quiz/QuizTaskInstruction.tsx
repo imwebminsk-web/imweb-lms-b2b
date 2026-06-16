@@ -37,7 +37,11 @@ export function QuizTaskInstruction({
   return (
     <div className={cn("space-y-3", className)}>
       {hasInstruction ? (
-        <TaskMediaRenderer html={instructionHtml} className={instructionClass} />
+        <TaskMediaRenderer
+          html={instructionHtml}
+          className={instructionClass}
+          mediaPlayLimit={task.mediaPlayLimit}
+        />
       ) : null}
 
       {hasExample ? (

@@ -134,7 +134,7 @@ export async function getBestTestAttemptDetails(
   const { data: questionsRaw, error: questionsError } = await supabase
     .from("questions")
     .select(
-      "id, type, order_index, content, created_at, points, options ( id, content, order_index, is_correct )",
+      "id, type, order_index, content, created_at, points, media_play_limit, options ( id, content, order_index, is_correct )",
     )
     .eq("test_id", tid.data)
     .order("order_index", { ascending: true });
@@ -373,6 +373,7 @@ export async function getBestTestAttemptDetails(
       order_index: q.order_index,
       type: q.type,
       created_at: q.created_at ?? null,
+      media_play_limit: q.media_play_limit ?? 0,
       options: optionsSorted.map((o) => ({
         id: o.id,
         content: o.content,

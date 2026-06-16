@@ -336,7 +336,7 @@ export type SafeTestOption = Pick<
 
 export type SafeTestQuestion = Pick<
   Tables<"questions">,
-  "id" | "content" | "order_index" | "type" | "created_at"
+  "id" | "content" | "order_index" | "type" | "created_at" | "media_play_limit"
 > & {
   options: SafeTestOption[];
 };
@@ -806,6 +806,7 @@ export async function getTestWithQuestions(
         order_index,
         type,
         created_at,
+        media_play_limit,
         options ( id, content, order_index )
       )
     `,
@@ -840,6 +841,7 @@ export async function getTestWithQuestions(
         order_index: q.order_index,
         type: q.type,
         created_at: q.created_at,
+        media_play_limit: q.media_play_limit ?? 0,
         options: [...opts].sort((a, b) => a.order_index - b.order_index),
       };
     });
@@ -900,6 +902,7 @@ export async function getSafeTestForClient(
         order_index,
         type,
         created_at,
+        media_play_limit,
         options ( id, content, order_index, is_correct )
       )
     `,
@@ -932,6 +935,7 @@ export async function getSafeTestForClient(
       order_index: q.order_index,
       type: q.type,
       created_at: q.created_at,
+      media_play_limit: q.media_play_limit ?? 0,
       options: [...(q.options ?? [])]
         .sort((a, b) => a.order_index - b.order_index)
         .map((o) => ({
@@ -2519,6 +2523,7 @@ function mapDbQuestionRowToQuestionField(row: {
   content: Json;
   type: string | null;
   points?: number | null;
+  media_play_limit?: number | null;
   options?: {
     id: string;
     content: Json;
@@ -2529,6 +2534,7 @@ function mapDbQuestionRowToQuestionField(row: {
   const points = resolveQuestionPoints(row.points);
   const exampleText = extractExampleTextFromContent(row.content);
   const instructionText = extractInstructionTextFromContent(row.content);
+  const mediaPlayLimit = Math.max(0, row.media_play_limit ?? 0);
   const rawType = row.type ?? "single_choice";
   const type =
     rawType === "multiple" ? ("multiple_choice" as const) : rawType;
@@ -2558,6 +2564,7 @@ function mapDbQuestionRowToQuestionField(row: {
         type,
         points: sumGroupedFillBlanksPoints(groupedParsed.data.items),
         exampleText,
+        mediaPlayLimit,
         items: groupedParsed.data.items.map((item) => {
           const normalizedText = normalizeGroupedFillBlanksItemText(item);
           const extraWords =
@@ -2602,6 +2609,7 @@ function mapDbQuestionRowToQuestionField(row: {
         type,
         points,
         exampleText,
+        mediaPlayLimit,
         items: [
           {
             id: newGroupedFillBlanksId(),
@@ -2626,6 +2634,7 @@ function mapDbQuestionRowToQuestionField(row: {
       type,
       points,
       exampleText,
+      mediaPlayLimit,
       items: [
         {
           id: LEGACY_GROUPED_FILL_ITEM_ID,
@@ -2650,6 +2659,7 @@ function mapDbQuestionRowToQuestionField(row: {
       type: puzzleType,
       points,
       exampleText,
+      mediaPlayLimit,
       options: opts.map((o) => {
         const c = o.content as { left?: unknown; right?: unknown };
         return {
@@ -2666,6 +2676,7 @@ function mapDbQuestionRowToQuestionField(row: {
       type: "image_labeling",
       points,
       exampleText,
+      mediaPlayLimit,
       labelingPairs: opts.map((o) => {
         const c = o.content as {
           imageUrl?: unknown;
@@ -2690,6 +2701,7 @@ function mapDbQuestionRowToQuestionField(row: {
         type: "ordering",
         points: sumOrderingItemPoints(groupedParsed.data.items),
         exampleText,
+        mediaPlayLimit,
         items: groupedParsed.data.items.map((item) => ({
           id: item.id,
           text: item.text ?? "",
@@ -2718,6 +2730,7 @@ function mapDbQuestionRowToQuestionField(row: {
       type: "ordering",
       points: 1,
       exampleText,
+      mediaPlayLimit,
       items: [defaultItem],
     };
   }
@@ -2737,6 +2750,7 @@ function mapDbQuestionRowToQuestionField(row: {
       type: qType,
       points: sumGroupedItemPoints(groupedParsed.data.items),
       exampleText,
+      mediaPlayLimit,
       items: groupedParsed.data.items.map((item) => ({
         id: item.id,
         text: item.text,
@@ -2775,6 +2789,7 @@ function mapDbQuestionRowToQuestionField(row: {
     type: qType,
     points,
     exampleText,
+    mediaPlayLimit,
     items: [
       {
         id: LEGACY_GROUPED_ITEM_ID,
@@ -2844,6 +2859,7 @@ async function insertQuestionsAndOptionsForTest(
     order_index: i,
     type: q.type,
     points: resolveQuestionPoints(q.points),
+    media_play_limit: Math.max(0, q.media_play_limit ?? 0),
   }));
 
   const { data: insertedQuestions, error: qInsErr } = await client
@@ -2977,6 +2993,7 @@ function buildQuestionSignature(questions: {
   type: string | null;
   content: Json;
   points?: number | null;
+  media_play_limit?: number | null;
   options: { order_index: number; content: Json; is_correct: boolean | null }[];
 }[]): string[] {
   return questions.map((question) => {
@@ -2986,7 +3003,7 @@ function buildQuestionSignature(questions: {
         content: option.content,
         is_correct: Boolean(option.is_correct),
       }));
-    return `${normalizeQuestionTypeForCompare(question.type)}|points:${resolveQuestionPoints(question.points)}|${stableStringify(question.content)}|${stableStringify(optionsSignature)}`;
+    return `${normalizeQuestionTypeForCompare(question.type)}|points:${resolveQuestionPoints(question.points)}|media:${Math.max(0, question.media_play_limit ?? 0)}|${stableStringify(question.content)}|${stableStringify(optionsSignature)}`;
   });
 }
 
@@ -3063,6 +3080,7 @@ export async function getTestDraftForEdit(
         order_index,
         type,
         points,
+        media_play_limit,
         options ( id, content, order_index, is_correct )
       )
     `,
@@ -3171,6 +3189,7 @@ export async function updateFullTest(
         content,
         order_index,
         points,
+        media_play_limit,
         options ( content, is_correct, order_index )
       )
     `,
@@ -3201,6 +3220,7 @@ export async function updateFullTest(
       type: question.type,
       content: question.content,
       points: question.points,
+      media_play_limit: question.media_play_limit,
       options: (question.options ?? []).map((option) => ({
         order_index: option.order_index,
         content: option.content,
@@ -3211,6 +3231,7 @@ export async function updateFullTest(
     type: question.type,
     content: question.content as Json,
     points: resolveQuestionPoints(question.points),
+    media_play_limit: Math.max(0, question.media_play_limit ?? 0),
     options: question.options.map((option, index) => ({
       order_index: index,
       content: option.content as Json,

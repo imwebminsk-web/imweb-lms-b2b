@@ -129,6 +129,7 @@ function defaultImageLabelingQuestion(): Extract<
     type: "image_labeling",
     points: 1,
     exampleText: "",
+    mediaPlayLimit: 0,
     labelingPairs: [{ url: "", correctWord: "", title: "" }],
   };
 }
@@ -152,6 +153,7 @@ function defaultGroupedFillBlanksQuestion(
     type,
     points: item.points,
     exampleText: "",
+    mediaPlayLimit: 0,
     items: [item],
   };
 }
@@ -166,6 +168,7 @@ function defaultOrderingQuestion(): Extract<
     type: "ordering",
     points: item.points,
     exampleText: "",
+    mediaPlayLimit: 0,
     items: [item],
   };
 }
@@ -179,6 +182,7 @@ function defaultChoiceQuestion(
     type,
     points: item.points,
     exampleText: "",
+    mediaPlayLimit: 0,
     items: [item],
   };
 }
@@ -220,6 +224,15 @@ function sumOrderingTaskPoints(
 function parsePositiveInt(value: string, fallback: number): number {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseNonNegativeInt(value: string, fallback: number): number {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function resolveMediaPlayLimitField(q: QuestionField): number {
+  return parseNonNegativeInt(String(q.mediaPlayLimit ?? 0), 0);
 }
 
 function taskMediaFromQuestion(q: QuestionField) {
@@ -885,6 +898,7 @@ export function CreateTestForm({
             }),
             type: q.type,
             points,
+            media_play_limit: resolveMediaPlayLimitField(q),
             options: q.options.map((o) => ({
               content: {
                 left: o.left.trim(),
@@ -902,6 +916,7 @@ export function CreateTestForm({
             }),
             type: "image_labeling" as const,
             points,
+            media_play_limit: resolveMediaPlayLimitField(q),
             options: q.labelingPairs.map((p) => ({
               content: {
                 imageUrl: p.url.trim(),
@@ -937,6 +952,7 @@ export function CreateTestForm({
             },
             type: q.type,
             points: taskPoints,
+            media_play_limit: resolveMediaPlayLimitField(q),
             options: [],
           };
         }
@@ -964,6 +980,7 @@ export function CreateTestForm({
             },
             type: q.type,
             points: taskPoints,
+            media_play_limit: resolveMediaPlayLimitField(q),
             options: [],
           };
         }
@@ -987,6 +1004,7 @@ export function CreateTestForm({
             },
             type: "ordering" as const,
             points: taskPoints,
+            media_play_limit: resolveMediaPlayLimitField(q),
             options: [],
           };
         }
@@ -1328,6 +1346,29 @@ export function CreateTestForm({
               />
               <p className="text-muted-foreground text-xs">
                 Заголовки, списки, изображения и аудио сохраняются как HTML для ученика.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`q-media-limit-${qi}`}>
+                Лимит прослушиваний (0 = безлимит)
+              </Label>
+              <Input
+                id={`q-media-limit-${qi}`}
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                className="max-w-xs"
+                value={q.mediaPlayLimit ?? 0}
+                onChange={(e) =>
+                  updateQuestion(qi, {
+                    mediaPlayLimit: parseNonNegativeInt(e.target.value, 0),
+                  })
+                }
+              />
+              <p className="text-muted-foreground text-xs">
+                Внимание: лимит работает только для загруженных аудио и видео. На
+                ссылки YouTube (iframe) ограничение не действует.
               </p>
             </div>
             <div className="space-y-2">

@@ -53,6 +53,8 @@ type QuestionFieldBase = {
   points: number;
   /** Необязательный пример выполнения (хранится в content.example_text). */
   exampleText: string;
+  /** Лимит воспроизведения загруженного audio/video в инструкции (0 = безлимит). */
+  mediaPlayLimit: number;
 };
 
 export type FillInTheBlanksQuestionField = QuestionFieldBase & {

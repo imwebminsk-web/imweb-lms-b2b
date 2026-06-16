@@ -621,7 +621,7 @@ export function QuizResultView({
                     Вопрос {displayIndex + 1}
                   </p>
                   <QuizTaskInstruction
-                    task={parseTaskPresentation(q.content)}
+                    task={parseTaskPresentation(q.content, 0)}
                     fallbackTitle={questionInstructionFallback(q)}
                     variant="section"
                   />

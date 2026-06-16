@@ -9,6 +9,7 @@ const taskContentRootSchema = z.object({
 export type TaskPresentation = {
   instructionHtml: string;
   exampleText: string | null;
+  mediaPlayLimit: number;
 };
 
 /** Переносит legacy `audio_url` в HTML, если URL ещё не в тексте. */
@@ -20,14 +21,17 @@ export function mergeLegacyAudioUrlIntoHtml(text: string, audioUrl: string): str
   return `${text}<p>${tag}</p>`;
 }
 
-export function parseTaskPresentation(content: Json): TaskPresentation {
+export function parseTaskPresentation(
+  content: Json,
+  mediaPlayLimit = 0,
+): TaskPresentation {
   if (!content || typeof content !== "object" || Array.isArray(content)) {
-    return { instructionHtml: "", exampleText: null };
+    return { instructionHtml: "", exampleText: null, mediaPlayLimit };
   }
 
   const parsed = taskContentRootSchema.safeParse(content);
   if (!parsed.success) {
-    return { instructionHtml: "", exampleText: null };
+    return { instructionHtml: "", exampleText: null, mediaPlayLimit };
   }
 
   const legacyAudio =
@@ -45,6 +49,7 @@ export function parseTaskPresentation(content: Json): TaskPresentation {
   return {
     instructionHtml,
     exampleText: exampleRaw ? exampleRaw : null,
+    mediaPlayLimit: Math.max(0, mediaPlayLimit),
   };
 }
 

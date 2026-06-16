@@ -66,6 +66,12 @@ const questionPointsSchema = z.coerce
   .min(1, "Минимум 1 балл за вопрос")
   .default(1);
 
+const questionMediaPlayLimitSchema = z.coerce
+  .number()
+  .int("Лимит прослушиваний — целое число")
+  .min(0, "Лимит не может быть отрицательным")
+  .default(0);
+
 const choiceOptionsOrEmptySchema = z.union([choiceOptionsSchema, emptyOptionsSchema]);
 
 export const adminQuestionSchema = z.discriminatedUnion("type", [
@@ -74,66 +80,77 @@ export const adminQuestionSchema = z.discriminatedUnion("type", [
     type: z.literal("single_choice"),
     points: questionPointsSchema,
     options: choiceOptionsOrEmptySchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: groupedChoiceContentSchema,
     type: z.literal("multiple_choice"),
     points: questionPointsSchema,
     options: choiceOptionsOrEmptySchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: taskInstructionFieldsSchema,
     type: z.literal("matching_puzzle"),
     points: questionPointsSchema,
     options: puzzleOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: taskInstructionFieldsSchema,
     type: z.literal("dnd_puzzle"),
     points: questionPointsSchema,
     options: puzzleOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: taskInstructionFieldsSchema,
     type: z.literal("image_labeling"),
     points: questionPointsSchema,
     options: imageLabelingOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: groupedFillInTheBlanksContentSchema,
     type: z.literal("fill_in_the_blanks"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: groupedFillInTheBlanksContentSchema,
     type: z.literal("fill_in_the_blanks_multi"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: groupedFillBlanksContentSchema,
     type: z.literal("fill_blanks_typing"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: groupedFillBlanksContentSchema,
     type: z.literal("fill_blanks_typing_multi"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: groupedTextInputContentSchema,
     type: z.literal("text_input"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
   z.object({
     content: orderingContentSchema,
     type: z.literal("ordering"),
     points: questionPointsSchema,
     options: emptyOptionsSchema,
+    media_play_limit: questionMediaPlayLimitSchema,
   }),
 ]);
 

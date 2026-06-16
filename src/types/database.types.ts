@@ -610,6 +610,7 @@ export type Database = {
           content: Json
           created_at: string | null
           id: string
+          media_play_limit: number
           order_index: number
           points: number
           test_id: string
@@ -619,6 +620,7 @@ export type Database = {
           content: Json
           created_at?: string | null
           id?: string
+          media_play_limit?: number
           order_index: number
           points?: number
           test_id: string
@@ -628,6 +630,7 @@ export type Database = {
           content?: Json
           created_at?: string | null
           id?: string
+          media_play_limit?: number
           order_index?: number
           points?: number
           test_id?: string
