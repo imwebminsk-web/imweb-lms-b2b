@@ -18,6 +18,16 @@ import {
 import { parseTaskPresentation } from "@/lib/utils/task-content";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Progress } from "@/components/ui/progress";
 import { useLanguage } from "@/components/providers/language-provider";
 import { cn } from "@/lib/utils";
@@ -51,6 +61,7 @@ import { OrderingTaskQuestion } from "./OrderingTaskQuestion";
 import {
   canSubmitQuestionDraft,
   emptyQuestionDraft,
+  isQuizFullyAnswered,
   submitQuestionDraft,
   type QuestionDraft,
 } from "./quiz-player-draft";
@@ -189,6 +200,7 @@ export function QuizPlayer({
   const [reviewOrderingAssignmentsByQuestionId, setReviewOrderingAssignmentsByQuestionId] =
     useState<Map<string, Record<string, string[]>> | null>(null);
   const [cheatWarnings, setCheatWarnings] = useState(0);
+  const [finishDialogOpen, setFinishDialogOpen] = useState(false);
 
   const cheatWarningsRef = useRef(0);
   const handleSubmitQuizRef = useRef<() => void>(() => {});
@@ -301,6 +313,12 @@ export function QuizPlayer({
     ? canSubmitQuestionDraft(current, currentDraft)
     : false;
 
+  const allTasksAnswered = useMemo(
+    () =>
+      isQuizFullyAnswered(questions, draftsByQuestionId, submittedQuestionIds),
+    [questions, draftsByQuestionId, submittedQuestionIds],
+  );
+
   const finalizeQuiz = useCallback(() => {
     if (finishingRef.current || finished) return;
     finishingRef.current = true;
@@ -313,15 +331,10 @@ export function QuizPlayer({
       for (const q of questions) {
         if (submitted.has(q.id)) continue;
         const draft = drafts[q.id] ?? emptyQuestionDraft();
-        if (!canSubmitQuestionDraft(q, draft)) continue;
-
         const sub = await submitQuestionDraft(attemptId, q, draft);
-        if (!sub.success) {
-          setActionError(sub.error);
-          finishingRef.current = false;
-          return;
+        if (sub.success) {
+          setSubmittedQuestionIds((prev) => new Set(prev).add(q.id));
         }
-        setSubmittedQuestionIds((prev) => new Set(prev).add(q.id));
       }
 
       const done = await completeAttempt(attemptId);
@@ -338,8 +351,18 @@ export function QuizPlayer({
 
   const handleSubmitQuiz = useCallback(() => {
     if (isPending || finished || finishingRef.current) return;
+    setFinishDialogOpen(false);
     finalizeQuiz();
   }, [finalizeQuiz, finished, isPending]);
+
+  const handleFinishTestClick = useCallback(() => {
+    if (isPending || finished || finishingRef.current) return;
+    if (allTasksAnswered) {
+      handleSubmitQuiz();
+      return;
+    }
+    setFinishDialogOpen(true);
+  }, [allTasksAnswered, finished, handleSubmitQuiz, isPending]);
 
   handleSubmitQuizRef.current = handleSubmitQuiz;
 
@@ -395,7 +418,7 @@ export function QuizPlayer({
     setCurrentIndex(index);
   }
 
-  function runSubmitThenAdvance() {
+  function runSubmitCurrent() {
     if (!current || !canSubmit || isCurrentSubmitted) return;
 
     setActionError(null);
@@ -407,21 +430,6 @@ export function QuizPlayer({
       }
 
       setSubmittedQuestionIds((prev) => new Set(prev).add(current.id));
-
-      if (!isLast) {
-        setCurrentIndex((i) => i + 1);
-        return;
-      }
-
-      const done = await completeAttempt(attemptId);
-      if (!done.success) {
-        setActionError(done.error);
-        return;
-      }
-
-      finishingRef.current = true;
-      setResult(done.data);
-      setFinished(true);
     });
   }
 
@@ -502,12 +510,31 @@ export function QuizPlayer({
       )}
       data-cheat-warnings={cheatWarnings > 0 ? cheatWarnings : undefined}
     >
-      <QuizTimer
-        timeLimitMinutes={timeLimitMinutes}
-        onExpire={handleSubmitQuiz}
-        disabled={isPending || finished}
-        timeRemainingLabel={t("quiz.timeRemaining")}
-      />
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 -mx-6 mb-4 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur sm:-mx-0 sm:rounded-lg sm:border">
+        {timeLimitMinutes > 0 ? (
+          <QuizTimer
+            timeLimitMinutes={timeLimitMinutes}
+            onExpire={handleSubmitQuiz}
+            disabled={isPending || finished}
+            timeRemainingLabel={t("quiz.timeRemaining")}
+            embedded
+          />
+        ) : (
+          <span className="text-muted-foreground text-sm font-medium">
+            {t("quiz.task")} {currentIndex + 1} {t("quiz.of")} {total}
+          </span>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="border-destructive/40 text-destructive hover:bg-destructive/10 shrink-0"
+          disabled={isPending || finished}
+          onClick={handleFinishTestClick}
+        >
+          {t("quiz.finishTest")}
+        </Button>
+      </div>
 
       <div className="flex w-full flex-col gap-2">
         <div className="flex w-full items-center gap-2 text-sm">
@@ -705,21 +732,54 @@ export function QuizPlayer({
         </p>
       ) : null}
 
-      <Button
-        type="button"
-        size="lg"
-        className="min-h-11 w-full sm:w-auto md:min-h-12"
-        disabled={!canSubmit || isPending || isCurrentSubmitted}
-        onClick={runSubmitThenAdvance}
-      >
-        {isPending
-          ? t("quiz.submitting")
-          : isCurrentSubmitted
-            ? t("quiz.answerAlreadySent")
-            : isLast
-              ? t("quiz.finishTest")
-              : t("quiz.submit")}
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        {!isCurrentSubmitted ? (
+          <Button
+            type="button"
+            size="lg"
+            className="min-h-11 w-full sm:w-auto md:min-h-12"
+            disabled={!canSubmit || isPending}
+            onClick={runSubmitCurrent}
+          >
+            {isPending ? t("quiz.submitting") : t("quiz.submit")}
+          </Button>
+        ) : !isLast ? (
+          <Button
+            type="button"
+            size="lg"
+            variant="secondary"
+            className="min-h-11 w-full sm:w-auto md:min-h-12"
+            disabled={isPending}
+            onClick={() => goToTask(currentIndex + 1)}
+          >
+            {t("quiz.next")}
+          </Button>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            {t("quiz.answerAlreadySent")}
+          </p>
+        )}
+      </div>
+
+      <AlertDialog open={finishDialogOpen} onOpenChange={setFinishDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("quiz.finishIncompleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("quiz.finishIncompleteDescription")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("quiz.finishIncompleteCancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={handleSubmitQuiz}
+            >
+              {t("quiz.finishIncompleteConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

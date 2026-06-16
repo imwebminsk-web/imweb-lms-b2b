@@ -549,6 +549,26 @@ export function resolveGroupedFillBlanksPlayerView(params: {
   };
 }
 
+export function alignGroupedFillAnswersToPlayerItems(
+  answers: Record<string, Record<string, string>>,
+  items: { id: string }[],
+): Record<string, Record<string, string>> {
+  if (items.length === 0) return answers;
+
+  const out: Record<string, Record<string, string>> = { ...answers };
+  const legacy = out[LEGACY_GROUPED_FILL_ITEM_ID];
+
+  if (items.length === 1) {
+    const itemId = items[0]!.id;
+    const current = out[itemId];
+    if (legacy && (!current || Object.keys(current).length === 0)) {
+      out[itemId] = legacy;
+    }
+  }
+
+  return out;
+}
+
 export function parseGroupedFillAssignmentsFromAnswerData(
   data: Json | null,
 ): Record<string, Record<string, string>> | null {

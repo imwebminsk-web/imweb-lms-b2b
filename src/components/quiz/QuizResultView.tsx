@@ -1,6 +1,6 @@
 "use client";
 
-import type { AttemptResult, SafeTestOption, SafeTestQuestion } from "@/app/actions/test-actions";
+import type { AttemptResult, SafeTestQuestion } from "@/app/actions/test-actions";
 import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -10,6 +10,7 @@ import {
   parseLabelPairsFromAnswerData,
 } from "@/lib/quiz-helpers";
 import {
+  alignGroupedFillAnswersToPlayerItems,
   isGroupedFillBlanksFullyCorrect,
   isGroupedFillInTheBlanksFullyCorrect,
   resolveGroupedFillBlanksPlayerView,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/grouped-fill-blanks-utils";
 import {
   isGroupedChoiceContent,
+  LEGACY_GROUPED_ITEM_ID,
   parseGroupedChoiceItems,
   parseGroupedSelectionsFromAnswerData,
   resolveGroupedChoicePlayerView,
@@ -31,6 +33,8 @@ import {
   sumOrderingItemPoints,
 } from "@/lib/ordering-utils";
 import type { Json } from "@/types/database.types";
+import { parseTaskPresentation } from "@/lib/utils/task-content";
+import { plainTextFromRichContent } from "@/lib/utils/rich-text-content";
 import {
   parseManualItemGradesFromAnswerData,
   sumManualItemGrades,
@@ -40,6 +44,7 @@ import type { ReactNode } from "react";
 import { GroupedFillBlanksTaskQuestion } from "./GroupedFillBlanksTaskQuestion";
 import { GroupedChoiceTaskQuestion } from "./GroupedChoiceTaskQuestion";
 import { OrderingTaskQuestion } from "./OrderingTaskQuestion";
+import { QuizTaskInstruction } from "./QuizTaskInstruction";
 import {
   buildAssignmentsFromLabelPairs,
   ImageLabelingQuestion,
@@ -279,6 +284,91 @@ function puzzlePartText(content: Json, side: "left" | "right"): string {
   return "—";
 }
 
+function resolveReviewGroupedFillSaved(
+  rows: { option_id: string; answer_data: Json | null }[],
+  fromMap: Record<string, Record<string, string>> | undefined,
+  parseGrouped: (data: Json | null) => Record<string, Record<string, string>> | null,
+  parseFlat: (data: Json | null) => Record<string, string> | null,
+  itemIds: string[],
+): Record<string, Record<string, string>> {
+  const answerData = pickAnswerDataFromRows(rows);
+  let saved =
+    fromMap && Object.keys(fromMap).length > 0
+      ? fromMap
+      : (parseGrouped(answerData) ?? {});
+
+  if (Object.keys(saved).length === 0) {
+    const flat = parseFlat(answerData);
+    if (flat && itemIds.length === 1) {
+      saved = { [itemIds[0]!]: flat };
+    }
+  }
+
+  return alignGroupedFillAnswersToPlayerItems(saved, itemIds.map((id) => ({ id })));
+}
+
+function resolveReviewChoiceSelections(
+  rows: { option_id: string; answer_data: Json | null }[],
+  fromMap: Record<string, string[]> | undefined,
+  selectedIds: string[],
+): Record<string, string[]> {
+  const parsed = parseGroupedSelectionsBulletproof(pickAnswerDataFromRows(rows));
+  const selections =
+    fromMap && Object.keys(fromMap).length > 0 ? fromMap : (parsed ?? {});
+
+  if (Object.keys(selections).length > 0) return selections;
+  if (selectedIds.length > 0) {
+    return { [LEGACY_GROUPED_ITEM_ID]: selectedIds };
+  }
+  return {};
+}
+
+function resolveReviewChoiceCorrect(
+  correctByItemId: Record<string, string[]>,
+  correctIds: string[],
+): Record<string, string[]> {
+  if (Object.keys(correctByItemId).length > 0) return correctByItemId;
+  if (correctIds.length > 0) {
+    return { [LEGACY_GROUPED_ITEM_ID]: correctIds };
+  }
+  return {};
+}
+
+function questionInstructionFallback(q: SafeTestQuestion): string {
+  if (
+    q.type === "fill_in_the_blanks" ||
+    q.type === "fill_in_the_blanks_multi"
+  ) {
+    return "Заполните пропуски, перетаскивая слова из банка";
+  }
+  if (
+    q.type === "fill_blanks_typing" ||
+    q.type === "fill_blanks_typing_multi"
+  ) {
+    return "Заполните пропуски, вводя слова вручную";
+  }
+  if (q.type === "text_input") {
+    return "Развёрнутый ответ";
+  }
+  if (q.type === "ordering") {
+    const view = resolveOrderingPlayerView({ content: q.content });
+    return view?.taskInstruction ?? "Вопрос";
+  }
+  if (
+    q.type === "single_choice" ||
+    q.type === "multiple_choice" ||
+    q.type === "multiple"
+  ) {
+    const view = resolveGroupedChoicePlayerView({
+      content: q.content,
+      questionType: q.type,
+      legacyOptions: q.options,
+    });
+    return plainTextFromRichContent(view.taskInstruction) || "Вопрос";
+  }
+  return plainTextFromRichContent(textFromContent(q.content)) || "Вопрос";
+}
+
 export type QuizResultViewProps = {
   questions: SafeTestQuestion[];
   result: AttemptResult;
@@ -398,12 +488,13 @@ export function QuizResultView({
       });
       if (!view) return false;
       const fromMap = reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
-      const saved =
-        (fromMap && Object.keys(fromMap).length > 0
-          ? fromMap
-          : parseGroupedFillAssignmentsBulletproof(
-              pickAnswerDataFromRows(rows),
-            )) ?? {};
+      const saved = resolveReviewGroupedFillSaved(
+        rows,
+        fromMap,
+        parseGroupedFillAssignmentsBulletproof,
+        parseFillAssignmentsBulletproof,
+        view.items.map((item) => item.id),
+      );
       return isGroupedFillInTheBlanksFullyCorrect({
         content: q.content,
         questionType: q.type,
@@ -418,10 +509,13 @@ export function QuizResultView({
       });
       if (!view) return false;
       const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-      const saved =
-        (fromMap && Object.keys(fromMap).length > 0
-          ? fromMap
-          : parseGroupedFillTypingBulletproof(pickAnswerDataFromRows(rows))) ?? {};
+      const saved = resolveReviewGroupedFillSaved(
+        rows,
+        fromMap,
+        parseGroupedFillTypingBulletproof,
+        parseFillTypingBulletproof,
+        view.items.map((item) => item.id),
+      );
       return isGroupedFillBlanksFullyCorrect({
         content: q.content,
         questionType: q.type,
@@ -521,10 +615,17 @@ export function QuizResultView({
 
           return (
             <div key={q.id} className="mb-6 space-y-4 rounded-xl border p-6">
-              <div className="flex flex-wrap items-center gap-2">
-                <h4 className="text-foreground text-base font-medium leading-snug">
-                  Вопрос {displayIndex + 1}: {textFromContent(q.content)}
-                </h4>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="text-muted-foreground text-sm font-medium">
+                    Вопрос {displayIndex + 1}
+                  </p>
+                  <QuizTaskInstruction
+                    task={parseTaskPresentation(q.content)}
+                    fallbackTitle={questionInstructionFallback(q)}
+                    variant="section"
+                  />
+                </div>
                 <Badge
                   variant={
                     q.type === "text_input" && !textInputGraded
@@ -610,79 +711,31 @@ export function QuizResultView({
                 q.type === "multiple_choice" ||
                 q.type === "multiple") &&
                 (() => {
-                  if (isGroupedChoiceContent(q.content)) {
-                    const playerView = resolveGroupedChoicePlayerView({
-                      content: q.content,
-                      questionType: q.type,
-                      legacyOptions: q.options,
-                    });
-                    const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
-                    const selections =
-                      (fromMap && Object.keys(fromMap).length > 0
-                        ? fromMap
-                        : parseGroupedSelectionsBulletproof(
-                            pickAnswerDataFromRows(rows),
-                          )) ?? {};
-                    const correctByItemId =
-                      reviewGroupedCorrectByQuestionId?.get(q.id) ?? {};
-                    return (
-                      <GroupedChoiceTaskQuestion
-                        items={playerView.items}
-                        isMultiple={
-                          q.type === "multiple_choice" || q.type === "multiple"
-                        }
-                        selections={selections}
-                        isReviewMode
-                        correctByItemId={correctByItemId}
-                      />
-                    );
-                  }
-
-                  const correctIds = reviewCorrectIdsByQuestionId?.get(q.id) ?? [];
-                  const selectedOptions = selectedIds
-                    .map((id) => q.options.find((o) => o.id === id))
-                    .filter((o): o is SafeTestOption => Boolean(o));
-                  const missedCorrectIds = correctIds.filter(
-                    (id) => !selectedIds.includes(id),
+                  const playerView = resolveGroupedChoicePlayerView({
+                    content: q.content,
+                    questionType: q.type,
+                    legacyOptions: q.options,
+                  });
+                  const fromMap = reviewGroupedSelectionsByQuestionId?.get(q.id);
+                  const selections = resolveReviewChoiceSelections(
+                    rows,
+                    fromMap,
+                    selectedIds,
+                  );
+                  const correctByItemId = resolveReviewChoiceCorrect(
+                    reviewGroupedCorrectByQuestionId?.get(q.id) ?? {},
+                    reviewCorrectIdsByQuestionId?.get(q.id) ?? [],
                   );
                   return (
-                    <div className="flex flex-col gap-2">
-                      {selectedOptions.length > 0 ? (
-                        selectedOptions.map((opt) => {
-                          const isCorrect = correctIds.includes(opt.id);
-                          return (
-                            <div
-                              key={`${q.id}-${opt.id}`}
-                              className="flex items-center gap-2 rounded-md border bg-muted/50 p-2 text-sm"
-                            >
-                              <span>{textFromContent(opt.content)}</span>
-                              <Badge
-                                variant={isCorrect ? "secondary" : "destructive"}
-                                className={
-                                  isCorrect
-                                    ? "border-emerald-600/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                                    : undefined
-                                }
-                              >
-                                {isCorrect ? "Верно" : "Ошибка"}
-                              </Badge>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <p className="text-muted-foreground text-sm">— Нет ответа —</p>
-                      )}
-                      {missedCorrectIds.length > 0 ? (
-                        <p className="text-muted-foreground text-xs">
-                          Правильный ответ:{" "}
-                          {missedCorrectIds
-                            .map((id) => q.options.find((o) => o.id === id))
-                            .filter((o): o is SafeTestOption => Boolean(o))
-                            .map((o) => textFromContent(o.content))
-                            .join(", ")}
-                        </p>
-                      ) : null}
-                    </div>
+                    <GroupedChoiceTaskQuestion
+                      items={playerView.items}
+                      isMultiple={
+                        q.type === "multiple_choice" || q.type === "multiple"
+                      }
+                      selections={selections}
+                      isReviewMode
+                      correctByItemId={correctByItemId}
+                    />
                   );
                 })()}
 
@@ -751,12 +804,13 @@ export function QuizResultView({
                   }
                   const fromMap =
                     reviewGroupedFillAssignmentsByQuestionId?.get(q.id);
-                  const saved =
-                    (fromMap && Object.keys(fromMap).length > 0
-                      ? fromMap
-                      : parseGroupedFillAssignmentsBulletproof(
-                          pickAnswerDataFromRows(rows),
-                        )) ?? {};
+                  const saved = resolveReviewGroupedFillSaved(
+                    rows,
+                    fromMap,
+                    parseGroupedFillAssignmentsBulletproof,
+                    parseFillAssignmentsBulletproof,
+                    view.items.map((item) => item.id),
+                  );
                   return (
                     <GroupedFillBlanksTaskQuestion
                       items={view.items}
@@ -782,12 +836,13 @@ export function QuizResultView({
                     );
                   }
                   const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-                  const saved =
-                    (fromMap && Object.keys(fromMap).length > 0
-                      ? fromMap
-                      : parseGroupedFillTypingBulletproof(
-                          pickAnswerDataFromRows(rows),
-                        )) ?? {};
+                  const saved = resolveReviewGroupedFillSaved(
+                    rows,
+                    fromMap,
+                    parseGroupedFillTypingBulletproof,
+                    parseFillTypingBulletproof,
+                    view.items.map((item) => item.id),
+                  );
                   return (
                     <GroupedFillBlanksTaskQuestion
                       items={view.items}
@@ -812,12 +867,13 @@ export function QuizResultView({
                     );
                   }
                   const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-                  const saved =
-                    (fromMap && Object.keys(fromMap).length > 0
-                      ? fromMap
-                      : parseGroupedFillTypingBulletproof(
-                          pickAnswerDataFromRows(rows),
-                        )) ?? {};
+                  const saved = resolveReviewGroupedFillSaved(
+                    rows,
+                    fromMap,
+                    parseGroupedFillTypingBulletproof,
+                    parseFillTypingBulletproof,
+                    view.items.map((item) => item.id),
+                  );
                   return (
                     <div className="space-y-3">
                       <GroupedFillBlanksTaskQuestion

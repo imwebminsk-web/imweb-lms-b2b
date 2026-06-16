@@ -121,6 +121,19 @@ export function canSubmitQuestionDraft(
   return false;
 }
 
+/** True when every question is already submitted or has a complete draft. */
+export function isQuizFullyAnswered(
+  questions: SafeTestQuestion[],
+  drafts: Record<string, QuestionDraft>,
+  submittedQuestionIds: Set<string>,
+): boolean {
+  return questions.every((question) => {
+    if (submittedQuestionIds.has(question.id)) return true;
+    const draft = drafts[question.id] ?? emptyQuestionDraft();
+    return canSubmitQuestionDraft(question, draft);
+  });
+}
+
 export async function submitQuestionDraft(
   attemptId: string,
   question: SafeTestQuestion,

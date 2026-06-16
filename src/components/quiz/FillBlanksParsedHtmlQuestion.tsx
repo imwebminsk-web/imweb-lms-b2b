@@ -195,7 +195,17 @@ export function FillBlanksParsedHtmlQuestion({
       if (isReviewMode) {
         const userWid = assignments[blankId];
         const correctWid = correctMapping[blankId];
-        if (!correctWid) return null;
+        if (!correctWid) {
+          const userWord = userWid ? wordById.get(userWid) : undefined;
+          return (
+            <span
+              key={blankId}
+              className="border-border bg-muted/60 text-foreground mx-0.5 inline-flex min-h-8 min-w-[4.5rem] items-center justify-center rounded-md border px-2 py-1 align-middle text-sm"
+            >
+              {userWord?.text ?? (userWid?.trim() ? userWid : "—")}
+            </span>
+          );
+        }
         return (
           <ReviewBlankSlot
             key={blankId}

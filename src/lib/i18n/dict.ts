@@ -53,6 +53,11 @@ export const dict = {
         "Вы покинули вкладку с тестом. Это запрещено. При следующем нарушении тест будет автоматически отправлен.",
       cheatAutoSubmit:
         "Тест принудительно завершён из-за повторного нарушения правил прохождения.",
+      finishIncompleteTitle: "Завершить тест досрочно?",
+      finishIncompleteDescription:
+        "Вы ответили не на все вопросы. Незаполненные ответы будут засчитаны как неверные. Вы уверены, что хотите завершить тест?",
+      finishIncompleteConfirm: "Завершить тест",
+      finishIncompleteCancel: "Продолжить",
     },
     settings: {
       pageTitle: "Настройки профиля",
@@ -220,6 +225,11 @@ export const dict = {
         "You left the test tab. This is not allowed. The test will be auto-submitted on the next violation.",
       cheatAutoSubmit:
         "The test was forcibly submitted due to a repeated rule violation.",
+      finishIncompleteTitle: "Finish the test early?",
+      finishIncompleteDescription:
+        "You have not answered every question. Unanswered responses will be scored as incorrect. Are you sure you want to finish the test?",
+      finishIncompleteConfirm: "Finish test",
+      finishIncompleteCancel: "Continue",
     },
     settings: {
       pageTitle: "Profile Settings",

@@ -93,7 +93,7 @@ function ChoiceImageCard({
       </div>
       {hasText ? (
         <div className="px-3 py-2 text-center text-sm leading-snug md:text-base">
-          {opt.text}
+          <TaskMediaRenderer html={opt.text} />
         </div>
       ) : null}
     </>
@@ -105,6 +105,7 @@ function ChoiceImageCard({
         className={cn(
           "relative block cursor-pointer overflow-hidden rounded-xl border transition-colors",
           optionLabelClass(isSelected, isCorrect),
+          isReviewMode && isSelected && "ring-primary/30 ring-2",
           isReviewMode && "cursor-default",
         )}
       >
@@ -132,6 +133,7 @@ function ChoiceImageCard({
       className={cn(
         "relative block w-full overflow-hidden rounded-xl border text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
         optionLabelClass(isSelected, isCorrect),
+        isReviewMode && isSelected && "ring-primary/30 ring-2",
         isReviewMode && "cursor-default",
       )}
     >
@@ -161,6 +163,7 @@ function ChoiceTextListOption({
         className={cn(
           "border-input hover:bg-muted/60 focus-within:ring-ring flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition-colors focus-within:ring-2 md:min-h-12",
           optionLabelClass(isSelected, isCorrect),
+          isReviewMode && isSelected && "ring-primary/30 ring-2",
           isReviewMode && "cursor-default",
         )}
       >
@@ -172,7 +175,7 @@ function ChoiceTextListOption({
           className="border-input text-primary mt-1 size-4 shrink-0 rounded"
         />
         <span className="text-left text-base leading-snug md:text-lg">
-          {opt.text}
+          <TaskMediaRenderer html={opt.text} />
         </span>
       </label>
     );
@@ -189,10 +192,11 @@ function ChoiceTextListOption({
       className={cn(
         "border-input hover:bg-muted/60 focus-visible:ring-ring flex min-h-11 w-full items-center rounded-xl border px-4 py-3 text-left text-base transition-colors focus-visible:ring-2 focus-visible:outline-none md:min-h-12 md:text-lg",
         optionLabelClass(isSelected, isCorrect),
+        isReviewMode && isSelected && "ring-primary/30 ring-2",
         isReviewMode && "cursor-default",
       )}
     >
-      {opt.text}
+      <TaskMediaRenderer html={opt.text} />
     </button>
   );
 }
