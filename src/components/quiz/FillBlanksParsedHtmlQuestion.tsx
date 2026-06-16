@@ -22,6 +22,7 @@ import {
   FITB_WORD_PREFIX,
 } from "@/components/quiz/FillInTheBlanksQuestion";
 import { correctTextForBlank } from "@/lib/fill-blanks-scoring";
+import { transformMediaUrlsInHtml } from "@/lib/media-utils";
 import { cn } from "@/lib/utils";
 import type { GroupedFillBlanksMode } from "@/lib/grouped-fill-blanks-utils";
 import type {
@@ -184,6 +185,11 @@ export function FillBlanksParsedHtmlQuestion({
     [segments, wordBank, correctMapping],
   );
 
+  const embedReadyHtml = useMemo(
+    () => transformMediaUrlsInHtml(parsedHtml),
+    [parsedHtml],
+  );
+
   function renderBlank(blankId: string) {
     if (mode === "dnd") {
       if (isReviewMode) {
@@ -270,7 +276,7 @@ export function FillBlanksParsedHtmlQuestion({
         "[&_.blank-placeholder]:border-primary/40 [&_.blank-placeholder]:bg-primary/10 [&_.blank-placeholder]:mx-0.5 [&_.blank-placeholder]:inline-block [&_.blank-placeholder]:min-h-[1.5rem] [&_.blank-placeholder]:min-w-[4rem] [&_.blank-placeholder]:rounded [&_.blank-placeholder]:border [&_.blank-placeholder]:align-middle",
       )}
     >
-      {parse(parsedHtml, {
+      {parse(embedReadyHtml, {
         replace(domNode) {
           if (!isDomElement(domNode)) return undefined;
           const blankId = domNode.attribs["data-blank-id"];

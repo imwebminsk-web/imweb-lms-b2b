@@ -18,7 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useState } from "react";
 
-import { RichTextHtml } from "@/components/quiz/RichTextHtml";
+import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
 import {
   type OrderingPlayerElement,
   type OrderingPlayerItem,
@@ -151,7 +151,7 @@ function OrderingSortableItem({
   return (
     <div className="space-y-3">
       {item.text.trim() ? (
-        <RichTextHtml
+        <TaskMediaRenderer
           html={item.text}
           className="text-foreground text-base font-medium leading-snug md:text-lg [&_strong]:font-semibold"
         />

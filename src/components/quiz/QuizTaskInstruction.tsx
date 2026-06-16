@@ -1,6 +1,6 @@
 "use client";
 
-import { RichTextHtml } from "@/components/quiz/RichTextHtml";
+import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
 import { cn } from "@/lib/utils";
 import type { TaskPresentation } from "@/lib/utils/task-content";
 
@@ -37,7 +37,7 @@ export function QuizTaskInstruction({
   return (
     <div className={cn("space-y-3", className)}>
       {hasInstruction ? (
-        <RichTextHtml html={instructionHtml} className={instructionClass} />
+        <TaskMediaRenderer html={instructionHtml} className={instructionClass} />
       ) : null}
 
       {hasExample ? (

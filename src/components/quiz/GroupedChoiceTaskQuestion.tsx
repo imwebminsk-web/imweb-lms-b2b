@@ -2,7 +2,8 @@
 
 import type { GroupedChoicePlayerItem, GroupedChoicePlayerOption } from "@/lib/grouped-choice-utils";
 import { cn } from "@/lib/utils";
-import { RichTextHtml, richTextPlainLabel } from "@/components/quiz/RichTextHtml";
+import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
+import { richTextPlainLabel } from "@/components/quiz/RichTextHtml";
 
 export type GroupedChoiceTaskQuestionProps = {
   items: GroupedChoicePlayerItem[];
@@ -243,7 +244,7 @@ export function GroupedChoiceTaskQuestion({
                   Вопрос {index + 1}
                 </p>
               ) : null}
-              <RichTextHtml
+              <TaskMediaRenderer
                 html={item.text}
                 className="text-foreground text-lg font-medium leading-snug md:text-xl [&_strong]:font-semibold"
               />
