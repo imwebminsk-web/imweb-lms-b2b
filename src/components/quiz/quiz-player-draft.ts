@@ -3,8 +3,7 @@ import {
   type SafeTestQuestion,
 } from "@/app/actions/test-actions";
 import {
-  isGroupedFillAssignmentsComplete,
-  isGroupedFillBlanksSelectionComplete,
+  isGroupedFillBlanksTaskComplete,
   resolveGroupedFillBlanksPlayerView,
 } from "@/lib/grouped-fill-blanks-utils";
 import {
@@ -92,9 +91,7 @@ export function canSubmitQuestionDraft(
       questionType: type,
     });
     if (!view) return false;
-    return view.mode === "dnd"
-      ? isGroupedFillAssignmentsComplete(view, draft.groupedFillAssignments)
-      : isGroupedFillBlanksSelectionComplete(view, draft.groupedFillTyping);
+    return isGroupedFillBlanksTaskComplete(view, draft);
   }
 
   if (isChoiceQuestion) {

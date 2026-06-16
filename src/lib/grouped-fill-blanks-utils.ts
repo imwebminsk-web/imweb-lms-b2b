@@ -1,5 +1,4 @@
 import {
-  blankIdsFromFillContent,
   correctTextForBlank,
 } from "@/lib/fill-blanks-scoring";
 import {
@@ -177,14 +176,56 @@ export function resolveGroupedFillBlanksMode(
   return "typing";
 }
 
+function blankIdsFromParsedHtml(parsedHtml: string | null | undefined): string[] {
+  if (!parsedHtml?.trim()) return [];
+  const ids: string[] = [];
+  const re = /data-blank-id=["']([^"']+)["']/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(parsedHtml)) !== null) {
+    const id = match[1];
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/** Blank IDs for validation: parsed HTML (player UI) → segments → correctMapping. */
+export function resolveBlankIdsForGroupedFillBlanksItem(item: {
+  segments: FillInTheBlanksSegment[];
+  parsedHtml?: string | null;
+  correctMapping: Record<string, string>;
+}): string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  for (const id of blankIdsFromParsedHtml(item.parsedHtml)) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      ordered.push(id);
+    }
+  }
+  for (const id of blankIdsFromSegments(item.segments)) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      ordered.push(id);
+    }
+  }
+  for (const id of Object.keys(item.correctMapping)) {
+    if (!seen.has(id)) {
+      seen.add(id);
+      ordered.push(id);
+    }
+  }
+
+  return ordered;
+}
+
 export function countBlanksInGroupedFillBlanksItem(item: {
   segments: FillInTheBlanksSegment[];
   correctMapping: Record<string, string>;
+  parsedHtml?: string | null;
 }): number {
-  const mappingCount = Object.keys(item.correctMapping).length;
-  if (mappingCount > 0) return mappingCount;
-  const segmentCount = blankIdsFromSegments(item.segments).length;
-  return segmentCount > 0 ? segmentCount : 1;
+  const count = resolveBlankIdsForGroupedFillBlanksItem(item).length;
+  return count > 0 ? count : 1;
 }
 
 function schemaForMode(mode: GroupedFillBlanksMode) {
@@ -543,9 +584,7 @@ function countCorrectDnDBlanksInItem(
   item: GroupedFillBlanksPlayerItem,
   itemAssignments: Record<string, string>,
 ): number {
-  const blankIds = blankIdsFromSegments(item.segments);
-  const idsToCheck =
-    blankIds.length > 0 ? blankIds : Object.keys(item.correctMapping);
+  const idsToCheck = resolveBlankIdsForGroupedFillBlanksItem(item);
   if (idsToCheck.length === 0) return 0;
   const wordIds = new Set(item.wordBank.map((w) => w.id));
   let correct = 0;
@@ -568,7 +607,7 @@ function countCorrectTypingBlanksInItem(
     wordBank: item.wordBank,
     correctMapping: item.correctMapping,
   };
-  const blankIds = blankIdsFromFillContent(itemContent);
+  const blankIds = resolveBlankIdsForGroupedFillBlanksItem(item);
   if (blankIds.length === 0) return 0;
   let correct = 0;
   for (const blankId of blankIds) {
@@ -620,21 +659,39 @@ export function scoreGroupedFillBlanksTypingQuestion(params: {
   }, 0);
 }
 
+function isGroupedFillBlanksDndItemComplete(
+  item: GroupedFillBlanksPlayerItem,
+  itemAssignments: Record<string, string>,
+): boolean {
+  const blankIds = resolveBlankIdsForGroupedFillBlanksItem(item);
+  if (blankIds.length === 0) return false;
+  const wordIds = new Set(item.wordBank.map((w) => w.id));
+  return blankIds.every((id) => {
+    const wid = itemAssignments[id];
+    return typeof wid === "string" && wid.length > 0 && wordIds.has(wid);
+  });
+}
+
+function isGroupedFillBlanksTypingItemComplete(
+  item: GroupedFillBlanksPlayerItem,
+  itemTyping: Record<string, string>,
+): boolean {
+  const blankIds = resolveBlankIdsForGroupedFillBlanksItem(item);
+  if (blankIds.length === 0) return false;
+  return blankIds.every((id) => (itemTyping[id] ?? "").trim().length > 0);
+}
+
 export function isGroupedFillAssignmentsComplete(
   view: GroupedFillBlanksPlayerView,
   groupedAssignments: Record<string, Record<string, string>>,
 ): boolean {
   if (view.mode !== "dnd" || view.items.length === 0) return false;
-  return view.items.every((item) => {
-    const blankIds = blankIdsFromSegments(item.segments);
-    if (blankIds.length === 0) return false;
-    const wordIds = new Set(item.wordBank.map((w) => w.id));
-    const itemAssignments = groupedAssignments[item.id] ?? {};
-    return blankIds.every((id) => {
-      const wid = itemAssignments[id];
-      return typeof wid === "string" && wordIds.has(wid);
-    });
-  });
+  return view.items.every((item) =>
+    isGroupedFillBlanksDndItemComplete(
+      item,
+      groupedAssignments[item.id] ?? {},
+    ),
+  );
 }
 
 export function isGroupedFillBlanksSelectionComplete(
@@ -643,12 +700,25 @@ export function isGroupedFillBlanksSelectionComplete(
 ): boolean {
   if (view.mode === "dnd") return false;
   if (view.items.length === 0) return false;
-  return view.items.every((item) => {
-    const blankIds = blankIdsFromSegments(item.segments);
-    if (blankIds.length === 0) return false;
-    const itemTyping = groupedTyping[item.id] ?? {};
-    return blankIds.every((id) => (itemTyping[id] ?? "").length > 0);
-  });
+  return view.items.every((item) =>
+    isGroupedFillBlanksTypingItemComplete(
+      item,
+      groupedTyping[item.id] ?? {},
+    ),
+  );
+}
+
+export function isGroupedFillBlanksTaskComplete(
+  view: GroupedFillBlanksPlayerView,
+  draft: {
+    groupedFillAssignments: Record<string, Record<string, string>>;
+    groupedFillTyping: Record<string, Record<string, string>>;
+  },
+): boolean {
+  if (view.items.length === 0) return false;
+  return view.mode === "dnd"
+    ? isGroupedFillAssignmentsComplete(view, draft.groupedFillAssignments)
+    : isGroupedFillBlanksSelectionComplete(view, draft.groupedFillTyping);
 }
 
 export function isGroupedFillInTheBlanksFullyCorrect(params: {
