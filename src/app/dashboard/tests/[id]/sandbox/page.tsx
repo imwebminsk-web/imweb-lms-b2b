@@ -70,7 +70,7 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
       notFound();
     }
     return (
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6">
         <Link
           href="/dashboard/tests"
           className={cn(
@@ -96,7 +96,7 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
   const attempt = await getOrCreateAttempt(id);
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6">
       <Link
         href="/dashboard/tests"
         className={cn(

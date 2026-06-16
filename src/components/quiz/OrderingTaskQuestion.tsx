@@ -210,11 +210,22 @@ export function OrderingTaskQuestion({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col">
+      <hr
+        className="my-8 border-slate-200 dark:border-slate-700"
+        aria-hidden
+      />
       {items.map((item, index) => (
-        <section key={item.id} className="space-y-2">
+        <section
+          key={item.id}
+          className={cn(
+            "space-y-2",
+            index !== items.length - 1 &&
+              "mb-10 border-b border-slate-200 pb-10 dark:border-slate-700",
+          )}
+        >
           {items.length > 1 ? (
-            <p className="text-muted-foreground text-sm font-medium">
+            <p className="mb-4 font-medium text-slate-500 dark:text-slate-400">
               Вопрос {index + 1}
             </p>
           ) : null}

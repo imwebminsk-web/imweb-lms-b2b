@@ -140,7 +140,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 pb-24">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 pb-24">
       <div className="flex flex-wrap items-start gap-3">
         <Button variant="ghost" size="sm" asChild className="-ml-2">
           <Link href="/dashboard/cohorts">

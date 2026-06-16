@@ -873,7 +873,7 @@ export function QuizResultView({
 
       <div className="flex flex-col items-center gap-6 text-center">
         {!isForKids ? (
-          <div className="flex w-full max-w-md flex-col gap-2">
+          <div className="flex w-full max-w-2xl flex-col gap-2">
             <div className="flex w-full items-center gap-2 text-sm">
               <span className="font-medium">
                 {requiresManualReview ? "Отправлено на проверку" : "Готово"}
@@ -892,7 +892,7 @@ export function QuizResultView({
         <div className="space-y-2">
           <h2 className="text-2xl font-semibold tracking-tight">Результат</h2>
           {requiresManualReview ? (
-            <p className="text-muted-foreground text-sm max-w-lg">
+            <p className="text-muted-foreground max-w-3xl text-sm">
               В тесте есть развёрнутые ответы. Преподаватель проверит их вручную —
               автоматическая оценка за эти задания не выставляется.
             </p>

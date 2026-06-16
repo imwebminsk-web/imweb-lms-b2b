@@ -78,7 +78,7 @@ export function WordBankDropZone({ children }: { children: ReactNode }) {
     <div
       ref={setNodeRef}
       data-fitb-bank
-      className="flex min-h-[80px] flex-wrap gap-2 rounded-md border border-slate-200 bg-slate-100 p-4"
+      className="flex min-h-[80px] flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-slate-100 p-5"
     >
       {children}
     </div>

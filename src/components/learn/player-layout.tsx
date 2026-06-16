@@ -275,7 +275,7 @@ export function PlayerLayout({
       </aside>
 
       <main className="min-w-0 flex-1 lg:ml-72">
-        <div className="mx-auto max-w-4xl space-y-6 px-4 py-8 lg:px-8 lg:py-10">
+        <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-8 lg:px-8 lg:py-10">
           <header className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight lg:text-3xl">
               {lesson.title}

@@ -32,7 +32,7 @@ function TestLoadError({
   kind?: string;
 }) {
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
       <Link
         href="/test"
         className="text-muted-foreground hover:text-foreground w-fit text-sm underline-offset-4 hover:underline"
@@ -99,7 +99,7 @@ export default async function TestViewPage({ params }: PageProps) {
 
   return (
     <WithSiteHeader>
-      <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/test"

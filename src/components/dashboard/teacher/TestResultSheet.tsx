@@ -135,7 +135,7 @@ export function TestResultSheet({
       <SheetContent
         side="right"
         className="w-full max-w-none overflow-y-auto sm:gap-0"
-        style={{ minWidth: "min(90vw, 1000px)" }}
+        style={{ minWidth: "min(92vw, 1280px)" }}
       >
         <SheetHeader className="border-border shrink-0 border-b px-1 pb-4 text-left sm:px-2">
           <SheetTitle className="pr-8">{displayTitle}</SheetTitle>
