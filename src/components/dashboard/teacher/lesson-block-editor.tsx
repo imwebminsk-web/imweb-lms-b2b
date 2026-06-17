@@ -52,6 +52,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import type { Database, Json } from "@/types/database.types";
 
 const initialMeta: LessonBlockActionState = {};
@@ -105,6 +106,30 @@ function readInstructions(content: Json): string {
   }
   const c = content as Record<string, unknown>;
   return typeof c.instructions === "string" ? c.instructions : "";
+}
+
+function readAssignmentBool(content: Json, key: "save_to_journal" | "is_for_kids"): boolean {
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return false;
+  }
+  const value = (content as Record<string, unknown>)[key];
+  return value === true;
+}
+
+function buildAssignmentContent(
+  content: Json,
+  patch: Partial<{
+    instructions: string;
+    save_to_journal: boolean;
+    is_for_kids: boolean;
+  }>,
+): Json {
+  return {
+    instructions: patch.instructions ?? readInstructions(content),
+    save_to_journal:
+      patch.save_to_journal ?? readAssignmentBool(content, "save_to_journal"),
+    is_for_kids: patch.is_for_kids ?? readAssignmentBool(content, "is_for_kids"),
+  };
 }
 
 function readTestId(content: Json): string {
@@ -480,22 +505,73 @@ export function LessonBlockEditor({
                   </div>
                 ) : null}
                 {block.type === "assignment" ? (
-                  <div className="grid gap-2">
-                    <Label htmlFor={`instr-${block.id}`}>Инструкция</Label>
-                    <Textarea
-                      id={`instr-${block.id}`}
-                      rows={6}
-                      defaultValue={readInstructions(block.content)}
-                      placeholder="Опишите задание для ученика…"
-                      onBlur={async (e) => {
-                        const instructions = e.target.value;
-                        const res = await updateBlock(block.id, {
-                          instructions,
-                        });
-                        if (res.error) window.alert(res.error);
-                        else router.refresh();
-                      }}
-                    />
+                  <div className="grid gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor={`instr-${block.id}`}>Инструкция</Label>
+                      <Textarea
+                        id={`instr-${block.id}`}
+                        rows={6}
+                        defaultValue={readInstructions(block.content)}
+                        placeholder="Опишите задание для ученика…"
+                        onBlur={async (e) => {
+                          const instructions = e.target.value;
+                          const res = await updateBlock(
+                            block.id,
+                            buildAssignmentContent(block.content, { instructions }),
+                          );
+                          if (res.error) window.alert(res.error);
+                          else router.refresh();
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <Label htmlFor={`save-journal-${block.id}`}>
+                          Записывать в журнал
+                        </Label>
+                        <p className="text-muted-foreground text-xs">
+                          Результат попадёт в журнал оценок.
+                        </p>
+                      </div>
+                      <Switch
+                        id={`save-journal-${block.id}`}
+                        checked={readAssignmentBool(block.content, "save_to_journal")}
+                        onCheckedChange={async (checked) => {
+                          const res = await updateBlock(
+                            block.id,
+                            buildAssignmentContent(block.content, {
+                              save_to_journal: checked,
+                            }),
+                          );
+                          if (res.error) window.alert(res.error);
+                          else router.refresh();
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                      <div className="space-y-0.5">
+                        <Label htmlFor={`for-kids-${block.id}`}>
+                          Детский режим (оценки смайликами)
+                        </Label>
+                        <p className="text-muted-foreground text-xs">
+                          Вместо числовых баллов ученик увидит смайлики.
+                        </p>
+                      </div>
+                      <Switch
+                        id={`for-kids-${block.id}`}
+                        checked={readAssignmentBool(block.content, "is_for_kids")}
+                        onCheckedChange={async (checked) => {
+                          const res = await updateBlock(
+                            block.id,
+                            buildAssignmentContent(block.content, {
+                              is_for_kids: checked,
+                            }),
+                          );
+                          if (res.error) window.alert(res.error);
+                          else router.refresh();
+                        }}
+                      />
+                    </div>
                   </div>
                 ) : null}
                 {block.type === "quiz" ? (

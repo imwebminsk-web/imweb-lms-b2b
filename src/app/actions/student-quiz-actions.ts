@@ -21,9 +21,14 @@ export type InitStudentQuizResult =
   | InitStudentQuizSuccess
   | { success: false; error: string };
 
+function resolveStudentTestType(testType: string | null | undefined): "training" | "final" {
+  return testType === "training" ? "training" : "final";
+}
+
 /**
- * Подготовка прохождения теста учеником: данные теста + попытка `in_progress`
- * (существующая или новая). Завершённые попытки не трогаем.
+ * Подготовка прохождения теста учеником: данные теста + попытка `in_progress`.
+ * Тренировочный тест: при новом старте удаляются прошлые попытки (ответы — каскадом).
+ * Итоговый тест: только одна попытка; черновик `in_progress` можно продолжить.
  */
 export async function initStudentQuiz(
   testId: string,
@@ -69,6 +74,9 @@ export async function initStudentQuiz(
     return { success: false, error: "Тест недоступен" };
   }
 
+  const testType = resolveStudentTestType(data.test_type);
+  const isTrainingTest = testType === "training";
+
   const { data: existingRows, error: findError } = await supabase
     .from("student_attempts")
     .select("id")
@@ -85,6 +93,36 @@ export async function initStudentQuiz(
   let attemptId = existingRows?.[0]?.id;
 
   if (!attemptId) {
+    if (!isTrainingTest) {
+      const { data: priorAttempts, error: priorError } = await supabase
+        .from("student_attempts")
+        .select("id")
+        .eq("student_id", user.id)
+        .eq("test_id", parsed.data)
+        .limit(1);
+
+      if (priorError) {
+        return { success: false, error: priorError.message };
+      }
+
+      if ((priorAttempts ?? []).length > 0) {
+        return {
+          success: false,
+          error: "Этот тест можно пройти только один раз.",
+        };
+      }
+    } else {
+      const { error: deleteError } = await supabase
+        .from("student_attempts")
+        .delete()
+        .eq("student_id", user.id)
+        .eq("test_id", parsed.data);
+
+      if (deleteError) {
+        return { success: false, error: deleteError.message };
+      }
+    }
+
     const { data: row, error: insertError } = await supabase
       .from("student_attempts")
       .insert({
@@ -93,6 +131,7 @@ export async function initStudentQuiz(
         status: "in_progress",
         score: 0,
         started_at: new Date().toISOString(),
+        is_training_mode: isTrainingTest,
       })
       .select("id")
       .single();

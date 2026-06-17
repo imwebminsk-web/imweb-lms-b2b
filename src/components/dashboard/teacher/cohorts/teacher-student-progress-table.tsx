@@ -17,9 +17,24 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
-function typeBadge(type: StudentProgressItem["type"]) {
+function typeBadge(
+  type: StudentProgressItem["type"],
+  testType?: StudentProgressItem["testType"],
+) {
   if (type === "test") {
-    return <Badge variant="secondary">Тест</Badge>;
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Badge
+          variant="outline"
+          className="border-violet-500/35 bg-violet-500/10 text-violet-900 dark:text-violet-100"
+        >
+          Тест
+        </Badge>
+        <span className="text-muted-foreground text-xs">
+          {testType === "training" ? "(тренировочный)" : "(итоговый)"}
+        </span>
+      </span>
+    );
   }
   return (
     <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10">
@@ -104,7 +119,7 @@ export function TeacherStudentProgressTable({
                           <span className="font-medium">{item.title}</span>
                         )}
                       </TableCell>
-                      <TableCell>{typeBadge(item.type)}</TableCell>
+                      <TableCell>{typeBadge(item.type, item.testType)}</TableCell>
                       <TableCell>
                         <ProgressStatusBadge item={item} />
                       </TableCell>
@@ -137,7 +152,7 @@ export function TeacherStudentProgressTable({
                         <span className="font-medium">{item.title}</span>
                       )}
                     </TableCell>
-                    <TableCell>{typeBadge(item.type)}</TableCell>
+                    <TableCell>{typeBadge(item.type, item.testType)}</TableCell>
                     <TableCell>
                       <ProgressStatusBadge item={item} />
                     </TableCell>

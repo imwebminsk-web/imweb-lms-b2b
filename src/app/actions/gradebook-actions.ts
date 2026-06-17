@@ -23,6 +23,7 @@ import {
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { createClient } from "@/lib/supabase/server";
+import { fetchStudentEmailsByUserIds } from "@/lib/supabase/fetch-student-emails-admin";
 import type { ReviewAnswerRow } from "@/lib/learn/build-review-maps";
 import type { Json } from "@/types/database.types";
 
@@ -515,6 +516,9 @@ export type MatrixGradebookColumn = {
   lessonId: string;
   testId?: string;
   blockId?: string;
+  /** Название теста для преподавателя (подсказка в матрице). */
+  testTitleTeacher?: string | null;
+  testType?: "training" | "final";
 };
 
 export type MatrixGradebookStudent = {
@@ -556,6 +560,57 @@ function assignmentGradeToGrade10(grade: number): number {
 
 function matrixCellKey(studentId: string, columnId: string): string {
   return `${studentId}:${columnId}`;
+}
+
+function readBlockSaveToJournal(content: Json): boolean {
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return false;
+  }
+  return (content as Record<string, unknown>).save_to_journal === true;
+}
+
+type GradebookTestMeta = {
+  id: string;
+  title: string;
+  title_teacher: string | null;
+  test_type: string;
+  save_to_journal: boolean;
+  is_published: boolean | null;
+  is_for_kids: boolean;
+};
+
+function resolveGradebookTestType(
+  testType: string | null | undefined,
+): "training" | "final" {
+  return testType === "training" ? "training" : "final";
+}
+
+function filterAndLabelTestColumns(
+  columns: MatrixGradebookColumn[],
+  testMetaById: Map<string, GradebookTestMeta>,
+): MatrixGradebookColumn[] {
+  return columns
+    .filter((col) => {
+      if (col.type !== "test" || !col.testId) return true;
+      const meta = testMetaById.get(col.testId);
+      if (!meta) return false;
+      if (meta.is_published !== true) return false;
+      if (!meta.save_to_journal) return false;
+      return true;
+    })
+    .map((col) => {
+      if (col.type !== "test" || !col.testId) return col;
+      const meta = testMetaById.get(col.testId);
+      const title = meta?.title?.trim() || "Тест";
+      const teacherTitle =
+        meta?.title_teacher?.trim() || meta?.title?.trim() || "Тест";
+      return {
+        ...col,
+        title,
+        testTitleTeacher: teacherTitle,
+        testType: resolveGradebookTestType(meta?.test_type),
+      };
+    });
 }
 
 /**
@@ -621,7 +676,6 @@ export async function getMatrixGradebookData(
 
   const [
     { data: enrollmentsData, error: enrollmentsError },
-    { data: emailRowsRaw, error: emailsError },
     { data: assignmentRowsRaw, error: assignmentsError },
   ] = await Promise.all([
     supabase
@@ -629,7 +683,6 @@ export async function getMatrixGradebookData(
       .select("user_id")
       .eq("cohort_id", parsedCohort.data)
       .order("enrolled_at", { ascending: false }),
-    supabase.rpc("get_cohort_student_emails", { p_cohort_id: parsedCohort.data }),
     supabase
       .from("cohort_assignments")
       .select("lesson_id")
@@ -638,9 +691,6 @@ export async function getMatrixGradebookData(
 
   if (enrollmentsError) {
     return { success: false, error: enrollmentsError.message };
-  }
-  if (emailsError) {
-    console.error("[getMatrixGradebookData] emails", emailsError.message);
   }
   if (assignmentsError) {
     return { success: false, error: assignmentsError.message };
@@ -655,8 +705,21 @@ export async function getMatrixGradebookData(
 
   type EmailRow = { user_id: string; email: string | null; full_name: string | null };
   const emailByUserId = new Map<string, EmailRow>();
-  for (const row of (emailRowsRaw ?? []) as EmailRow[]) {
-    emailByUserId.set(row.user_id, row);
+
+  try {
+    const emailsByUserId = await fetchStudentEmailsByUserIds(studentIds);
+    for (const [userId, email] of emailsByUserId) {
+      emailByUserId.set(userId, {
+        user_id: userId,
+        email,
+        full_name: null,
+      });
+    }
+  } catch (emailsError) {
+    console.error(
+      "[getMatrixGradebookData] emails",
+      emailsError instanceof Error ? emailsError.message : emailsError,
+    );
   }
 
   const profileNameByUserId = new Map<string, string | null>();
@@ -753,7 +816,6 @@ export async function getMatrixGradebookData(
 
   const columns: MatrixGradebookColumn[] = [];
   const testIdSet = new Set<string>();
-  const assignmentBlockIds: string[] = [];
 
   for (const lesson of lessonsFiltered) {
     const lessonTitle = lesson.title.trim() || "Урок";
@@ -788,7 +850,7 @@ export async function getMatrixGradebookData(
           blockId: block.id,
         });
       } else if (block.type === "assignment") {
-        assignmentBlockIds.push(block.id);
+        if (!readBlockSaveToJournal(block.content)) continue;
         columns.push({
           id: `assignment-${lesson.id}-${block.id}`,
           type: "assignment",
@@ -801,11 +863,53 @@ export async function getMatrixGradebookData(
     }
   }
 
-  const testIds = [...testIdSet];
+  const testMetaById = new Map<string, GradebookTestMeta>();
+  const collectedTestIds = [...testIdSet];
+  if (collectedTestIds.length > 0) {
+    const { data: testMetaRows, error: testMetaErr } = await supabase
+      .from("tests")
+      .select(
+        "id, title, title_teacher, test_type, save_to_journal, is_published, is_for_kids",
+      )
+      .in("id", collectedTestIds);
+    if (testMetaErr) {
+      return { success: false, error: testMetaErr.message };
+    }
+    for (const row of testMetaRows ?? []) {
+      testMetaById.set(row.id, {
+        id: row.id,
+        title: row.title,
+        title_teacher: row.title_teacher,
+        test_type: row.test_type ?? "final",
+        save_to_journal: row.save_to_journal,
+        is_published: row.is_published,
+        is_for_kids: row.is_for_kids ?? false,
+      });
+    }
+  }
+
+  const filteredColumns = filterAndLabelTestColumns(columns, testMetaById);
+  const assignmentBlockIdsFiltered = filteredColumns
+    .filter(
+      (col): col is MatrixGradebookColumn & { blockId: string } =>
+        col.type === "assignment" && Boolean(col.blockId),
+    )
+    .map((col) => col.blockId);
+  const testIds = [
+    ...new Set(
+      filteredColumns
+        .filter(
+          (col): col is MatrixGradebookColumn & { testId: string } =>
+            col.type === "test" && Boolean(col.testId),
+        )
+        .map((col) => col.testId),
+    ),
+  ];
+
   const cells: Record<string, MatrixGradebookCell> = {};
 
   for (const student of students) {
-    for (const col of columns) {
+    for (const col of filteredColumns) {
       cells[matrixCellKey(student.id, col.id)] = {
         studentId: student.id,
         columnId: col.id,
@@ -821,13 +925,22 @@ export async function getMatrixGradebookData(
     }
   }
 
-  if (studentIds.length === 0 || columns.length === 0) {
-    return { success: true, data: { students, columns, cells } };
+  if (studentIds.length === 0 || filteredColumns.length === 0) {
+    return {
+      success: true,
+      data: { students, columns: filteredColumns, cells },
+    };
   }
 
   const questionCountByTest = new Map<string, number>();
   const pointsSumByTest = new Map<string, number>();
   const isForKidsByTest = new Map<string, boolean>();
+  for (const testId of testIds) {
+    const meta = testMetaById.get(testId);
+    if (meta) {
+      isForKidsByTest.set(testId, meta.is_for_kids);
+    }
+  }
 
   if (testIds.length > 0) {
     const { data: questionRows, error: questionsErr } = await supabase
@@ -848,17 +961,6 @@ export async function getMatrixGradebookData(
           (q.points != null && q.points > 0 ? q.points : 1),
       );
     }
-
-    const { data: testMetaRows, error: testMetaErr } = await supabase
-      .from("tests")
-      .select("id, is_for_kids")
-      .in("id", testIds);
-    if (testMetaErr) {
-      return { success: false, error: testMetaErr.message };
-    }
-    for (const t of testMetaRows ?? []) {
-      isForKidsByTest.set(t.id, t.is_for_kids ?? false);
-    }
   }
 
   if (testIds.length > 0) {
@@ -866,8 +968,7 @@ export async function getMatrixGradebookData(
       .from("student_attempts")
       .select("id, student_id, test_id, score, status, completed_at")
       .in("student_id", studentIds)
-      .in("test_id", testIds)
-      .eq("is_training_mode", false);
+      .in("test_id", testIds);
 
     if (attemptsErr) {
       return { success: false, error: attemptsErr.message };
@@ -883,7 +984,7 @@ export async function getMatrixGradebookData(
     const pendingReviewByCell = new Map<string, string>();
 
     for (const a of attemptRows ?? []) {
-      const matchingCols = columns.filter(
+      const matchingCols = filteredColumns.filter(
         (c) => c.type === "test" && c.testId === a.test_id,
       );
       const totalPoints = Math.max(pointsSumByTest.get(a.test_id) ?? 1, 1);
@@ -921,7 +1022,7 @@ export async function getMatrixGradebookData(
       cell.gradingVisuals = best.gradingVisuals;
     }
 
-    for (const col of columns) {
+    for (const col of filteredColumns) {
       if (col.type !== "test" || !col.testId) continue;
       const kids = isForKidsByTest.get(col.testId) ?? false;
       if (!kids) continue;
@@ -947,12 +1048,12 @@ export async function getMatrixGradebookData(
     }
   }
 
-  if (assignmentBlockIds.length > 0) {
+  if (assignmentBlockIdsFiltered.length > 0) {
     const { data: subRows, error: subErr } = await supabase
       .from("assignment_submissions")
       .select("id, student_id, lesson_block_id, status, grade, updated_at")
       .in("student_id", studentIds)
-      .in("lesson_block_id", assignmentBlockIds);
+      .in("lesson_block_id", assignmentBlockIdsFiltered);
 
     if (subErr) {
       return { success: false, error: subErr.message };
@@ -984,7 +1085,7 @@ export async function getMatrixGradebookData(
       }
     }
 
-    for (const col of columns) {
+    for (const col of filteredColumns) {
       if (col.type !== "assignment" || !col.blockId) continue;
       for (const student of students) {
         const mapKey = `${student.id}:${col.blockId}`;
@@ -1001,5 +1102,5 @@ export async function getMatrixGradebookData(
     }
   }
 
-  return { success: true, data: { students, columns, cells } };
+  return { success: true, data: { students, columns: filteredColumns, cells } };
 }

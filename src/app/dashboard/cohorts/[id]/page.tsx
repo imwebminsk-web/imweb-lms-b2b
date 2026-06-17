@@ -33,6 +33,7 @@ type LessonWithTestRow = {
   order_index: number;
   module_id: string;
   test_id: string | null;
+  is_published: boolean;
   tests: { id: string; title: string } | { id: string; title: string }[] | null;
   modules:
     | { id: string; title: string; order_index: number; course_id: string }
@@ -119,7 +120,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
   const { data: lessonsRaw, error: lessonsError } = await supabase
     .from("lessons")
     .select(
-      "id, title, order_index, module_id, test_id, tests(id, title), modules!inner(id, title, order_index, course_id)",
+      "id, title, order_index, module_id, test_id, is_published, tests(id, title), modules!inner(id, title, order_index, course_id)",
     )
     .eq("modules.course_id", cohort.course_id)
     .order("order_index", { ascending: true });
@@ -145,7 +146,17 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
 
   const moduleGroups = new Map<
     string,
-    { id: string; title: string; position: number; lessons: { id: string; title: string; hasTest: boolean }[] }
+    {
+      id: string;
+      title: string;
+      position: number;
+      lessons: {
+        id: string;
+        title: string;
+        hasTest: boolean;
+        isPublished: boolean;
+      }[];
+    }
   >();
   for (const lesson of lessons) {
     const moduleRel = Array.isArray(lesson.modules) ? lesson.modules[0] : lesson.modules;
@@ -163,6 +174,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
       id: lesson.id,
       title: lesson.title,
       hasTest: lesson.test_id != null,
+      isPublished: lesson.is_published,
     });
   }
   const lessonsForManager = [...moduleGroups.values()]

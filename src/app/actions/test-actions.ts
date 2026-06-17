@@ -351,6 +351,7 @@ export type TestWithQuestionsPayload = Pick<
   | "is_published"
   | "is_for_kids"
   | "time_limit"
+  | "test_type"
 > & {
   questions: SafeTestQuestion[];
 };
@@ -800,6 +801,7 @@ export async function getTestWithQuestions(
       is_published,
       is_for_kids,
       time_limit,
+      test_type,
       questions (
         id,
         content,
@@ -857,6 +859,7 @@ export async function getTestWithQuestions(
     is_published: data.is_published,
     is_for_kids: data.is_for_kids ?? false,
     time_limit: data.time_limit ?? 0,
+    test_type: data.test_type ?? "final",
     questions,
   };
 
@@ -898,6 +901,7 @@ export async function getSafeTestForClient(
       is_published,
       is_for_kids,
       time_limit,
+      test_type,
       questions (
         id,
         content,
@@ -960,6 +964,7 @@ export async function getSafeTestForClient(
       is_published: data.is_published,
       is_for_kids: data.is_for_kids ?? false,
       time_limit: data.time_limit ?? 0,
+      test_type: data.test_type ?? "final",
       questions,
     },
   };

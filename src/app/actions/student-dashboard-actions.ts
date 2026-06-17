@@ -50,6 +50,8 @@ export type StudentProgressItem = {
   assignmentSubmissionId: string | null;
   /** Есть завершённая попытка — можно открыть разбор (TestResultSheet). */
   hasCompletedTestAttempt: boolean;
+  /** Тип теста для журнала преподавателя (только для type === "test"). */
+  testType?: "training" | "final" | null;
 };
 
 type CourseRef = { id: string; slug: string; title: string };
@@ -212,6 +214,12 @@ function fullAssignmentInstructions(content: Json): string {
   return typeof instr === "string" ? instr.trim() : "";
 }
 
+function resolveProgressTestType(
+  testType: string | null | undefined,
+): "training" | "final" {
+  return testType === "training" ? "training" : "final";
+}
+
 const cohortIdSchema = z.string().uuid("Некорректный ID группы");
 
 type RpcStudentProgressRow = {
@@ -324,13 +332,33 @@ async function fetchStudentProgressItemsForUserId(
       ? supabase.from("questions").select("test_id, points").in("test_id", testIds)
       : Promise.resolve({ data: [], error: null });
 
-  const [{ data: attemptRowsRaw, error: attemptsErr }, { data: questionRows, error: questionsErr }] =
-    await Promise.all([attemptsPromise, questionsPromise]);
-  if (attemptsErr || questionsErr) {
+  const testsMetaPromise =
+    testIds.length > 0
+      ? supabase
+          .from("tests")
+          .select("id, test_type, title_teacher, title")
+          .in("id", testIds)
+      : Promise.resolve({ data: [], error: null });
+
+  const [
+    { data: attemptRowsRaw, error: attemptsErr },
+    { data: questionRows, error: questionsErr },
+    { data: testMetaRows, error: testsMetaErr },
+  ] = await Promise.all([attemptsPromise, questionsPromise, testsMetaPromise]);
+  if (attemptsErr || questionsErr || testsMetaErr) {
     return {
       success: false,
-      error: attemptsErr?.message ?? questionsErr?.message ?? "Ошибка",
+      error:
+        attemptsErr?.message ??
+        questionsErr?.message ??
+        testsMetaErr?.message ??
+        "Ошибка",
     };
+  }
+
+  const testTypeById = new Map<string, "training" | "final">();
+  for (const row of testMetaRows ?? []) {
+    testTypeById.set(row.id, resolveProgressTestType(row.test_type));
   }
 
   const questionCountByTest = new Map<string, number>();
@@ -489,6 +517,7 @@ async function fetchStudentProgressItemsForUserId(
         lessonBlockId: null,
         assignmentSubmissionId: null,
         hasCompletedTestAttempt: hasCompleted,
+        testType: testTypeById.get(tid) ?? "final",
       });
     }
 
@@ -523,6 +552,7 @@ async function fetchStudentProgressItemsForUserId(
         lessonBlockId: qb.id,
         assignmentSubmissionId: null,
         hasCompletedTestAttempt: hasCompleted,
+        testType: testTypeById.get(tid) ?? "final",
       });
     }
 

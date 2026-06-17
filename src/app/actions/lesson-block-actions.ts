@@ -95,7 +95,7 @@ function defaultContentForType(type: LessonBlockType): Json {
     case "vimeo":
       return { url: "" };
     case "assignment":
-      return { instructions: "" };
+      return { instructions: "", save_to_journal: false, is_for_kids: false };
     case "quiz":
       return { test_id: "" };
     default: {

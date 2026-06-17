@@ -2,7 +2,6 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
-import type { Database } from "@/types/database.types";
 
 export type ActivityEvent = {
   id: string;
@@ -22,64 +21,55 @@ type RawActivityEvent = {
   studentId: string;
 };
 
-type Json = Database["public"]["Tables"]["lesson_blocks"]["Row"]["content"];
+const MAX_RECENT_ACTIVITY_QUERY_LIMIT = 20;
 
-function parseTestIdFromQuizBlockContent(content: Json): string | null {
-  if (!content || typeof content !== "object" || Array.isArray(content)) {
-    return null;
-  }
-  const testId = (content as Record<string, unknown>).test_id;
-  return typeof testId === "string" && testId.length > 0 ? testId : null;
+function normalizeActivityLimit(limit: number): number {
+  return Math.min(Math.max(limit, 1), MAX_RECENT_ACTIVITY_QUERY_LIMIT);
 }
 
-async function buildTeacherTestLabels(
+async function loadTeacherAssignmentBlockTitles(
   supabase: Awaited<ReturnType<typeof createClient>>,
   teacherId: string,
 ): Promise<Map<string, string>> {
-  const labels = new Map<string, string>();
+  const titleByBlockId = new Map<string, string>();
 
-  const { data: lessonRows, error: lessonsError } = await supabase
-    .from("lessons")
-    .select("id, title, test_id, modules!inner(courses!inner(teacher_id))")
-    .eq("modules.courses.teacher_id", teacherId)
-    .not("test_id", "is", null);
+  const { data, error } = await supabase
+    .from("lesson_blocks")
+    .select(
+      `
+      id,
+      lessons!inner(
+        title,
+        modules!inner(
+          courses!inner(teacher_id)
+        )
+      )
+    `,
+    )
+    .eq("type", "assignment")
+    .eq("lessons.modules.courses.teacher_id", teacherId);
 
-  if (lessonsError) {
-    console.error("[getRecentActivity] lessons", lessonsError.message);
+  if (error) {
+    console.error(
+      "[getRecentActivity] assignment blocks",
+      error.message,
+    );
+    return titleByBlockId;
   }
 
-  const lessonIds: string[] = [];
-
-  for (const lesson of lessonRows ?? []) {
-    lessonIds.push(lesson.id);
-    const lessonTitle = lesson.title?.trim() || "Урок";
-    if (lesson.test_id) {
-      labels.set(lesson.test_id, lessonTitle);
-    }
+  for (const row of data ?? []) {
+    const lessonRel = row.lessons as
+      | { title: string | null }
+      | { title: string | null }[]
+      | null;
+    const lesson = Array.isArray(lessonRel) ? lessonRel[0] : lessonRel;
+    titleByBlockId.set(
+      row.id,
+      lesson?.title?.trim() || "урок",
+    );
   }
 
-  if (lessonIds.length > 0) {
-    const { data: blockRows, error: blocksError } = await supabase
-      .from("lesson_blocks")
-      .select("content, lessons!inner(id, title)")
-      .in("lesson_id", lessonIds)
-      .eq("type", "quiz");
-
-    if (blocksError) {
-      console.error("[getRecentActivity] quiz blocks", blocksError.message);
-    }
-
-    for (const block of blockRows ?? []) {
-      const lessonRel = block.lessons as { id: string; title: string } | null;
-      const lessonTitle = lessonRel?.title?.trim() || "Урок";
-      const testId = parseTestIdFromQuizBlockContent(block.content);
-      if (testId) {
-        labels.set(testId, lessonTitle);
-      }
-    }
-  }
-
-  return labels;
+  return titleByBlockId;
 }
 
 async function attachStudentNames(
@@ -155,8 +145,12 @@ export async function getRecentActivity(
     return [];
   }
 
-  const testLabels = await buildTeacherTestLabels(supabase, tid);
-  const testIds = [...testLabels.keys()];
+  const fetchLimit = normalizeActivityLimit(limit);
+  const assignmentTitlesByBlockId = await loadTeacherAssignmentBlockTitles(
+    supabase,
+    tid,
+  );
+  const assignmentBlockIds = [...assignmentTitlesByBlockId.keys()];
 
   const [
     { data: enrollmentRows, error: enrollmentsError },
@@ -178,38 +172,40 @@ export async function getRecentActivity(
       )
       .eq("cohorts.courses.teacher_id", tid)
       .order("enrolled_at", { ascending: false })
-      .limit(limit),
-    testIds.length > 0
-      ? supabase
-          .from("student_attempts")
-          .select("id, completed_at, student_id, test_id, tests(title)")
-          .in("test_id", testIds)
-          .eq("status", "completed")
-          .eq("is_training_mode", false)
-          .not("completed_at", "is", null)
-          .order("completed_at", { ascending: false })
-          .limit(limit * 2)
-      : Promise.resolve({ data: [], error: null }),
+      .limit(fetchLimit),
     supabase
-      .from("assignment_submissions")
+      .from("student_attempts")
       .select(
         `
         id,
-        created_at,
+        status,
+        completed_at,
+        score,
         student_id,
-        lesson_blocks!inner(
-          lessons!inner(
-            title,
-            modules!inner(
-              courses!inner(teacher_id)
-            )
-          )
+        test_id,
+        tests!inner(
+          id,
+          title,
+          user_id
         )
       `,
       )
-      .eq("lesson_blocks.lessons.modules.courses.teacher_id", tid)
-      .order("created_at", { ascending: false })
-      .limit(limit),
+      .eq("tests.user_id", tid)
+      .eq("status", "completed")
+      .eq("is_training_mode", false)
+      .not("completed_at", "is", null)
+      .order("completed_at", { ascending: false })
+      .limit(fetchLimit),
+    assignmentBlockIds.length > 0
+      ? supabase
+          .from("assignment_submissions")
+          .select(
+            "id, status, created_at, student_id, lesson_block_id",
+          )
+          .in("lesson_block_id", assignmentBlockIds)
+          .order("created_at", { ascending: false })
+          .limit(fetchLimit)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   if (enrollmentsError) {
@@ -235,7 +231,10 @@ export async function getRecentActivity(
       .eq("role", "student");
 
     if (rolesError) {
-      console.error("[getRecentActivity] attempt profile roles", rolesError.message);
+      console.error(
+        "[getRecentActivity] attempt profile roles",
+        rolesError.message,
+      );
     } else {
       for (const row of roleRows ?? []) {
         studentRoleIds.add(row.id);
@@ -263,14 +262,14 @@ export async function getRecentActivity(
       continue;
     }
 
-    const testsRel = row.tests as { title?: string } | { title?: string }[] | null;
+    const testsRel = row.tests as
+      | { title?: string | null }
+      | { title?: string | null }[]
+      | null;
     const testTitle = Array.isArray(testsRel)
       ? testsRel[0]?.title
       : testsRel?.title;
-    const lessonTitle =
-      (row.test_id ? testLabels.get(row.test_id) : null) ??
-      testTitle?.trim() ??
-      "тест";
+    const lessonTitle = testTitle?.trim() || "тест";
 
     if (!row.completed_at) {
       continue;
@@ -288,11 +287,7 @@ export async function getRecentActivity(
 
   for (const row of submissionRows ?? []) {
     const lessonTitle =
-      (
-        row as {
-          lesson_blocks?: { lessons?: { title?: string } | null } | null;
-        }
-      ).lesson_blocks?.lessons?.title?.trim() || "урок";
+      assignmentTitlesByBlockId.get(row.lesson_block_id) ?? "урок";
 
     rawEvents.push({
       id: `assignment-${row.id}`,
@@ -308,5 +303,5 @@ export async function getRecentActivity(
     (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   );
 
-  return attachStudentNames(supabase, rawEvents.slice(0, limit));
+  return attachStudentNames(supabase, rawEvents.slice(0, fetchLimit));
 }

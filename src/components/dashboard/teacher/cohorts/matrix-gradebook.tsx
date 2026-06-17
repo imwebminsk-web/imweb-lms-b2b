@@ -34,7 +34,12 @@ function cellKey(studentId: string, columnId: string): string {
 }
 
 function columnTooltipText(col: MatrixGradebookColumn): string {
-  return `Урок: ${col.lessonTitle} (${col.type === "test" ? "Тест" : "Задание"})`;
+  if (col.type === "assignment") {
+    return `${col.lessonTitle} (Задание)`;
+  }
+  const teacherTitle =
+    col.testTitleTeacher?.trim() || col.title?.trim() || "Тест";
+  return `${col.lessonTitle} (${teacherTitle})`;
 }
 
 function MatrixCell({

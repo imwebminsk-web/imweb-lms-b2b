@@ -377,7 +377,6 @@ export function CreateTestForm({
   const [testType, setTestType] = useState<TestTypeKind>(
     initialData?.testType ?? "final",
   );
-  const [autoCheck, setAutoCheck] = useState(initialData?.autoCheck ?? true);
   const [saveToJournal, setSaveToJournal] = useState(
     initialData?.saveToJournal ?? true,
   );
@@ -882,7 +881,7 @@ export function CreateTestForm({
       title_teacher: titleTeacher.trim() || null,
       title_student: titleStudent.trim() || null,
       test_type: testType,
-      auto_check: autoCheck,
+      auto_check: true,
       save_to_journal: saveToJournal,
       max_score: resolvedMaxScore,
       time_limit: parsePositiveInt(timeLimit, 0),
@@ -1222,19 +1221,6 @@ export function CreateTestForm({
               Укажите 0 или оставьте пустым, если лимит не нужен. По истечении
               времени тест завершится автоматически.
             </p>
-          </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="test-auto-check">Автоматическая проверка</Label>
-              <p className="text-muted-foreground text-xs">
-                Система сама проверит ответы ученика.
-              </p>
-            </div>
-            <Switch
-              id="test-auto-check"
-              checked={autoCheck}
-              onCheckedChange={setAutoCheck}
-            />
           </div>
           <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
             <div className="space-y-0.5">

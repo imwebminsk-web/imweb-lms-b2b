@@ -24,6 +24,7 @@ type ModuleLessonItem = {
   id: string;
   title: string;
   hasTest: boolean;
+  isPublished: boolean;
 };
 
 type AssignmentModule = {
@@ -232,6 +233,11 @@ export function CohortAssignmentManager({
                             disabled={isPending || inFlightLessonIds.has(lesson.id)}
                           />
                           <span className="text-sm">{lesson.title}</span>
+                          {!lesson.isPublished ? (
+                            <span className="ml-2 rounded-sm bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                              [Черновик]
+                            </span>
+                          ) : null}
                           {lesson.hasTest ? (
                             <Badge variant="secondary" className="ml-2">
                               📝 Тест

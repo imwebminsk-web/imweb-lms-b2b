@@ -18,6 +18,16 @@ type ProfileRole = Database["public"]["Enums"]["profile_role"];
 /** Верхняя граница строк для виджета «ожидают проверки» на дашборде. */
 const MAX_PENDING_REVIEW_FETCH = 50;
 
+/** PostgREST / URL parser struggle with very large `.in()` lists. */
+const MAX_IN_FILTER_IDS = 500;
+
+function sliceIdsForInFilter(ids: string[]): string[] {
+  if (ids.length <= MAX_IN_FILTER_IDS) {
+    return ids;
+  }
+  return ids.slice(0, MAX_IN_FILTER_IDS);
+}
+
 type AssignmentBlockContext = {
   courseTitle: string;
   lessonTitle: string;
@@ -309,11 +319,13 @@ async function countPendingAssignmentReviewsForTeacher(
     return 0;
   }
 
+  const safeBlockIds = sliceIdsForInFilter(blockIds);
+
   const { count, error } = await supabase
     .from("assignment_submissions")
     .select("id", { count: "exact", head: true })
     .eq("status", "pending")
-    .in("lesson_block_id", blockIds);
+    .in("lesson_block_id", safeBlockIds);
 
   if (error) {
     console.error(
@@ -358,7 +370,9 @@ async function buildTeacherPendingTestContextMap(
   testIds: string[],
 ): Promise<Map<string, PendingTestContext>> {
   const map = new Map<string, PendingTestContext>();
-  const uniqueTestIds = [...new Set(testIds.filter((id) => id.trim().length > 0))];
+  const uniqueTestIds = sliceIdsForInFilter(
+    [...new Set(testIds.filter((id) => id.trim().length > 0))],
+  );
   if (uniqueTestIds.length === 0) {
     return map;
   }
@@ -417,7 +431,9 @@ async function buildTeacherPendingTestContextMap(
     });
   }
 
-  const missingTestIds = uniqueTestIds.filter((testId) => !map.has(testId));
+  const missingTestIds = sliceIdsForInFilter(
+    uniqueTestIds.filter((testId) => !map.has(testId)),
+  );
   if (missingTestIds.length === 0) {
     return map;
   }
@@ -613,11 +629,13 @@ async function getPendingAssignmentReviewsForTeacher(
     return [];
   }
 
+  const safeBlockIds = sliceIdsForInFilter(blockIds);
+
   const { data: rows, error } = await supabase
     .from("assignment_submissions")
     .select("id, created_at, student_id, lesson_block_id")
     .eq("status", "pending")
-    .in("lesson_block_id", blockIds)
+    .in("lesson_block_id", safeBlockIds)
     .order("created_at", { ascending: false })
     .limit(fetchLimit);
 
