@@ -15,6 +15,15 @@ import type { Database } from "@/types/database.types";
 
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
 
+/** Верхняя граница строк для виджета «ожидают проверки» на дашборде. */
+const MAX_PENDING_REVIEW_FETCH = 50;
+
+type AssignmentBlockContext = {
+  courseTitle: string;
+  lessonTitle: string;
+  courseSlug: string;
+};
+
 function uuidToStableNumber(id: string): number {
   const hex = id.replace(/-/g, "").slice(0, 8);
   return parseInt(hex, 16) % 2147483647;
@@ -93,14 +102,11 @@ async function fetchTeacherMetrics(
 ): Promise<TeacherDashboardMetrics> {
   const totalCourses = courseIds.length;
 
-  const pendingAssignmentReviewsQuery = supabase
-    .from("assignment_submissions")
-    .select(
-      "id, lesson_blocks!inner(lessons!inner(modules!inner(courses!inner(teacher_id))))",
-      { count: "exact", head: true },
-    )
-    .eq("status", "pending")
-    .eq("lesson_blocks.lessons.modules.courses.teacher_id", userId);
+  const assignmentBlockContext = await loadTeacherAssignmentBlockContextMap(
+    supabase,
+    userId,
+  );
+  const assignmentBlockIds = [...assignmentBlockContext.keys()];
 
   const pendingTestReviewsQuery = supabase
     .from("student_attempts")
@@ -111,19 +117,13 @@ async function fetchTeacherMetrics(
 
   if (courseIds.length === 0) {
     const [
-      { count: pendingAssignments, error: pendingAssignmentsError },
+      pendingAssignments,
       { count: pendingTestAttempts, error: pendingTestsError },
     ] = await Promise.all([
-      pendingAssignmentReviewsQuery,
+      countPendingAssignmentReviewsForTeacher(supabase, assignmentBlockIds),
       pendingTestReviewsQuery,
     ]);
 
-    if (pendingAssignmentsError) {
-      console.error(
-        "[fetchDashboardData] teacher pending assignment reviews",
-        JSON.stringify(pendingAssignmentsError, null, 2),
-      );
-    }
     if (pendingTestsError) {
       console.error(
         "[fetchDashboardData] teacher pending test reviews",
@@ -135,14 +135,14 @@ async function fetchTeacherMetrics(
       totalCourses: 0,
       totalCohorts: 0,
       totalStudents: 0,
-      pendingReviews: (pendingAssignments ?? 0) + (pendingTestAttempts ?? 0),
+      pendingReviews: pendingAssignments + (pendingTestAttempts ?? 0),
     };
   }
 
   const [
     { count: totalCohorts, error: cohortsError },
     { data: enrollmentRows, error: enrollmentsError },
-    { count: pendingAssignments, error: pendingAssignmentsError },
+    pendingAssignments,
     { count: pendingTestAttempts, error: pendingTestsError },
   ] = await Promise.all([
     supabase
@@ -151,7 +151,7 @@ async function fetchTeacherMetrics(
       .in("course_id", courseIds)
       .eq("is_active", true),
     supabase.from("enrollments").select("user_id").in("course_id", courseIds),
-    pendingAssignmentReviewsQuery,
+    countPendingAssignmentReviewsForTeacher(supabase, assignmentBlockIds),
     pendingTestReviewsQuery,
   ]);
 
@@ -162,12 +162,6 @@ async function fetchTeacherMetrics(
     console.error(
       "[fetchDashboardData] teacher enrollments",
       enrollmentsError.message,
-    );
-  }
-  if (pendingAssignmentsError) {
-    console.error(
-      "[fetchDashboardData] teacher pending assignment reviews",
-      JSON.stringify(pendingAssignmentsError, null, 2),
     );
   }
   if (pendingTestsError) {
@@ -185,7 +179,7 @@ async function fetchTeacherMetrics(
     totalCourses,
     totalCohorts: totalCohorts ?? 0,
     totalStudents,
-    pendingReviews: (pendingAssignments ?? 0) + (pendingTestAttempts ?? 0),
+    pendingReviews: pendingAssignments + (pendingTestAttempts ?? 0),
   };
 }
 
@@ -193,35 +187,143 @@ type PendingSubmissionRow = {
   id: string;
   created_at: string;
   student_id: string;
-  lesson_blocks: {
-    lessons: {
-      title: string;
-      modules: {
-        courses: {
-          title: string;
-          slug: string;
-          teacher_id: string;
-        } | null;
-      } | null;
-    } | null;
-  } | null;
+  lesson_block_id: string;
 };
 
-function readPendingSubmissionContext(row: PendingSubmissionRow): {
-  courseTitle: string;
-  lessonTitle: string;
-  courseSlug: string;
-} | null {
-  const lesson = row.lesson_blocks?.lessons;
-  const course = lesson?.modules?.courses;
+function normalizePendingReviewLimit(limit: number): number {
+  return Math.min(Math.max(limit, 1), MAX_PENDING_REVIEW_FETCH);
+}
+
+function readCourseFromNestedRel(
+  coursesRel:
+    | { title: string | null; slug: string; teacher_id?: string }
+    | { title: string | null; slug: string; teacher_id?: string }[]
+    | null
+    | undefined,
+): { title: string | null; slug: string } | null {
+  const course = Array.isArray(coursesRel) ? coursesRel[0] : coursesRel;
   if (!course?.slug) {
     return null;
   }
-  return {
-    courseTitle: course.title?.trim() || "—",
-    lessonTitle: lesson?.title?.trim() || "—",
-    courseSlug: course.slug,
-  };
+  return course;
+}
+
+/**
+ * Контекст assignment-блоков преподавателя (один лёгкий запрос по lesson_blocks).
+ * Дальше сдачи фильтруются по `lesson_block_id` без глубокого join на submissions.
+ */
+async function loadTeacherAssignmentBlockContextMap(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<Map<string, AssignmentBlockContext>> {
+  const map = new Map<string, AssignmentBlockContext>();
+
+  const { data, error } = await supabase
+    .from("lesson_blocks")
+    .select(
+      `
+      id,
+      lessons!inner(
+        title,
+        modules!inner(
+          courses!inner(
+            title,
+            slug,
+            teacher_id
+          )
+        )
+      )
+    `,
+    )
+    .eq("type", "assignment")
+    .eq("lessons.modules.courses.teacher_id", userId);
+
+  if (error) {
+    console.error(
+      "[getPendingReviewsForTeacher] assignment blocks",
+      error.message,
+    );
+    return map;
+  }
+
+  for (const row of data ?? []) {
+    const lessonRel = row.lessons as
+      | {
+          title: string | null;
+          modules:
+            | {
+                courses:
+                  | { title: string | null; slug: string }
+                  | { title: string | null; slug: string }[]
+                  | null;
+              }
+            | {
+                courses:
+                  | { title: string | null; slug: string }
+                  | { title: string | null; slug: string }[]
+                  | null;
+              }[]
+            | null;
+        }
+      | {
+          title: string | null;
+          modules:
+            | {
+                courses:
+                  | { title: string | null; slug: string }
+                  | { title: string | null; slug: string }[]
+                  | null;
+              }
+            | {
+                courses:
+                  | { title: string | null; slug: string }
+                  | { title: string | null; slug: string }[]
+                  | null;
+              }[]
+            | null;
+        }[]
+      | null;
+    const lesson = Array.isArray(lessonRel) ? lessonRel[0] : lessonRel;
+    const moduleRel = lesson?.modules;
+    const module = Array.isArray(moduleRel) ? moduleRel[0] : moduleRel;
+    const course = readCourseFromNestedRel(module?.courses);
+    if (!course) {
+      continue;
+    }
+
+    map.set(row.id, {
+      courseTitle: course.title?.trim() || "—",
+      lessonTitle: lesson?.title?.trim() || "—",
+      courseSlug: course.slug,
+    });
+  }
+
+  return map;
+}
+
+async function countPendingAssignmentReviewsForTeacher(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  blockIds: string[],
+): Promise<number> {
+  if (blockIds.length === 0) {
+    return 0;
+  }
+
+  const { count, error } = await supabase
+    .from("assignment_submissions")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending")
+    .in("lesson_block_id", blockIds);
+
+  if (error) {
+    console.error(
+      "[fetchDashboardData] teacher pending assignment reviews",
+      JSON.stringify(error, null, 2),
+    );
+    return 0;
+  }
+
+  return count ?? 0;
 }
 
 /**
@@ -253,8 +355,13 @@ type PendingTestContext = {
 async function buildTeacherPendingTestContextMap(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
+  testIds: string[],
 ): Promise<Map<string, PendingTestContext>> {
   const map = new Map<string, PendingTestContext>();
+  const uniqueTestIds = [...new Set(testIds.filter((id) => id.trim().length > 0))];
+  if (uniqueTestIds.length === 0) {
+    return map;
+  }
 
   const { data: lessonRows, error: lessonsError } = await supabase
     .from("lessons")
@@ -273,7 +380,7 @@ async function buildTeacherPendingTestContextMap(
     `,
     )
     .eq("modules.courses.teacher_id", userId)
-    .not("test_id", "is", null);
+    .in("test_id", uniqueTestIds);
 
   if (lessonsError) {
     console.error(
@@ -282,10 +389,7 @@ async function buildTeacherPendingTestContextMap(
     );
   }
 
-  const lessonIds: string[] = [];
-
   for (const lesson of lessonRows ?? []) {
-    lessonIds.push(lesson.id);
     if (!lesson.test_id) continue;
 
     const modulesRel = lesson.modules as
@@ -303,9 +407,8 @@ async function buildTeacherPendingTestContextMap(
         }[]
       | null;
     const module = Array.isArray(modulesRel) ? modulesRel[0] : modulesRel;
-    const courseRel = module?.courses;
-    const course = Array.isArray(courseRel) ? courseRel[0] : courseRel;
-    if (!course?.slug) continue;
+    const course = readCourseFromNestedRel(module?.courses);
+    if (!course) continue;
 
     map.set(lesson.test_id, {
       lessonTitle: lesson.title?.trim() || "Урок",
@@ -314,53 +417,77 @@ async function buildTeacherPendingTestContextMap(
     });
   }
 
-  if (lessonIds.length > 0) {
-    const { data: blockRows, error: blocksError } = await supabase
-      .from("lesson_blocks")
-      .select("content, lessons!inner(id, title, modules!inner(courses!inner(title, slug, teacher_id)))")
-      .in("lesson_id", lessonIds)
-      .eq("type", "quiz");
+  const missingTestIds = uniqueTestIds.filter((testId) => !map.has(testId));
+  if (missingTestIds.length === 0) {
+    return map;
+  }
 
-    if (blocksError) {
-      console.error(
-        "[getPendingReviewsForTeacher] quiz blocks",
-        blocksError.message,
-      );
-    }
+  const orFilter = missingTestIds
+    .map((testId) => `content->>test_id.eq.${testId}`)
+    .join(",");
 
-    for (const block of blockRows ?? []) {
-      const lessonRel = block.lessons as
-        | {
-            title: string | null;
-            modules:
-              | {
-                  courses:
-                    | { title: string | null; slug: string }
-                    | { title: string | null; slug: string }[]
-                    | null;
-                }
-              | {
-                  courses:
-                    | { title: string | null; slug: string }
-                    | { title: string | null; slug: string }[]
-                    | null;
-                }[]
-              | null;
-          }
-        | null;
-      const moduleRel = lessonRel?.modules;
-      const module = Array.isArray(moduleRel) ? moduleRel[0] : moduleRel;
-      const courseRel = module?.courses;
-      const course = Array.isArray(courseRel) ? courseRel[0] : courseRel;
-      const testId = parseTestIdFromQuizBlockContent(block.content);
-      if (!testId || !course?.slug) continue;
+  const { data: blockRows, error: blocksError } = await supabase
+    .from("lesson_blocks")
+    .select(
+      `
+      content,
+      lessons!inner(
+        title,
+        modules!inner(
+          courses!inner(
+            title,
+            slug,
+            teacher_id
+          )
+        )
+      )
+    `,
+    )
+    .eq("type", "quiz")
+    .eq("lessons.modules.courses.teacher_id", userId)
+    .or(orFilter);
 
-      map.set(testId, {
-        lessonTitle: lessonRel?.title?.trim() || "Урок",
-        courseTitle: course.title?.trim() || "—",
-        courseSlug: course.slug,
-      });
-    }
+  if (blocksError) {
+    console.error(
+      "[getPendingReviewsForTeacher] quiz blocks",
+      blocksError.message,
+    );
+    return map;
+  }
+
+  for (const block of blockRows ?? []) {
+    const testId = parseTestIdFromQuizBlockContent(block.content);
+    if (!testId || map.has(testId)) continue;
+
+    const lessonRel = block.lessons as
+      | {
+          title: string | null;
+          modules:
+            | {
+                courses:
+                  | { title: string | null; slug: string }
+                  | { title: string | null; slug: string }[]
+                  | null;
+              }
+            | {
+                courses:
+                  | { title: string | null; slug: string }
+                  | { title: string | null; slug: string }[]
+                  | null;
+              }[]
+            | null;
+        }
+      | null;
+    const moduleRel = lessonRel?.modules;
+    const module = Array.isArray(moduleRel) ? moduleRel[0] : moduleRel;
+    const course = readCourseFromNestedRel(module?.courses);
+    if (!course) continue;
+
+    map.set(testId, {
+      lessonTitle: lessonRel?.title?.trim() || "Урок",
+      courseTitle: course.title?.trim() || "—",
+      courseSlug: course.slug,
+    });
   }
 
   return map;
@@ -382,6 +509,7 @@ async function getPendingTestReviewsForTeacher(
   limit: number,
 ): Promise<PendingReviewItem[]> {
   const supabase = await createClient();
+  const fetchLimit = normalizePendingReviewLimit(limit);
 
   const { data: rows, error } = await supabase
     .from("student_attempts")
@@ -401,7 +529,7 @@ async function getPendingTestReviewsForTeacher(
     .eq("is_training_mode", false)
     .eq("tests.user_id", userId)
     .order("completed_at", { ascending: false, nullsFirst: false })
-    .limit(limit);
+    .limit(fetchLimit);
 
   if (error) {
     console.error(
@@ -419,6 +547,7 @@ async function getPendingTestReviewsForTeacher(
   const testContextById = await buildTeacherPendingTestContextMap(
     supabase,
     userId,
+    attemptRows.map((row) => row.test_id),
   );
   const studentIds = [...new Set(attemptRows.map((row) => row.student_id))];
   const profileNameByUserId = new Map<string, string | null>();
@@ -473,32 +602,24 @@ async function getPendingAssignmentReviewsForTeacher(
   limit: number,
 ): Promise<PendingReviewItem[]> {
   const supabase = await createClient();
+  const fetchLimit = normalizePendingReviewLimit(limit);
+
+  const blockContextById = await loadTeacherAssignmentBlockContextMap(
+    supabase,
+    userId,
+  );
+  const blockIds = [...blockContextById.keys()];
+  if (blockIds.length === 0) {
+    return [];
+  }
 
   const { data: rows, error } = await supabase
     .from("assignment_submissions")
-    .select(
-      `
-      id,
-      created_at,
-      student_id,
-      lesson_blocks!inner(
-        lessons!inner(
-          title,
-          modules!inner(
-            courses!inner(
-              title,
-              slug,
-              teacher_id
-            )
-          )
-        )
-      )
-    `,
-    )
+    .select("id, created_at, student_id, lesson_block_id")
     .eq("status", "pending")
-    .eq("lesson_blocks.lessons.modules.courses.teacher_id", userId)
+    .in("lesson_block_id", blockIds)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(fetchLimit);
 
   if (error) {
     console.error(
@@ -530,7 +651,7 @@ async function getPendingAssignmentReviewsForTeacher(
   const items: PendingReviewItem[] = [];
 
   for (const row of submissionRows) {
-    const context = readPendingSubmissionContext(row);
+    const context = blockContextById.get(row.lesson_block_id);
     if (!context) {
       continue;
     }

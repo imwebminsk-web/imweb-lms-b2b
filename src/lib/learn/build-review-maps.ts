@@ -4,6 +4,10 @@ import {
   parseImageLabelingOptions,
 } from "@/components/quiz/ImageLabelingQuestion";
 import {
+  hasGroupedFillTypingContent,
+  mergeGroupedTypingRecords,
+} from "@/lib/grouped-fill-blanks-utils";
+import {
   parseGroupedFillAssignmentsFromAnswerData,
   parseGroupedFillTypingFromAnswerData,
   parseLabelPairsFromAnswerData,
@@ -194,7 +198,7 @@ export function buildReviewMaps(
     }
 
     const groupedTyping = parseGroupedFillTypingFromAnswerData(parsedData);
-    if (groupedTyping && Object.keys(groupedTyping).length > 0) {
+    if (hasGroupedFillTypingContent(groupedTyping ?? undefined)) {
       const q = questions.find((x) => x.id === row.question_id);
       if (
         q?.type === "fill_blanks_typing" ||
@@ -203,10 +207,10 @@ export function buildReviewMaps(
       ) {
         const prev =
           reviewGroupedFillTypingByQuestionId.get(row.question_id) ?? {};
-        reviewGroupedFillTypingByQuestionId.set(row.question_id, {
-          ...prev,
-          ...groupedTyping,
-        });
+        reviewGroupedFillTypingByQuestionId.set(
+          row.question_id,
+          mergeGroupedTypingRecords(prev, groupedTyping),
+        );
       }
     }
 

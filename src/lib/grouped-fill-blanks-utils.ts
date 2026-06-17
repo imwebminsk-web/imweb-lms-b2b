@@ -569,6 +569,366 @@ export function alignGroupedFillAnswersToPlayerItems(
   return out;
 }
 
+export function unwrapAnswerDataJson(raw: Json | null): Json | null {
+  if (raw == null) return null;
+  let value: unknown = raw;
+  let depth = 0;
+  while (typeof value === "string" && depth < 3) {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return typeof value === "string" && value.trim() ? value : null;
+    }
+    depth++;
+  }
+  if (typeof value === "string") {
+    return value.trim() ? value : null;
+  }
+  return value as Json;
+}
+
+export function hasGroupedFillTypingContent(
+  grouped:
+    | Record<string, Record<string, string> | string>
+    | undefined
+    | null,
+): boolean {
+  if (!grouped) return false;
+  return Object.values(grouped).some((itemTyping) => {
+    if (typeof itemTyping === "string") {
+      return itemTyping.trim().length > 0;
+    }
+    if (!itemTyping || typeof itemTyping !== "object") return false;
+    return Object.values(itemTyping).some(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+  });
+}
+
+export function mergeGroupedTypingRecords(
+  ...sources: Array<Record<string, Record<string, string>> | undefined | null>
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const source of sources) {
+    if (!source) continue;
+    for (const [itemId, itemTyping] of Object.entries(source)) {
+      if (typeof itemTyping === "string") {
+        out[itemId] = { ...(out[itemId] ?? {}), "": itemTyping };
+        continue;
+      }
+      if (!itemTyping || typeof itemTyping !== "object") continue;
+      out[itemId] = { ...(out[itemId] ?? {}), ...itemTyping };
+    }
+  }
+  return out;
+}
+
+export function firstNonEmptyTypingValue(
+  itemTyping: Record<string, string> | null | undefined,
+): string {
+  if (!itemTyping) return "";
+  for (const value of Object.values(itemTyping)) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return "";
+}
+
+const BRUTE_FORCE_TEXT_KEYS = ["text", "answer", "value"] as const;
+
+/**
+ * Агрессивно извлекает любую непустую строку из сырого answer_data
+ * (строка, `{ text }`, `{ answer }`, вложенный groupedFillTyping и т.д.).
+ */
+export function bruteForceExtractTypingValue(
+  source: unknown,
+  blankId?: string,
+  depth = 0,
+): string {
+  if (depth > 5) return "";
+
+  if (typeof source === "string") {
+    return source;
+  }
+
+  if (source == null || typeof source !== "object") {
+    return "";
+  }
+
+  if (Array.isArray(source)) {
+    for (const item of source) {
+      const found = bruteForceExtractTypingValue(item, blankId, depth + 1);
+      if (found.trim()) return found;
+    }
+    return "";
+  }
+
+  const rec = source as Record<string, unknown>;
+
+  if (blankId && typeof rec[blankId] === "string") {
+    const direct = rec[blankId];
+    if (direct.trim()) return direct;
+  }
+
+  for (const key of BRUTE_FORCE_TEXT_KEYS) {
+    const candidate = rec[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  const parsed = parseGroupedFillTypingFromAnswerData(rec as Json);
+  if (parsed) {
+    const flat: Record<string, string> = {};
+    for (const itemTyping of Object.values(parsed)) {
+      if (typeof itemTyping === "string") {
+        const text = itemTyping as string;
+        if (text.trim()) return text;
+      }
+      if (itemTyping && typeof itemTyping === "object") {
+        Object.assign(flat, itemTyping);
+      }
+    }
+    if (
+      blankId &&
+      typeof flat[blankId] === "string" &&
+      flat[blankId]!.trim()
+    ) {
+      return flat[blankId]!;
+    }
+    const pooled = firstNonEmptyTypingValue(flat);
+    if (pooled) return pooled;
+  }
+
+  for (const value of Object.values(rec)) {
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  for (const value of Object.values(rec)) {
+    if (value && typeof value === "object") {
+      const nested = bruteForceExtractTypingValue(value, blankId, depth + 1);
+      if (nested.trim()) return nested;
+    }
+  }
+
+  return "";
+}
+
+/** Значение для readonly-поля в review: нормализация + brute-force по сырому ответу. */
+export function resolveReviewDisplayTypingValue(params: {
+  rawValue: unknown;
+  assignments: Record<string, string>;
+  blankId: string;
+  blankIds: string[];
+}): string {
+  const fromAssignments = resolveTypingValueForBlank(
+    params.assignments,
+    params.blankId,
+    params.blankIds,
+  );
+  if (fromAssignments.trim()) return fromAssignments;
+
+  const fromRaw = bruteForceExtractTypingValue(params.rawValue, params.blankId);
+  if (fromRaw.trim()) return fromRaw;
+
+  if (typeof params.rawValue === "string") {
+    return params.rawValue;
+  }
+
+  if (
+    params.rawValue &&
+    typeof params.rawValue === "object" &&
+    !Array.isArray(params.rawValue)
+  ) {
+    const rec = params.rawValue as Record<string, unknown>;
+    if (params.blankId && typeof rec[params.blankId] === "string") {
+      return rec[params.blankId] as string;
+    }
+    const fallbackVal = Object.values(rec).find(
+      (value) => typeof value === "string" && value.trim() !== "",
+    );
+    if (typeof fallbackVal === "string") return fallbackVal;
+  }
+
+  return "";
+}
+
+/** Приводит ответ подзадания к ключам blank id из контента (строка, устаревшие id, один пропуск). */
+export function normalizeItemTypingForBlanks(
+  itemTyping: Record<string, string> | string | null | undefined,
+  blankIds: string[],
+): Record<string, string> {
+  if (itemTyping == null) return {};
+
+  if (typeof itemTyping === "string") {
+    if (!itemTyping.trim()) return {};
+    if (blankIds.length >= 1) {
+      return { [blankIds[0]!]: itemTyping };
+    }
+    return { "": itemTyping };
+  }
+
+  const byKey: Record<string, string> = {};
+  for (const [key, value] of Object.entries(itemTyping)) {
+    if (typeof value === "string") {
+      byKey[key] = value;
+    }
+  }
+
+  const nonEmptyValues = Object.values(byKey).filter(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+
+  if (blankIds.length === 0) {
+    return byKey;
+  }
+
+  const hasMatchingKey = blankIds.some(
+    (id) => typeof byKey[id] === "string" && byKey[id]!.trim().length > 0,
+  );
+  if (hasMatchingKey) return byKey;
+
+  if (blankIds.length === 1 && nonEmptyValues.length > 0) {
+    return { [blankIds[0]!]: nonEmptyValues.join("\n") };
+  }
+
+  if (
+    nonEmptyValues.length === blankIds.length &&
+    nonEmptyValues.length > 0
+  ) {
+    return Object.fromEntries(
+      blankIds.map((id, index) => [id, nonEmptyValues[index]!] as const),
+    );
+  }
+
+  if (nonEmptyValues.length === 1 && blankIds.length >= 1) {
+    return { [blankIds[0]!]: nonEmptyValues[0]! };
+  }
+
+  return byKey;
+}
+
+/** Безопасно достаёт текст пропуска даже при несовпадении ключей в сохранённом ответе. */
+export function resolveTypingValueForBlank(
+  assignments: Record<string, string>,
+  blankId: string,
+  blankIds: string[],
+): string {
+  const normalized = normalizeItemTypingForBlanks(assignments, blankIds);
+  const fromNormalized = normalized[blankId];
+  if (typeof fromNormalized === "string" && fromNormalized.length > 0) {
+    return fromNormalized;
+  }
+
+  const direct = assignments[blankId];
+  if (typeof direct === "string") return direct;
+
+  if (blankIds.length === 1) {
+    const pooled = firstNonEmptyTypingValue({
+      ...assignments,
+      ...normalized,
+    });
+    if (pooled) return pooled;
+  }
+
+  const blankIndex = blankIds.indexOf(blankId);
+  if (blankIndex >= 0) {
+    const orderedValues = Object.values(normalized).filter(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+    if (blankIndex < orderedValues.length) {
+      return orderedValues[blankIndex]!;
+    }
+  }
+
+  return firstNonEmptyTypingValue(assignments);
+}
+
+export function normalizeGroupedTypingForPlayerItems(
+  groupedTyping: Record<string, Record<string, string>>,
+  items: GroupedFillBlanksPlayerItem[],
+): Record<string, Record<string, string>> {
+  const aligned = alignGroupedFillAnswersToPlayerItems(
+    groupedTyping,
+    items.map((item) => ({ id: item.id })),
+  );
+
+  if (items.length === 1) {
+    const item = items[0]!;
+    const pool: Record<string, string> = {};
+    for (const itemTyping of Object.values(aligned)) {
+      if (itemTyping && typeof itemTyping === "object") {
+        Object.assign(pool, itemTyping);
+      }
+    }
+    const legacy = aligned[LEGACY_GROUPED_FILL_ITEM_ID];
+    if (legacy && typeof legacy === "object") {
+      Object.assign(pool, legacy);
+    }
+    const blankIds = resolveBlankIdsForGroupedFillBlanksItem(item);
+    return {
+      [item.id]: normalizeItemTypingForBlanks(pool, blankIds),
+    };
+  }
+
+  const out: Record<string, Record<string, string>> = {};
+  for (const item of items) {
+    const blankIds = resolveBlankIdsForGroupedFillBlanksItem(item);
+    const raw =
+      aligned[item.id] ??
+      (items.length === 1 ? aligned[LEGACY_GROUPED_FILL_ITEM_ID] : undefined);
+    out[item.id] = normalizeItemTypingForBlanks(raw, blankIds);
+  }
+
+  return out;
+}
+
+export function resolveReviewGroupedFillTypingForPlayer(params: {
+  rows: { answer_data: Json | null }[];
+  fromMap?: Record<string, Record<string, string>>;
+  items: GroupedFillBlanksPlayerItem[];
+}): Record<string, Record<string, string>> {
+  let saved = hasGroupedFillTypingContent(params.fromMap)
+    ? { ...params.fromMap! }
+    : {};
+
+  for (const row of params.rows) {
+    const parsed = parseGroupedFillTypingFromAnswerData(
+      unwrapAnswerDataJson(row.answer_data),
+    );
+    if (parsed) {
+      saved = mergeGroupedTypingRecords(saved, parsed);
+    }
+  }
+
+  let normalized = normalizeGroupedTypingForPlayerItems(saved, params.items);
+
+  if (!hasGroupedFillTypingContent(normalized)) {
+    const brute: Record<string, Record<string, string>> = {};
+    for (const item of params.items) {
+      const blankIds = resolveBlankIdsForGroupedFillBlanksItem(item);
+      for (const row of params.rows) {
+        const raw = unwrapAnswerDataJson(row.answer_data);
+        const text = bruteForceExtractTypingValue(raw);
+        if (!text.trim()) continue;
+        brute[item.id] = normalizeItemTypingForBlanks(text, blankIds);
+        break;
+      }
+    }
+    if (hasGroupedFillTypingContent(brute)) {
+      normalized = normalizeGroupedTypingForPlayerItems(
+        mergeGroupedTypingRecords(saved, brute),
+        params.items,
+      );
+    }
+  }
+
+  return normalized;
+}
+
 export function parseGroupedFillAssignmentsFromAnswerData(
   data: Json | null,
 ): Record<string, Record<string, string>> | null {
@@ -604,14 +964,30 @@ export function parseGroupedFillAssignmentsFromAnswerData(
 export function parseGroupedFillTypingFromAnswerData(
   data: Json | null,
 ): Record<string, Record<string, string>> | null {
+  if (typeof data === "string" && data.trim()) {
+    return { [LEGACY_GROUPED_FILL_ITEM_ID]: { "": data } };
+  }
+
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     return null;
   }
   const rec = data as Record<string, unknown>;
+
+  for (const key of ["text", "answer", "value"] as const) {
+    const candidate = rec[key];
+    if (typeof candidate === "string" && candidate.trim()) {
+      return { [LEGACY_GROUPED_FILL_ITEM_ID]: { "": candidate } };
+    }
+  }
+
   const grouped = rec.groupedFillTyping;
   if (grouped && typeof grouped === "object" && !Array.isArray(grouped)) {
     const out: Record<string, Record<string, string>> = {};
     for (const [itemId, blanks] of Object.entries(grouped)) {
+      if (typeof blanks === "string") {
+        out[itemId] = { "": blanks };
+        continue;
+      }
       if (!blanks || typeof blanks !== "object" || Array.isArray(blanks)) {
         return null;
       }

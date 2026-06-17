@@ -20,6 +20,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 
 import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
 import { ReviewSubQuestionHeader } from "@/components/quiz/ReviewSubQuestionHeader";
+import { useLanguage } from "@/components/providers/language-provider";
 import type { ReviewItemScore } from "@/lib/quiz-result-scoring";
 import {
   type OrderingPlayerElement,
@@ -100,6 +101,7 @@ function OrderingSortableItem({
   isReviewMode: boolean;
   correctOrder?: string[];
 }) {
+  const { t } = useLanguage();
   const dndId = useId();
   const elementById = useMemo(
     () => new Map(item.elements.map((el) => [el.id, el])),
@@ -152,12 +154,28 @@ function OrderingSortableItem({
     .map((id) => elementById.get(id))
     .filter((el): el is OrderingPlayerElement => Boolean(el));
 
+  const isFullyCorrect =
+    isReviewMode &&
+    correctOrder != null &&
+    arraysEqual(localOrderIds, correctOrder);
+
+  const showCorrectOrderBlock =
+    isReviewMode &&
+    correctOrder != null &&
+    correctOrder.length > 0 &&
+    !isFullyCorrect;
+
+  const correctElements = (correctOrder ?? [])
+    .map((id) => elementById.get(id))
+    .filter((el): el is OrderingPlayerElement => Boolean(el));
+
   return (
     <div className="space-y-3">
       {item.text.trim() ? (
         <TaskMediaRenderer
           html={item.text}
           className="text-foreground text-base font-medium leading-snug md:text-lg [&_strong]:font-semibold"
+          isReviewMode={isReviewMode}
         />
       ) : null}
 
@@ -188,11 +206,29 @@ function OrderingSortableItem({
         </SortableContext>
       </DndContext>
 
+      {showCorrectOrderBlock ? (
+        <div className="mt-4 rounded-md border border-emerald-200/60 bg-emerald-50/50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/30">
+          <p className="text-muted-foreground mb-2 text-sm">
+            {t("quizResult.correctOrder")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {correctElements.map((element) => (
+              <span
+                key={element.id}
+                className="rounded-full border border-emerald-500/40 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100"
+              >
+                {element.text}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {isReviewMode && correctOrder ? (
         <p className="text-muted-foreground text-xs">
-          {arraysEqual(localOrderIds, correctOrder)
+          {isFullyCorrect
             ? "Верный порядок."
-            : "Правильная последовательность отмечена зелёным по позициям."}
+            : "Красным отмечены элементы не на своих местах."}
         </p>
       ) : (
         <p className="text-muted-foreground text-xs">

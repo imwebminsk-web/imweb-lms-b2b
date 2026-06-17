@@ -19,7 +19,10 @@ import {
   buildGroupedCorrectByQuestionId,
   buildReviewMaps,
 } from "@/lib/learn/build-review-maps";
-import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
+import {
+  resolveGroupedFillBlanksPlayerView,
+  resolveReviewGroupedFillTypingForPlayer,
+} from "@/lib/grouped-fill-blanks-utils";
 import { cn } from "@/lib/utils";
 import type { Json } from "@/types/database.types";
 
@@ -182,8 +185,14 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
               content: q.content as Json,
               questionType: q.type,
             });
-            const savedTyping =
-              reviewMaps.reviewGroupedFillTypingByQuestionId.get(q.id) ?? {};
+            const savedTyping = view
+              ? resolveReviewGroupedFillTypingForPlayer({
+                  rows: reviewMaps.reviewRowsByQuestionId.get(q.id) ?? [],
+                  fromMap:
+                    reviewMaps.reviewGroupedFillTypingByQuestionId.get(q.id),
+                  items: view.items,
+                })
+              : {};
 
             return (
               <section
@@ -210,6 +219,11 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                     mode={view.mode}
                     groupedTyping={savedTyping}
                     isReviewMode
+                    reviewRawAnswer={
+                      (reviewMaps.reviewRowsByQuestionId.get(q.id) ?? []).find(
+                        (row) => row.answer_data != null,
+                      )?.answer_data ?? null
+                    }
                   />
                 ) : null}
 

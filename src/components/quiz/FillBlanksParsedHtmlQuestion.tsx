@@ -11,7 +11,8 @@ import {
 } from "@dnd-kit/core";
 import { useId, useMemo, useState } from "react";
 
-import { Input } from "@/components/ui/input";
+import { ExpandingBlankInput } from "@/components/quiz/ExpandingBlankInput";
+import { NativeMediaReviewPlaceholder } from "@/components/quiz/NativeMediaReviewPlaceholder";
 import {
   BlankSlotWithDrop,
   DraggableWordBankItem,
@@ -23,8 +24,19 @@ import {
 } from "@/components/quiz/FillInTheBlanksQuestion";
 import { correctTextForBlank } from "@/lib/fill-blanks-scoring";
 import { transformMediaUrlsInHtml } from "@/lib/media-utils";
+import {
+  QUIZ_PROSE_BASE,
+  QUIZ_PROSE_EMBEDDED_IMG,
+  normalizeEmbeddedImagesInHtml,
+} from "@/lib/quiz-rich-text-styles";
 import { cn } from "@/lib/utils";
-import type { GroupedFillBlanksMode } from "@/lib/grouped-fill-blanks-utils";
+import {
+  normalizeItemTypingForBlanks,
+  resolveBlankIdsForGroupedFillBlanksItem,
+  resolveReviewDisplayTypingValue,
+  resolveTypingValueForBlank,
+  type GroupedFillBlanksMode,
+} from "@/lib/grouped-fill-blanks-utils";
 import type {
   FillInTheBlanksSegment,
   FillInTheBlanksWord,
@@ -65,43 +77,15 @@ function ReviewTypingBlank({
   );
 }
 
-function ExpandingBlankInput({
-  blankId,
-  value,
-  onChange,
-  disabled,
-}: {
-  blankId: string;
-  value: string;
-  onChange: (next: string) => void;
-  disabled?: boolean;
-}) {
-  const widthCh = Math.max(10, value.length + 2);
-
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      aria-label={`Поле ответа ${blankId}`}
-      autoComplete="off"
-      className={cn(
-        "border-input bg-background text-foreground mx-0.5 inline-block h-9 align-middle rounded-md border px-2 py-1 text-sm shadow-xs transition-[width] duration-150 ease-out",
-        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
-      )}
-      style={{ width: `max(10ch, ${widthCh}ch)` }}
-    />
-  );
-}
-
 export type FillBlanksParsedHtmlQuestionProps = {
   parsedHtml: string;
   mode: GroupedFillBlanksMode;
   segments: FillInTheBlanksSegment[];
   wordBank: FillInTheBlanksWord[];
   correctMapping: Record<string, string>;
-  value?: Record<string, string>;
+  value?: Record<string, string> | string;
+  /** Сырой answer_data из БД — для brute-force в review mode. */
+  reviewRawAnswer?: unknown;
   onChange?: (next: Record<string, string>) => void;
   isReviewMode?: boolean;
 };
@@ -113,13 +97,30 @@ export function FillBlanksParsedHtmlQuestion({
   wordBank,
   correctMapping,
   value: valueProp,
+  reviewRawAnswer,
   onChange,
   isReviewMode = false,
 }: FillBlanksParsedHtmlQuestionProps) {
   const dndId = useId();
   const [internal, setInternal] = useState<Record<string, string>>({});
-  const controlled = valueProp !== undefined;
-  const assignments = controlled ? valueProp : internal;
+
+  const blankIds = useMemo(
+    () =>
+      resolveBlankIdsForGroupedFillBlanksItem({
+        segments,
+        parsedHtml,
+        correctMapping,
+      }),
+    [segments, parsedHtml, correctMapping],
+  );
+
+  const assignments = useMemo(() => {
+    if (valueProp == null) return internal;
+    if (typeof valueProp === "string") {
+      return normalizeItemTypingForBlanks(valueProp, blankIds);
+    }
+    return valueProp;
+  }, [valueProp, internal, blankIds]);
 
   const wordById = useMemo(() => {
     const m = new Map<string, FillInTheBlanksWord>();
@@ -138,7 +139,7 @@ export function FillBlanksParsedHtmlQuestion({
   );
 
   function patchAssignments(next: Record<string, string>) {
-    if (!controlled) setInternal(next);
+    if (valueProp === undefined) setInternal(next);
     onChange?.(next);
   }
 
@@ -186,8 +187,21 @@ export function FillBlanksParsedHtmlQuestion({
     [segments, wordBank, correctMapping],
   );
 
+  function typedForBlank(blankId: string): string {
+    if (isReviewMode) {
+      return resolveReviewDisplayTypingValue({
+        rawValue: reviewRawAnswer ?? valueProp,
+        assignments,
+        blankId,
+        blankIds,
+      });
+    }
+    return resolveTypingValueForBlank(assignments, blankId, blankIds);
+  }
+
   const embedReadyHtml = useMemo(
-    () => transformMediaUrlsInHtml(parsedHtml),
+    () =>
+      normalizeEmbeddedImagesInHtml(transformMediaUrlsInHtml(parsedHtml)),
     [parsedHtml],
   );
 
@@ -229,15 +243,16 @@ export function FillBlanksParsedHtmlQuestion({
     }
 
     if (mode === "text_input") {
-      const typed = assignments[blankId] ?? "";
+      const typed = typedForBlank(blankId);
       if (isReviewMode) {
         return (
-          <span
+          <ExpandingBlankInput
             key={blankId}
-            className="border-border bg-muted/60 text-foreground mx-0.5 inline-block min-w-[10ch] rounded-md border px-2 py-1 align-middle text-sm"
-          >
-            {typed || "—"}
-          </span>
+            blankId={blankId}
+            value={typed}
+            onChange={() => {}}
+            readOnly
+          />
         );
       }
       return (
@@ -256,23 +271,18 @@ export function FillBlanksParsedHtmlQuestion({
         <ReviewTypingBlank
           key={blankId}
           blankId={blankId}
-          typed={assignments[blankId] ?? ""}
+          typed={typedForBlank(blankId)}
           correctText={correctText}
         />
       );
     }
-    const correctLen = correctText.length || 8;
-    const widthCh = Math.min(Math.max(correctLen + 2, 6), 24);
     return (
-      <Input
+      <ExpandingBlankInput
         key={blankId}
-        type="text"
-        value={assignments[blankId] ?? ""}
-        onChange={(e) => updateBlank(blankId, e.target.value)}
-        aria-label={`Пропуск ${blankId}`}
-        className="mx-0.5 inline-block h-8 align-middle px-2 py-1 text-sm"
-        style={{ width: `${widthCh}ch` }}
-        autoComplete="off"
+        blankId={blankId}
+        value={typedForBlank(blankId)}
+        onChange={(next) => updateBlank(blankId, next)}
+        ariaLabel={`Пропуск ${blankId}`}
         spellCheck={false}
       />
     );
@@ -281,15 +291,28 @@ export function FillBlanksParsedHtmlQuestion({
   const parsedBody = (
     <div
       className={cn(
-        "prose prose-sm dark:prose-invert max-w-none text-foreground text-sm leading-relaxed md:text-base",
-        "[&_p]:my-0 [&_p+p]:mt-2 [&_audio]:mx-auto [&_audio]:my-2 [&_audio]:block [&_audio]:h-10 [&_audio]:w-full [&_audio]:max-w-lg",
-        "[&_video]:mx-auto [&_video]:my-4 [&_video]:aspect-video [&_video]:w-full [&_video]:max-w-3xl [&_video]:rounded-lg",
-        "[&_.blank-placeholder]:border-primary/40 [&_.blank-placeholder]:bg-primary/10 [&_.blank-placeholder]:mx-0.5 [&_.blank-placeholder]:inline-block [&_.blank-placeholder]:min-h-[1.5rem] [&_.blank-placeholder]:min-w-[4rem] [&_.blank-placeholder]:rounded [&_.blank-placeholder]:border [&_.blank-placeholder]:align-middle",
+        QUIZ_PROSE_BASE,
+        QUIZ_PROSE_EMBEDDED_IMG,
+        "text-foreground text-sm md:text-base",
+        isReviewMode ? "leading-relaxed" : "leading-loose",
+        !isReviewMode &&
+          "[&_audio]:mx-auto [&_audio]:my-2 [&_audio]:block [&_audio]:h-10 [&_audio]:w-full [&_audio]:max-w-lg",
+        !isReviewMode &&
+          "[&_video]:mx-auto [&_video]:my-4 [&_video]:aspect-video [&_video]:w-full [&_video]:max-w-3xl [&_video]:rounded-lg",
+        "[&_.blank-placeholder]:border-primary/40 [&_.blank-placeholder]:bg-primary/10 [&_.blank-placeholder]:mx-0.5 [&_.blank-placeholder]:my-1 [&_.blank-placeholder]:inline-block [&_.blank-placeholder]:min-h-[1.5rem] [&_.blank-placeholder]:min-w-[4rem] [&_.blank-placeholder]:rounded [&_.blank-placeholder]:border [&_.blank-placeholder]:align-middle",
       )}
     >
       {parse(embedReadyHtml, {
         replace(domNode) {
           if (!isDomElement(domNode)) return undefined;
+          const tag = domNode.name?.toLowerCase();
+          if (
+            isReviewMode &&
+            (tag === "video" || tag === "audio")
+          ) {
+            const src = domNode.attribs.src ?? tag;
+            return <NativeMediaReviewPlaceholder key={`review-media-${src}`} />;
+          }
           const blankId = domNode.attribs["data-blank-id"];
           if (blankId) {
             return renderBlank(blankId);

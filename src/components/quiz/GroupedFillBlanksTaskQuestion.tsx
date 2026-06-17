@@ -12,6 +12,7 @@ import type {
 } from "@/lib/grouped-fill-blanks-utils";
 import type { FillInTheBlanksContent } from "@/lib/validations/fill-in-the-blanks-schema";
 import type { TextInputContent } from "@/lib/validations/fill-in-the-blanks-schema";
+import type { Json } from "@/types/database.types";
 import { cn } from "@/lib/utils";
 
 export type GroupedFillBlanksTaskQuestionProps = {
@@ -25,6 +26,8 @@ export type GroupedFillBlanksTaskQuestionProps = {
   ) => void;
   isReviewMode?: boolean;
   reviewItemScores?: Record<string, ReviewItemScore>;
+  /** Сырой answer_data попытки — brute-force fallback в review. */
+  reviewRawAnswer?: Json | null;
 };
 
 function itemToTypingContent(item: GroupedFillBlanksPlayerItem): FillInTheBlanksContent {
@@ -49,6 +52,7 @@ function renderLegacyItem(
   groupedTyping: Record<string, Record<string, string>>,
   groupedAssignments: Record<string, Record<string, string>>,
   isReviewMode: boolean,
+  reviewRawAnswer?: Json | null,
   onTypingChange?: (itemId: string, next: Record<string, string>) => void,
   onAssignmentsChange?: (itemId: string, next: Record<string, string>) => void,
 ) {
@@ -56,7 +60,7 @@ function renderLegacyItem(
     return (
       <FillInTheBlanksQuestion
         content={itemToTypingContent(item)}
-        value={groupedAssignments[item.id]}
+        value={groupedAssignments[item.id] ?? {}}
         onChange={(next) => onAssignmentsChange?.(item.id, next)}
         isReviewMode={isReviewMode}
       />
@@ -66,7 +70,8 @@ function renderLegacyItem(
     return (
       <TextInputQuestion
         content={itemToTextInputContent(item)}
-        value={groupedTyping[item.id]}
+        value={groupedTyping[item.id] ?? {}}
+        reviewRawAnswer={reviewRawAnswer}
         onChange={(next) => onTypingChange?.(item.id, next)}
         isReviewMode={isReviewMode}
       />
@@ -91,6 +96,7 @@ export function GroupedFillBlanksTaskQuestion({
   onAssignmentsChange,
   isReviewMode = false,
   reviewItemScores,
+  reviewRawAnswer,
 }: GroupedFillBlanksTaskQuestionProps) {
   const groupedTyping = groupedTypingProp ?? {};
   const groupedAssignments = groupedAssignmentsProp ?? {};
@@ -149,9 +155,10 @@ export function GroupedFillBlanksTaskQuestion({
               correctMapping={item.correctMapping}
               value={
                 mode === "dnd"
-                  ? groupedAssignments[item.id]
-                  : groupedTyping[item.id]
+                  ? (groupedAssignments[item.id] ?? {})
+                  : (groupedTyping[item.id] ?? {})
               }
+              reviewRawAnswer={reviewRawAnswer}
               onChange={(next) =>
                 mode === "dnd"
                   ? updateItemAssignments(item.id, next)
@@ -166,6 +173,7 @@ export function GroupedFillBlanksTaskQuestion({
               groupedTyping,
               groupedAssignments,
               isReviewMode,
+              reviewRawAnswer,
               updateItemTyping,
               updateItemAssignments,
             )

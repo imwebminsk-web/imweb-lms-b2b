@@ -2060,7 +2060,7 @@ export async function getAttemptReviewAnswers(
     return { success: false, error: "Нет доступа к этой попытке" };
   }
 
-  if (attempt.status !== "completed") {
+  if (attempt.status !== "completed" && attempt.status !== "pending_review") {
     return { success: false, error: "Попытка ещё не завершена" };
   }
 

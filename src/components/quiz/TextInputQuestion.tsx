@@ -1,86 +1,115 @@
 "use client";
 
+import { Textarea } from "@/components/ui/textarea";
+import {
+  normalizeItemTypingForBlanks,
+  resolveReviewDisplayTypingValue,
+  resolveTypingValueForBlank,
+} from "@/lib/grouped-fill-blanks-utils";
 import { cn } from "@/lib/utils";
 import type { TextInputContent } from "@/lib/validations/fill-in-the-blanks-schema";
 
 export type TextInputQuestionProps = {
   content: TextInputContent;
-  value?: Record<string, string>;
+  value?: Record<string, string> | string;
+  /** Сырой answer_data из БД — для brute-force в review mode. */
+  reviewRawAnswer?: unknown;
   onChange?: (fillTyping: Record<string, string>) => void;
   isReviewMode?: boolean;
 };
 
-function ExpandingBlankInput({
-  blankId,
-  value,
-  onChange,
-  disabled,
-}: {
-  blankId: string;
-  value: string;
-  onChange: (next: string) => void;
-  disabled?: boolean;
-}) {
-  const widthCh = Math.max(10, value.length + 2);
+function resolveAssignments(
+  content: TextInputContent,
+  valueProp: Record<string, string> | string | undefined,
+): Record<string, string> {
+  const blankIds = content.segments
+    .filter((seg) => seg.type === "blank")
+    .map((seg) => seg.id);
 
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      aria-label={`Поле ответа ${blankId}`}
-      autoComplete="off"
-      className={cn(
-        "border-input bg-background text-foreground mx-0.5 inline-block h-9 align-middle rounded-md border px-2 py-1 text-sm shadow-xs transition-[width] duration-150 ease-out",
-        "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
-      )}
-      style={{ width: `max(10ch, ${widthCh}ch)` }}
-    />
+  if (typeof valueProp === "string") {
+    return normalizeItemTypingForBlanks(valueProp, blankIds);
+  }
+
+  return normalizeItemTypingForBlanks(valueProp ?? {}, blankIds);
+}
+
+function resolveTextareaValue(params: {
+  isReviewMode: boolean;
+  reviewRawAnswer: unknown;
+  valueProp: Record<string, string> | string | undefined;
+  assignments: Record<string, string>;
+  blankId: string;
+  blankIds: string[];
+}): string {
+  if (params.isReviewMode) {
+    return resolveReviewDisplayTypingValue({
+      rawValue: params.reviewRawAnswer ?? params.valueProp,
+      assignments: params.assignments,
+      blankId: params.blankId,
+      blankIds: params.blankIds,
+    });
+  }
+
+  return resolveTypingValueForBlank(
+    params.assignments,
+    params.blankId,
+    params.blankIds,
   );
 }
 
 export function TextInputQuestion({
   content,
   value: valueProp,
+  reviewRawAnswer,
   onChange,
   isReviewMode = false,
 }: TextInputQuestionProps) {
-  const assignments = valueProp ?? {};
+  const assignments = resolveAssignments(content, valueProp);
+
+  const blankIds = content.segments
+    .filter((seg) => seg.type === "blank")
+    .map((seg) => seg.id);
 
   function updateBlank(blankId: string, nextValue: string) {
     onChange?.({ ...assignments, [blankId]: nextValue });
   }
 
   return (
-    <p className="text-foreground text-sm leading-loose">
+    <div className="text-foreground space-y-3 text-sm">
       {content.segments.map((seg, i) => {
         if (seg.type === "text") {
-          return <span key={i}>{seg.value}</span>;
-        }
-
-        const typed = assignments[seg.id] ?? "";
-
-        if (isReviewMode) {
+          if (!seg.value.trim()) return null;
           return (
-            <span
-              key={seg.id}
-              className="border-border bg-muted/60 text-foreground mx-0.5 inline-block min-w-[10ch] rounded-md border px-2 py-1 align-middle text-sm"
-            >
-              {typed || "—"}
-            </span>
+            <div key={i} className="leading-relaxed whitespace-pre-wrap">
+              {seg.value}
+            </div>
           );
         }
 
+        const finalValue = resolveTextareaValue({
+          isReviewMode,
+          reviewRawAnswer,
+          valueProp,
+          assignments,
+          blankId: seg.id,
+          blankIds,
+        });
+
         return (
-          <ExpandingBlankInput
+          <Textarea
             key={seg.id}
-            blankId={seg.id}
-            value={typed}
-            onChange={(next) => updateBlank(seg.id, next)}
+            value={finalValue}
+            readOnly={isReviewMode}
+            onChange={(e) => updateBlank(seg.id, e.target.value)}
+            aria-label={`Поле ответа ${seg.id}`}
+            placeholder={isReviewMode ? undefined : "Введите развёрнутый ответ…"}
+            className={cn(
+              "min-h-[120px] resize-y",
+              isReviewMode && "bg-muted/60 cursor-default",
+            )}
           />
         );
       })}
-    </p>
+    </div>
   );
 }

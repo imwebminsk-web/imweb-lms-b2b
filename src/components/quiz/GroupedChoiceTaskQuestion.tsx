@@ -210,7 +210,7 @@ function ChoiceImageCard({
       {imageBlock}
       {hasText ? (
         <div className="px-3 py-2 text-center text-sm leading-snug md:text-base">
-          <TaskMediaRenderer html={opt.text} />
+          <TaskMediaRenderer html={opt.text} isReviewMode={isReviewMode} />
         </div>
       ) : null}
     </>
@@ -304,7 +304,7 @@ function ChoiceTextListOption({
           className="border-input text-primary size-4 shrink-0 rounded"
         />
         <span className="min-w-0 flex-1 text-left text-base leading-snug md:text-lg">
-          <TaskMediaRenderer html={opt.text} />
+          <TaskMediaRenderer html={opt.text} isReviewMode={isReviewMode} />
         </span>
         {reviewState === "correct_missed" ? <TextOptionMissedBadge /> : null}
       </label>
@@ -327,7 +327,7 @@ function ChoiceTextListOption({
       )}
     >
       <span className="min-w-0 flex-1">
-        <TaskMediaRenderer html={opt.text} />
+        <TaskMediaRenderer html={opt.text} isReviewMode={isReviewMode} />
       </span>
       {reviewState === "correct_missed" ? <TextOptionMissedBadge /> : null}
     </button>
@@ -393,6 +393,7 @@ export function GroupedChoiceTaskQuestion({
               <TaskMediaRenderer
                 html={item.text}
                 className="text-foreground text-lg font-medium leading-snug md:text-xl [&_strong]:font-semibold"
+                isReviewMode={isReviewMode}
               />
             </div>
             <div

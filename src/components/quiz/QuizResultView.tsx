@@ -11,7 +11,13 @@ import {
 } from "@/lib/quiz-helpers";
 import {
   alignGroupedFillAnswersToPlayerItems,
+  bruteForceExtractTypingValue,
+  hasGroupedFillTypingContent,
+  normalizeItemTypingForBlanks,
+  resolveBlankIdsForGroupedFillBlanksItem,
   resolveGroupedFillBlanksPlayerView,
+  resolveReviewGroupedFillTypingForPlayer,
+  type GroupedFillBlanksPlayerItem,
 } from "@/lib/grouped-fill-blanks-utils";
 import {
   LEGACY_GROUPED_ITEM_ID,
@@ -280,20 +286,72 @@ function resolveReviewGroupedFillSaved(
   parseFlat: (data: Json | null) => Record<string, string> | null,
   itemIds: string[],
 ): Record<string, Record<string, string>> {
-  const answerData = pickAnswerDataFromRows(rows);
   let saved =
     fromMap && Object.keys(fromMap).length > 0
       ? fromMap
-      : (parseGrouped(answerData) ?? {});
+      : {};
 
   if (Object.keys(saved).length === 0) {
-    const flat = parseFlat(answerData);
-    if (flat && itemIds.length === 1) {
-      saved = { [itemIds[0]!]: flat };
+    for (const row of rows) {
+      const parsed = parseGrouped(row.answer_data);
+      if (parsed && Object.keys(parsed).length > 0) {
+        saved = parsed;
+        break;
+      }
+    }
+  }
+
+  if (Object.keys(saved).length === 0) {
+    for (const row of rows) {
+      const flat = parseFlat(row.answer_data);
+      if (flat && itemIds.length === 1) {
+        saved = { [itemIds[0]!]: flat };
+        break;
+      }
     }
   }
 
   return alignGroupedFillAnswersToPlayerItems(saved, itemIds.map((id) => ({ id })));
+}
+
+function resolveReviewGroupedFillTypingSaved(
+  rows: { option_id: string; answer_data: Json | null }[],
+  fromMap: Record<string, Record<string, string>> | undefined,
+  items: GroupedFillBlanksPlayerItem[],
+): Record<string, Record<string, string>> {
+  const saved = resolveReviewGroupedFillTypingForPlayer({
+    rows,
+    fromMap,
+    items,
+  });
+
+  if (hasGroupedFillTypingContent(saved)) {
+    return saved;
+  }
+
+  const rawAnswer = pickAnswerDataFromRows(rows);
+  if (rawAnswer == null) {
+    return saved;
+  }
+
+  const brute: Record<string, Record<string, string>> = {};
+  for (const item of items) {
+    const blankIds = resolveBlankIdsForGroupedFillBlanksItem(item);
+    const text = bruteForceExtractTypingValue(rawAnswer);
+    if (text.trim()) {
+      brute[item.id] = normalizeItemTypingForBlanks(text, blankIds);
+    }
+  }
+
+  if (!hasGroupedFillTypingContent(brute)) {
+    return saved;
+  }
+
+  return resolveReviewGroupedFillTypingForPlayer({
+    rows: [{ answer_data: rawAnswer }],
+    fromMap: brute,
+    items,
+  });
 }
 
 function resolveReviewChoiceSelections(
@@ -484,12 +542,10 @@ export function QuizResultView({
       });
       if (!view) return undefined;
       const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-      const saved = resolveReviewGroupedFillSaved(
+      const saved = resolveReviewGroupedFillTypingSaved(
         rows,
         fromMap,
-        parseGroupedFillTypingBulletproof,
-        parseFillTypingBulletproof,
-        view.items.map((item) => item.id),
+        view.items,
       );
       const manualGrades =
         q.type === "text_input"
@@ -563,6 +619,7 @@ export function QuizResultView({
                     task={parseTaskPresentation(q.content, 0)}
                     fallbackTitle={questionInstructionFallback(q)}
                     variant="section"
+                    isReviewMode
                   />
                 </div>
                 <span className="text-muted-foreground shrink-0 text-sm tabular-nums">
@@ -714,6 +771,7 @@ export function QuizResultView({
                       groupedAssignments={saved}
                       isReviewMode
                       reviewItemScores={reviewItemScores}
+                      reviewRawAnswer={pickAnswerDataFromRows(rows)}
                     />
                   );
                 })()}
@@ -733,12 +791,10 @@ export function QuizResultView({
                     );
                   }
                   const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-                  const saved = resolveReviewGroupedFillSaved(
+                  const saved = resolveReviewGroupedFillTypingSaved(
                     rows,
                     fromMap,
-                    parseGroupedFillTypingBulletproof,
-                    parseFillTypingBulletproof,
-                    view.items.map((item) => item.id),
+                    view.items,
                   );
                   return (
                     <GroupedFillBlanksTaskQuestion
@@ -747,6 +803,7 @@ export function QuizResultView({
                       groupedTyping={saved}
                       isReviewMode
                       reviewItemScores={reviewItemScores}
+                      reviewRawAnswer={pickAnswerDataFromRows(rows)}
                     />
                   );
                 })()}
@@ -765,12 +822,10 @@ export function QuizResultView({
                     );
                   }
                   const fromMap = reviewGroupedFillTypingByQuestionId?.get(q.id);
-                  const saved = resolveReviewGroupedFillSaved(
+                  const saved = resolveReviewGroupedFillTypingSaved(
                     rows,
                     fromMap,
-                    parseGroupedFillTypingBulletproof,
-                    parseFillTypingBulletproof,
-                    view.items.map((item) => item.id),
+                    view.items,
                   );
                   return (
                     <div className="space-y-3">
@@ -780,6 +835,7 @@ export function QuizResultView({
                         groupedTyping={saved}
                         isReviewMode
                         reviewItemScores={reviewItemScores}
+                        reviewRawAnswer={pickAnswerDataFromRows(rows)}
                       />
                       {result.requiresManualReview ? (
                         <p className="text-muted-foreground text-xs">

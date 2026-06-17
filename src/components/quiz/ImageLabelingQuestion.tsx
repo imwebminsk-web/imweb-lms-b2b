@@ -217,30 +217,30 @@ function ImageRowWithDrop({
 
   return (
     <li className="rounded-xl border border-border bg-card p-3">
-      <p className="mb-2 text-sm font-medium">{img.title || "Изображение"}</p>
       <div
+        ref={setNodeRef}
         className={cn(
-          "relative overflow-hidden rounded-md border border-border bg-muted/20 transition-shadow",
-          isOver && "ring-2 ring-inset ring-primary",
+          "relative rounded-md border border-border bg-slate-50 p-2 transition-[box-shadow,border-color,background-color] dark:bg-slate-900/50",
+          isOver && "border-primary bg-primary/5 ring-2 ring-primary",
         )}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={img.url}
-          alt={img.title ?? ""}
-          className="mx-auto max-h-80 w-full object-contain"
-          draggable={false}
-        />
-        <div
-          ref={setNodeRef}
-          className={cn(
-            "absolute inset-0 z-10 transition-colors",
-            isOver && "bg-black/10",
-          )}
-          aria-hidden
-        />
+        <div className="relative overflow-hidden rounded-md">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={img.url}
+            alt={img.title ?? "Изображение"}
+            className="mx-auto max-h-80 w-full object-contain"
+            draggable={false}
+          />
+        </div>
+        {isOver ? (
+          <div
+            className="pointer-events-none absolute inset-2 z-10 rounded-md bg-primary/10"
+            aria-hidden
+          />
+        ) : null}
         {assignedWord ? (
-          <div className="absolute bottom-2 left-1/2 z-20 -translate-x-1/2">
+          <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
             <DraggableWordInSlot word={assignedWord} imageId={img.id} />
           </div>
         ) : null}
@@ -363,16 +363,13 @@ function ImageLabelingReviewView({
                 imageLabelReviewContainerClass(reviewState),
               )}
             >
-              <p className="mb-2 line-clamp-1 text-sm font-medium">
-                {img.title || "Изображение"}
-              </p>
               <div className="relative overflow-hidden rounded-md">
                 <ImageLabelReviewBadge state={reviewState} />
                 <div className="aspect-square w-full overflow-hidden bg-slate-50 dark:bg-slate-900/50">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={img.url}
-                    alt={img.title ?? ""}
+                    alt={img.title ?? "Изображение"}
                     className="size-full object-contain"
                     draggable={false}
                   />

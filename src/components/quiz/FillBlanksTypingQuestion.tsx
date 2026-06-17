@@ -1,10 +1,11 @@
 "use client";
 
-import { Input } from "@/components/ui/input";
+import { ExpandingBlankInput } from "@/components/quiz/ExpandingBlankInput";
 import {
   correctTextForBlank,
   isFillBlanksTypingFullyCorrect,
 } from "@/lib/fill-blanks-scoring";
+import { resolveTypingValueForBlank } from "@/lib/grouped-fill-blanks-utils";
 import { cn } from "@/lib/utils";
 import type { FillInTheBlanksContent } from "@/lib/validations/fill-in-the-blanks-schema";
 
@@ -54,6 +55,10 @@ export function FillBlanksTypingQuestion({
 }: FillBlanksTypingQuestionProps) {
   const assignments = valueProp ?? {};
 
+  const blankIds = content.segments
+    .filter((seg) => seg.type === "blank")
+    .map((seg) => seg.id);
+
   function updateBlank(blankId: string, nextValue: string) {
     onChange?.({ ...assignments, [blankId]: nextValue });
   }
@@ -70,7 +75,7 @@ export function FillBlanksTypingQuestion({
             <ReviewTypingBlank
               key={seg.id}
               blankId={seg.id}
-              typed={assignments[seg.id] ?? ""}
+              typed={resolveTypingValueForBlank(assignments, seg.id, blankIds)}
               correctText={correctText}
             />
           );
@@ -85,19 +90,13 @@ export function FillBlanksTypingQuestion({
         if (seg.type === "text") {
           return <span key={i}>{seg.value}</span>;
         }
-        const correctLen =
-          correctTextForBlank(content, seg.id)?.length ?? 8;
-        const widthCh = Math.min(Math.max(correctLen + 2, 6), 24);
         return (
-          <Input
+          <ExpandingBlankInput
             key={seg.id}
-            type="text"
+            blankId={seg.id}
             value={assignments[seg.id] ?? ""}
-            onChange={(e) => updateBlank(seg.id, e.target.value)}
-            aria-label={`Пропуск ${seg.id}`}
-            className="mx-0.5 inline-block h-8 align-middle px-2 py-1 text-sm"
-            style={{ width: `${widthCh}ch` }}
-            autoComplete="off"
+            onChange={(next) => updateBlank(seg.id, next)}
+            ariaLabel={`Пропуск ${seg.id}`}
             spellCheck={false}
           />
         );

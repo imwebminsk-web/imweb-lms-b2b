@@ -84,6 +84,7 @@ export const dict = {
       puzzleCorrectAnswer: "Правильно",
       missed: "Пропущено",
       yourAnswer: "Ваш ответ",
+      correctOrder: "Правильный порядок:",
     },
     settings: {
       pageTitle: "Настройки профиля",
@@ -282,6 +283,7 @@ export const dict = {
       puzzleCorrectAnswer: "Correct answer",
       missed: "Missed",
       yourAnswer: "Your answer",
+      correctOrder: "Correct order:",
     },
     settings: {
       pageTitle: "Profile Settings",

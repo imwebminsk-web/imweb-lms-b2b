@@ -11,6 +11,7 @@ export type QuizTaskInstructionProps = {
   /** Крупный заголовок (по умолчанию) или компактный блок. */
   variant?: "heading" | "section";
   className?: string;
+  isReviewMode?: boolean;
 };
 
 export function QuizTaskInstruction({
@@ -18,6 +19,7 @@ export function QuizTaskInstruction({
   fallbackTitle,
   variant = "heading",
   className,
+  isReviewMode = false,
 }: QuizTaskInstructionProps) {
   const instructionHtml =
     task.instructionHtml.trim() ||
@@ -41,6 +43,7 @@ export function QuizTaskInstruction({
           html={instructionHtml}
           className={instructionClass}
           mediaPlayLimit={task.mediaPlayLimit}
+          isReviewMode={isReviewMode}
         />
       ) : null}
 
