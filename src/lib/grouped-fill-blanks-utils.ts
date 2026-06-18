@@ -1,5 +1,6 @@
 import {
   correctTextForBlank,
+  isFillBlankTypingAnswerCorrect,
 } from "@/lib/fill-blanks-scoring";
 import {
   parseFillAssignmentsFromAnswerData,
@@ -1043,7 +1044,12 @@ export function countCorrectTypingBlanksInItem(
     const expected = correctTextForBlank(itemContent, blankId);
     if (expected == null) continue;
     const typed = itemTyping[blankId];
-    if (typeof typed === "string" && typed === expected) correct += 1;
+    if (
+      typeof typed === "string" &&
+      isFillBlankTypingAnswerCorrect(typed, expected)
+    ) {
+      correct += 1;
+    }
   }
   return correct;
 }

@@ -54,6 +54,8 @@ type PlayerLayoutProps = {
   >;
   /** Блок под контентом урока (например кнопка «Завершить урок»). */
   lessonCompletion?: ReactNode;
+  /** Уроки, отмеченные учеником как пройденные (для «Завершить курс»). */
+  completedLessonIds?: string[];
 };
 
 function readVideoUrl(content: Json): string {
@@ -167,6 +169,7 @@ export function PlayerLayout({
   blocks,
   assignmentSubmissionsByBlockId = {},
   lessonCompletion,
+  completedLessonIds = [],
 }: PlayerLayoutProps) {
   const { t } = useLanguage();
   const sortedMods = useMemo(() => sortModules(modules), [modules]);
@@ -307,10 +310,7 @@ export function PlayerLayout({
           {lesson.test_id && !blockTestIds.includes(lesson.test_id) ? (
             <div className="space-y-4 pt-2">
               <Separator />
-              <TestRevealWrapper
-                testId={lesson.test_id}
-                title={t("lesson_view.finalTestTitle")}
-              />
+              <TestRevealWrapper testId={lesson.test_id} />
             </div>
           ) : null}
           {lessonCompletion ? (
@@ -326,6 +326,7 @@ export function PlayerLayout({
             courseSlug={courseSlug}
             modules={modules}
             currentLessonId={lesson.id}
+            completedLessonIds={completedLessonIds}
           />
         </div>
       </main>

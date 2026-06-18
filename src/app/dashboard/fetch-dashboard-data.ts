@@ -1,4 +1,5 @@
 import { getRecentActivity, type ActivityEvent } from "@/app/actions/activity-actions";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
   DashboardSectionCard,
@@ -12,8 +13,14 @@ import { formatCoursePriceDecimal } from "@/lib/format-course-price";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import type { Database } from "@/types/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
+type DbClient = SupabaseClient<Database>;
+
+function rlsBypassClient(fallback: DbClient): DbClient {
+  return createAdminClient() ?? fallback;
+}
 
 /** Верхняя граница строк для виджета «ожидают проверки» на дашборде. */
 const MAX_PENDING_REVIEW_FETCH = 50;
@@ -117,8 +124,9 @@ async function fetchTeacherMetrics(
     userId,
   );
   const assignmentBlockIds = [...assignmentBlockContext.keys()];
+  const dataClient = rlsBypassClient(supabase);
 
-  const pendingTestReviewsQuery = supabase
+  const pendingTestReviewsQuery = dataClient
     .from("student_attempts")
     .select("id, tests!inner(user_id)", { count: "exact", head: true })
     .eq("status", "pending_review")
@@ -320,8 +328,9 @@ async function countPendingAssignmentReviewsForTeacher(
   }
 
   const safeBlockIds = sliceIdsForInFilter(blockIds);
+  const client = rlsBypassClient(supabase);
 
-  const { count, error } = await supabase
+  const { count, error } = await client
     .from("assignment_submissions")
     .select("id", { count: "exact", head: true })
     .eq("status", "pending")
@@ -526,8 +535,9 @@ async function getPendingTestReviewsForTeacher(
 ): Promise<PendingReviewItem[]> {
   const supabase = await createClient();
   const fetchLimit = normalizePendingReviewLimit(limit);
+  const dataClient = rlsBypassClient(supabase);
 
-  const { data: rows, error } = await supabase
+  const { data: rows, error } = await dataClient
     .from("student_attempts")
     .select(
       `
@@ -630,8 +640,10 @@ async function getPendingAssignmentReviewsForTeacher(
   }
 
   const safeBlockIds = sliceIdsForInFilter(blockIds);
+  const admin = createAdminClient();
+  const client = admin ?? supabase;
 
-  const { data: rows, error } = await supabase
+  const { data: rows, error } = await client
     .from("assignment_submissions")
     .select("id, created_at, student_id, lesson_block_id")
     .eq("status", "pending")

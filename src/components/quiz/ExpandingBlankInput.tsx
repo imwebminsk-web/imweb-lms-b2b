@@ -66,11 +66,11 @@ export function ExpandingBlankInput({
 
   return (
     <span
-      className="mx-0.5 my-1 inline-grid max-w-full align-top"
+      className="mx-0.5 my-0.5 inline-grid max-w-full items-center align-middle"
       style={{ gridTemplateColumns: `minmax(${minWidthCh}ch, auto)` }}
     >
       <span
-        className="invisible col-start-1 row-start-1 whitespace-pre-wrap border border-transparent px-2 py-1 text-sm font-normal leading-normal"
+        className="invisible col-start-1 row-start-1 whitespace-pre-wrap border border-transparent px-2 py-1 text-center text-sm font-normal leading-normal"
         aria-hidden
       >
         {mirrorText}
@@ -88,7 +88,7 @@ export function ExpandingBlankInput({
         autoComplete="off"
         spellCheck={spellCheck}
         className={cn(
-          "border-input bg-background text-foreground col-start-1 row-start-1 min-h-9 w-full min-w-0 max-w-full resize-none overflow-hidden rounded-md border px-2 py-1 text-sm leading-normal whitespace-pre-wrap shadow-xs",
+          "border-input bg-background text-foreground col-start-1 row-start-1 min-h-9 w-full min-w-0 max-w-full resize-none overflow-hidden rounded-md border px-2 py-1 text-center text-sm leading-normal whitespace-pre-wrap shadow-xs",
           "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
           readOnly && "bg-muted/60 min-h-[120px] cursor-default",
           className,

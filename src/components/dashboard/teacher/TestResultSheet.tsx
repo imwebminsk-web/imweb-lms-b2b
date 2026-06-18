@@ -182,7 +182,7 @@ export function TestResultSheet({
                   href={`/dashboard/gradebook/attempts/${details.attemptId}/grade`}
                   onClick={() => onOpenChange(false)}
                 >
-                  Проверить
+                  Выставить баллы
                 </Link>
               </Button>
             </section>

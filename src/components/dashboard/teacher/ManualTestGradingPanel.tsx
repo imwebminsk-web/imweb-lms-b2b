@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2Icon } from "lucide-react";
+import { CheckCircle2Icon, Loader2Icon } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
+import { cn } from "@/lib/utils";
 import type { SafeTestQuestion } from "@/app/actions/test-actions";
 import type { Json } from "@/types/database.types";
 
@@ -46,6 +47,7 @@ export function ManualTestGradingPanel({
   onCompleted,
 }: ManualTestGradingPanelProps) {
   const [isPending, startTransition] = useTransition();
+  const [gradesSaved, setGradesSaved] = useState(false);
   const [grades, setGrades] = useState<Record<string, number>>(() =>
     initGrades(targets),
   );
@@ -75,7 +77,7 @@ export function ManualTestGradingPanel({
       const value = grades[t.itemId] ?? 0;
       if (value < 0 || value > t.maxPoints) {
         toast.error(
-          `Балл для «${t.itemPreview}» должен быть от 0 до ${t.maxPoints}`,
+          `Балл за подзадание ${t.itemIndex + 1} должен быть от 0 до ${t.maxPoints}`,
         );
         return;
       }
@@ -88,8 +90,11 @@ export function ManualTestGradingPanel({
           toast.error(res.error);
           return;
         }
-        toast.success(`Проверка завершена. Итог: ${res.percentScore}%`);
-        onCompleted();
+        setGradesSaved(true);
+        toast.success(`Баллы сохранены. Итог: ${res.percentScore}%`);
+        window.setTimeout(() => {
+          onCompleted();
+        }, 1200);
       })();
     });
   }
@@ -145,12 +150,14 @@ export function ManualTestGradingPanel({
               </p>
 
               {view ? (
-                <GroupedFillBlanksTaskQuestion
-                  items={view.items}
-                  mode={view.mode}
-                  groupedTyping={savedTyping}
-                  isReviewMode
-                />
+                <div className="w-full max-w-none">
+                  <GroupedFillBlanksTaskQuestion
+                    items={view.items}
+                    mode={view.mode}
+                    groupedTyping={savedTyping}
+                    isReviewMode
+                  />
+                </div>
               ) : null}
 
               <div className="space-y-4">
@@ -161,8 +168,7 @@ export function ManualTestGradingPanel({
                   >
                     <div className="min-w-0 flex-1 space-y-1">
                       <Label htmlFor={`grade-${target.itemId}`}>
-                        Подзадание {target.itemIndex + 1}
-                        {target.itemPreview ? ` — ${target.itemPreview}` : ""}
+                        Баллы за подзадание {target.itemIndex + 1}
                       </Label>
                       <p className="text-muted-foreground text-xs">
                         Максимум: {target.maxPoints} б.
@@ -188,7 +194,7 @@ export function ManualTestGradingPanel({
                             target.maxPoints,
                           )
                         }
-                        disabled={isPending}
+                        disabled={isPending || gradesSaved}
                       />
                     </div>
                   </div>
@@ -203,17 +209,26 @@ export function ManualTestGradingPanel({
         <Button
           type="button"
           size="lg"
-          className="w-full sm:w-auto"
+          className={cn(
+            "w-full sm:w-auto",
+            gradesSaved &&
+              "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
+          )}
           onClick={handleSubmit}
-          disabled={isPending}
+          disabled={isPending || gradesSaved}
         >
           {isPending ? (
             <>
               <Loader2Icon className="mr-2 size-4 animate-spin" aria-hidden />
               Сохранение…
             </>
+          ) : gradesSaved ? (
+            <>
+              <CheckCircle2Icon className="mr-2 size-4" aria-hidden />
+              Проверено
+            </>
           ) : (
-            "Завершить проверку"
+            "Сохранить баллы"
           )}
         </Button>
       </div>

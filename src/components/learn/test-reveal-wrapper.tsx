@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
+  getStudentQuizPreviewTitle,
   initStudentQuiz,
   type InitStudentQuizSuccess,
+  type StudentTestType,
 } from "@/app/actions/student-quiz-actions";
 import { QuizPlayer } from "@/components/quiz/QuizPlayer";
 import { useLanguage } from "@/components/providers/language-provider";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,18 +23,33 @@ import { Brain, Loader2 } from "lucide-react";
 
 type TestRevealWrapperProps = {
   testId: string;
-  /** Заголовок карточки до старта теста. */
-  title?: string;
 };
 
-export function TestRevealWrapper({
-  testId,
-  title,
-}: TestRevealWrapperProps) {
+export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
   const { t } = useLanguage();
-  const cardTitle = title ?? t("lesson_view.defaultQuizTitle");
+  const fallbackTitle = t("lesson_view.defaultQuizTitle");
+  const [cardTitle, setCardTitle] = useState(fallbackTitle);
+  const [testType, setTestType] = useState<StudentTestType | null>(null);
   const [quizData, setQuizData] = useState<InitStudentQuizSuccess | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTitle() {
+      const res = await getStudentQuizPreviewTitle(testId);
+      if (cancelled || !res.success) {
+        return;
+      }
+      setCardTitle(res.title);
+      setTestType(res.testType);
+    }
+
+    void loadTitle();
+    return () => {
+      cancelled = true;
+    };
+  }, [testId]);
 
   async function handleStart() {
     setIsLoading(true);
@@ -49,16 +67,16 @@ export function TestRevealWrapper({
 
   if (quizData) {
     return (
-      <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
-        <QuizPlayer
-          attemptId={quizData.attemptId}
-          testTitle={quizData.test.title}
-          testDescription={quizData.test.description}
-          questions={quizData.questions}
-          isForKids={quizData.test.isForKids}
-          timeLimitMinutes={quizData.test.timeLimitMinutes}
-        />
-      </div>
+      <QuizPlayer
+        attemptId={quizData.attemptId}
+        testTitle={quizData.test.title}
+        testDescription={quizData.test.description}
+        questions={quizData.questions}
+        isForKids={quizData.test.isForKids}
+        timeLimitMinutes={quizData.test.timeLimitMinutes}
+        focusedMode
+        onExit={() => setQuizData(null)}
+      />
     );
   }
 
@@ -69,8 +87,17 @@ export function TestRevealWrapper({
           <div className="bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg">
             <Brain className="text-primary size-5" aria-hidden />
           </div>
-          <div className="min-w-0 space-y-1">
-            <CardTitle className="text-lg leading-snug">{cardTitle}</CardTitle>
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <CardTitle className="text-lg leading-snug">{cardTitle}</CardTitle>
+              {testType ? (
+                <Badge variant="outline" className="shrink-0">
+                  {testType === "training"
+                    ? t("lesson_view.trainingTestBadge")
+                    : t("lesson_view.finalTestBadge")}
+                </Badge>
+              ) : null}
+            </div>
             <CardDescription>
               {t("lesson_view.startQuizDescription")}
             </CardDescription>

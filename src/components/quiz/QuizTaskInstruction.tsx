@@ -1,5 +1,7 @@
 "use client";
 
+import { memo } from "react";
+
 import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
 import { cn } from "@/lib/utils";
 import type { TaskPresentation } from "@/lib/utils/task-content";
@@ -14,7 +16,7 @@ export type QuizTaskInstructionProps = {
   isReviewMode?: boolean;
 };
 
-export function QuizTaskInstruction({
+export const QuizTaskInstruction = memo(function QuizTaskInstruction({
   task,
   fallbackTitle,
   variant = "heading",
@@ -54,4 +56,4 @@ export function QuizTaskInstruction({
       ) : null}
     </div>
   );
-}
+});

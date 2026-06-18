@@ -166,7 +166,7 @@ export function LessonBlockRenderer({
       }
       return (
         <div className="my-8">
-          <TestRevealWrapper testId={testId} title={t("lesson_view.blockTestTitle")} />
+          <TestRevealWrapper testId={testId} />
         </div>
       );
     }

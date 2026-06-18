@@ -5,9 +5,8 @@ import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { CourseHubClient } from "@/components/learn/course-hub-client";
 import { createClient } from "@/lib/supabase/server";
 import {
-  publishedLessonsSorted,
+  collectPublishedLessonIds,
   sortModules,
-  type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
 import { fetchPublishedCourseForLearn } from "@/lib/learn/fetch-published-course";
 
@@ -21,16 +20,6 @@ function decodeSlugParam(slug: string): string {
   } catch {
     return slug;
   }
-}
-
-function collectPublishedLessonIds(modules: LearnModuleNav[]): string[] {
-  const ids: string[] = [];
-  for (const mod of modules) {
-    for (const l of publishedLessonsSorted(mod.lessons)) {
-      ids.push(l.id);
-    }
-  }
-  return ids;
 }
 
 export default async function LearnCourseEntryPage({ params }: PageProps) {

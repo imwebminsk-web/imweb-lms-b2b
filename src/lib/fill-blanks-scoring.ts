@@ -18,7 +18,15 @@ export function correctTextForBlank(
   return word?.text ?? null;
 }
 
-/** Строгое сравнение строк без trim и без изменения регистра. */
+/** Строгое сравнение: только trim по краям; регистр и пунктуация должны совпадать. */
+export function isFillBlankTypingAnswerCorrect(
+  typed: string,
+  expected: string,
+): boolean {
+  return typed.trim() === expected.trim();
+}
+
+/** Строгое сравнение всех пропусков (trim по краям). */
 export function isFillBlanksTypingFullyCorrect(
   content: FillInTheBlanksContent,
   fillTyping: Record<string, string>,
@@ -31,6 +39,6 @@ export function isFillBlanksTypingFullyCorrect(
     if (expected == null) return false;
     const typed = fillTyping[blankId];
     if (typeof typed !== "string") return false;
-    return typed === expected;
+    return isFillBlankTypingAnswerCorrect(typed, expected);
   });
 }

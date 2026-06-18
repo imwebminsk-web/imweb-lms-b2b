@@ -40,6 +40,7 @@ import {
   useRef,
   useState,
   useTransition,
+  type ReactNode,
 } from "react";
 import { toast } from "sonner";
 
@@ -155,6 +156,10 @@ export type QuizPlayerProps = {
   timeLimitMinutes?: number;
   /** Песочница преподавателя: отключает античит, попытка в БД с is_training_mode. */
   isSandbox?: boolean;
+  /** Полноэкранный режим на странице урока — скрывает навигацию и прочие блоки. */
+  focusedMode?: boolean;
+  /** Выход из полноэкранного режима (черновик попытки сохраняется на сервере). */
+  onExit?: () => void;
 };
 
 export function QuizPlayer({
@@ -165,6 +170,8 @@ export function QuizPlayer({
   isForKids = false,
   timeLimitMinutes = 0,
   isSandbox = false,
+  focusedMode = false,
+  onExit,
 }: QuizPlayerProps) {
   const { t } = useLanguage();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -390,6 +397,47 @@ export function QuizPlayer({
   handleSubmitQuizRef.current = handleSubmitQuiz;
 
   useEffect(() => {
+    if (!focusedMode) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [focusedMode]);
+
+  const wrapFocusedShell = useCallback(
+    (content: ReactNode) => {
+      if (!focusedMode) {
+        return content;
+      }
+
+      return (
+        <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-background">
+          <header className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur">
+            <h1 className="min-w-0 truncate text-lg font-semibold leading-snug">
+              {testTitle}
+            </h1>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => onExit?.()}
+            >
+              {t("lesson_view.returnToLesson")}
+            </Button>
+          </header>
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col p-4 md:p-6">
+            {content}
+          </div>
+        </div>
+      );
+    },
+    [focusedMode, onExit, t, testTitle],
+  );
+
+  useEffect(() => {
     if (finished || isSandbox) return;
 
     const preventClipboardAndContextMenu = (event: Event) => {
@@ -477,15 +525,15 @@ export function QuizPlayer({
   }, [applyReviewMaps, finished, attemptId, questions]);
 
   if (total === 0) {
-    return (
+    return wrapFocusedShell(
       <p className="text-muted-foreground text-center text-sm">
         {t("quiz.noQuestions")}
-      </p>
+      </p>,
     );
   }
 
   if (finished && result) {
-    return (
+    return wrapFocusedShell(
       <QuizResultView
         questions={questions}
         result={result}
@@ -502,11 +550,11 @@ export function QuizPlayer({
         reviewOrderingAssignmentsByQuestionId={
           reviewOrderingAssignmentsByQuestionId
         }
-      />
+      />,
     );
   }
 
-  return (
+  return wrapFocusedShell(
     <div
       className={cn(
         "flex flex-col gap-8",
@@ -522,7 +570,12 @@ export function QuizPlayer({
           страницы предыдущая попытка будет удалена.
         </p>
       ) : null}
-      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 -mx-6 mb-4 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur sm:-mx-0 sm:rounded-lg sm:border">
+      <div
+        className={cn(
+          "bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 mb-4 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur",
+          focusedMode ? "rounded-lg border" : "-mx-6 sm:-mx-0 sm:rounded-lg sm:border",
+        )}
+      >
         {timeLimitMinutes > 0 ? (
           <QuizTimer
             timeLimitMinutes={timeLimitMinutes}
@@ -560,12 +613,16 @@ export function QuizPlayer({
         <Progress value={progressValue} className="w-full" />
       </div>
 
-      <header className="space-y-1">
-        <p className="text-muted-foreground text-sm">{testTitle}</p>
-        {testDescription ? (
-          <p className="text-muted-foreground text-xs">{testDescription}</p>
-        ) : null}
-      </header>
+      {!focusedMode ? (
+        <header className="space-y-1">
+          <p className="text-muted-foreground text-sm">{testTitle}</p>
+          {testDescription ? (
+            <p className="text-muted-foreground text-xs">{testDescription}</p>
+          ) : null}
+        </header>
+      ) : testDescription ? (
+        <p className="text-muted-foreground text-sm">{testDescription}</p>
+      ) : null}
 
       <nav
         className="flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-muted/30 p-2 sm:p-3"
@@ -792,6 +849,6 @@ export function QuizPlayer({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </div>,
   );
 }

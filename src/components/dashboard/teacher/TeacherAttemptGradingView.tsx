@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftIcon, Loader2Icon, LockIcon } from "lucide-react";
+import { ArrowLeftIcon, CheckCircle2Icon, Loader2Icon, LockIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -59,6 +59,7 @@ function questionTypeLabel(type: string): string {
 export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [gradesSaved, setGradesSaved] = useState(false);
   const [grades, setGrades] = useState<Record<string, number>>(() =>
     initGrades(data.manualGradingTargets),
   );
@@ -124,9 +125,12 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
           toast.error(res.error);
           return;
         }
-        toast.success(`Проверка завершена. Итог: ${res.percentScore}%`);
-        router.push("/dashboard/cohorts");
+        setGradesSaved(true);
+        toast.success(`Баллы сохранены. Итог: ${res.percentScore}%`);
         router.refresh();
+        window.setTimeout(() => {
+          router.push("/dashboard/cohorts");
+        }, 1400);
       })();
     });
   }
@@ -156,12 +160,19 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">{displayTitle}</h1>
-          <Badge
-            variant="outline"
-            className="border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-          >
-            На проверке
-          </Badge>
+          {gradesSaved ? (
+            <Badge className="border-emerald-600/50 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200">
+              <CheckCircle2Icon className="mr-1 size-3" aria-hidden />
+              Проверено
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="border-amber-500/50 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+            >
+              На проверке
+            </Badge>
+          )}
         </div>
         <p className="text-muted-foreground text-sm">
           Ученик: <span className="text-foreground font-medium">{data.studentName}</span>
@@ -209,12 +220,13 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                     </p>
                   </div>
                   <Badge className="bg-amber-600 hover:bg-amber-600">
-                    Проверить
+                    Ожидает оценки
                   </Badge>
                 </div>
 
                 {view ? (
-                  <GroupedFillBlanksTaskQuestion
+                  <div className="w-full max-w-none">
+                    <GroupedFillBlanksTaskQuestion
                     items={view.items}
                     mode={view.mode}
                     groupedTyping={savedTyping}
@@ -225,6 +237,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                       )?.answer_data ?? null
                     }
                   />
+                  </div>
                 ) : null}
 
                 <div className="space-y-4 border-t border-amber-500/20 pt-4">
@@ -235,8 +248,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                     >
                       <div className="min-w-0 flex-1 space-y-1">
                         <Label htmlFor={`grade-${target.itemId}`}>
-                          Подзадание {target.itemIndex + 1}
-                          {target.itemPreview ? ` — ${target.itemPreview}` : ""}
+                          Баллы за подзадание {target.itemIndex + 1}
                         </Label>
                         <p className="text-muted-foreground text-xs">
                           Максимум: {target.maxPoints} б.
@@ -262,7 +274,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                               target.maxPoints,
                             )
                           }
-                          disabled={isPending}
+                          disabled={isPending || gradesSaved}
                         />
                       </div>
                     </div>
@@ -342,17 +354,28 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
         <Button
           type="button"
           size="lg"
-          className="w-full sm:w-auto"
+          className={cn(
+            "w-full sm:w-auto",
+            gradesSaved &&
+              "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
+          )}
           onClick={handleSubmit}
-          disabled={isPending || data.manualGradingTargets.length === 0}
+          disabled={
+            isPending || gradesSaved || data.manualGradingTargets.length === 0
+          }
         >
           {isPending ? (
             <>
               <Loader2Icon className="mr-2 size-4 animate-spin" aria-hidden />
               Сохранение…
             </>
+          ) : gradesSaved ? (
+            <>
+              <CheckCircle2Icon className="mr-2 size-4" aria-hidden />
+              Проверено
+            </>
           ) : (
-            "Завершить проверку"
+            "Сохранить баллы"
           )}
         </Button>
       </div>

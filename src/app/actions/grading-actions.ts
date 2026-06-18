@@ -14,6 +14,7 @@ import {
 } from "@/lib/utils/scoring-utils";
 import { mergeManualItemGradesIntoAnswerData } from "@/lib/manual-grading-utils";
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { sumQuestionPoints } from "@/lib/utils/grading";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
@@ -245,6 +246,15 @@ export async function submitManualGrades(
     };
   }
 
+  const adminClient = createAdminClient();
+  if (!adminClient) {
+    return {
+      success: false,
+      error:
+        "Сервер не настроен для сохранения оценок (отсутствует SUPABASE_SERVICE_ROLE_KEY).",
+    };
+  }
+
   const { data: questionRows, error: questionsError } = await supabase
     .from("questions")
     .select("id, type, content, points")
@@ -379,13 +389,21 @@ export async function submitManualGrades(
       grades,
     );
 
-    const { error: updateErr } = await supabase
+    const { data: updatedAnswer, error: updateErr } = await adminClient
       .from("attempt_answers")
       .update({ answer_data: mergedData })
-      .eq("id", targetRow.id);
+      .eq("id", targetRow.id)
+      .select("id")
+      .maybeSingle();
 
     if (updateErr) {
       return { success: false, error: updateErr.message };
+    }
+    if (!updatedAnswer) {
+      return {
+        success: false,
+        error: "Не удалось сохранить баллы в ответе ученика",
+      };
     }
 
     targetRow.answer_data = mergedData;
@@ -455,19 +473,30 @@ export async function submitManualGrades(
       ? Math.round((earnedPoints / totalPossiblePoints) * 100)
       : 0;
 
-  const { error: finalizeErr } = await supabase
+  const { data: finalizedAttempt, error: finalizeErr } = await adminClient
     .from("student_attempts")
     .update({
       status: "completed",
       score: percentScore,
+      completed_at: new Date().toISOString(),
     })
-    .eq("id", attempt.id);
+    .eq("id", attempt.id)
+    .eq("status", "pending_review")
+    .select("id")
+    .maybeSingle();
 
   if (finalizeErr) {
     return { success: false, error: finalizeErr.message };
   }
+  if (!finalizedAttempt) {
+    return {
+      success: false,
+      error: "Не удалось завершить проверку попытки",
+    };
+  }
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/cohorts");
   revalidatePath("/learn");
   revalidatePath(`/dashboard/gradebook/attempts/${attempt.id}/grade`);
 

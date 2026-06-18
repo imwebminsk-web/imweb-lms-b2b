@@ -6,9 +6,12 @@ import {
   getTestWithQuestions,
   type SafeTestQuestion,
 } from "@/app/actions/test-actions";
+import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
 import { createClient } from "@/lib/supabase/server";
 
 const testIdSchema = z.string().uuid("Некорректный ID теста");
+
+export type StudentTestType = "training" | "final";
 
 export type InitStudentQuizSuccess = {
   success: true;
@@ -21,7 +24,7 @@ export type InitStudentQuizResult =
   | InitStudentQuizSuccess
   | { success: false; error: string };
 
-function resolveStudentTestType(testType: string | null | undefined): "training" | "final" {
+function resolveStudentTestType(testType: string | null | undefined): StudentTestType {
   return testType === "training" ? "training" : "final";
 }
 
@@ -179,4 +182,50 @@ export async function initStudentQuiz(
     questions: data.questions,
     attemptId,
   };
+}
+
+/**
+ * Метаданные опубликованного теста для карточки перед стартом (без вопросов и попытки).
+ * Студенческая перспектива: title_student, иначе title_teacher / title.
+ */
+export async function getStudentQuizPreviewTitle(
+  testId: string,
+): Promise<
+  | { success: true; title: string; testType: StudentTestType }
+  | { success: false; error: string }
+> {
+  const parsed = testIdSchema.safeParse(testId);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Некорректный ID теста",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data, error } = await supabase
+    .from("tests")
+    .select("title, title_student, title_teacher, test_type, is_published")
+    .eq("id", parsed.data)
+    .maybeSingle();
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  if (!data || data.is_published !== true) {
+    return { success: false, error: "Тест недоступен" };
+  }
+
+  const title = resolveStudentFacingTestTitle(data);
+  const testType = resolveStudentTestType(data.test_type);
+  return { success: true, title, testType };
 }

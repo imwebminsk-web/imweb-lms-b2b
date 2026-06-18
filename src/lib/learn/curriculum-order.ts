@@ -52,3 +52,17 @@ export function isPublishedLessonInCourse(
   }
   return false;
 }
+
+/** Все id опубликованных уроков курса (с учётом уже отфильтрованных modules). */
+export function collectPublishedLessonIds(
+  modules: LearnModuleNav[] | null | undefined,
+): string[] {
+  if (!modules?.length) return [];
+  const ids: string[] = [];
+  for (const mod of sortModules(modules)) {
+    for (const lesson of publishedLessonsSorted(mod.lessons)) {
+      ids.push(lesson.id);
+    }
+  }
+  return ids;
+}

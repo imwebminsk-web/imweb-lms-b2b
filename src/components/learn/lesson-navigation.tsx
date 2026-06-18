@@ -1,10 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useLanguage } from "@/components/providers/language-provider";
 import {
+  collectPublishedLessonIds,
   publishedLessonsSorted,
   sortModules,
   type LearnModuleNav,
@@ -15,6 +23,7 @@ export type LessonNavigationProps = {
   courseSlug: string;
   modules: LearnModuleNav[];
   currentLessonId: string;
+  completedLessonIds?: string[];
 };
 
 function flattenPublishedLessons(
@@ -33,6 +42,7 @@ export function LessonNavigation({
   courseSlug,
   modules,
   currentLessonId,
+  completedLessonIds = [],
 }: LessonNavigationProps) {
   const { t } = useLanguage();
   const allLessons = flattenPublishedLessons(modules);
@@ -46,6 +56,21 @@ export function LessonNavigation({
       : null;
 
   const hubHref = `/learn/${encodeURIComponent(courseSlug)}`;
+
+  const completedSet = useMemo(
+    () => new Set(completedLessonIds),
+    [completedLessonIds],
+  );
+  const publishedLessonIds = useMemo(
+    () => collectPublishedLessonIds(modules),
+    [modules],
+  );
+  const completedLessonsCount = publishedLessonIds.filter((id) =>
+    completedSet.has(id),
+  ).length;
+  const totalLessonsCount = publishedLessonIds.length;
+  const allLessonsCompleted =
+    totalLessonsCount > 0 && completedLessonsCount >= totalLessonsCount;
 
   return (
     <div className="border-border mt-8 flex flex-col items-center justify-between gap-4 border-t pt-8 sm:flex-row sm:items-center">
@@ -67,7 +92,7 @@ export function LessonNavigation({
         )}
       </div>
 
-      <div className="flex w-full justify-end sm:w-auto sm:max-w-[45%]">
+      <div className="flex w-full flex-col items-end gap-1 sm:w-auto sm:max-w-[45%]">
         {nextLesson ? (
           <Button asChild className="max-w-full">
             <Link
@@ -78,13 +103,39 @@ export function LessonNavigation({
               <ChevronRight className="ml-2 size-4 shrink-0" aria-hidden />
             </Link>
           </Button>
-        ) : (
-          <Button variant="secondary" asChild>
+        ) : allLessonsCompleted ? (
+          <Button variant="secondary" asChild className="max-w-full">
             <Link href={hubHref} className="inline-flex items-center">
               {t("lesson_view.finishCourse")}
               <CheckCircle className="ml-2 size-4 shrink-0" aria-hidden />
             </Link>
           </Button>
+        ) : (
+          <>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="max-w-full"
+                      disabled
+                    >
+                      {t("lesson_view.finishCourse")}
+                      <CheckCircle className="ml-2 size-4 shrink-0" aria-hidden />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs text-center">
+                  {t("lesson_view.finishCourseDisabledHint")}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <p className="text-muted-foreground text-right text-xs">
+              {t("lesson_view.finishCourseDisabledHint")}
+            </p>
+          </>
         )}
       </div>
     </div>

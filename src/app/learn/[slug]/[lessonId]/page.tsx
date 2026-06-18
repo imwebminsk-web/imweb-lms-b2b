@@ -7,6 +7,7 @@ import { LessonCompletionButton } from "@/components/learn/lesson-completion-but
 import { PlayerLayout } from "@/components/learn/player-layout";
 import { createClient } from "@/lib/supabase/server";
 import {
+  collectPublishedLessonIds,
   isPublishedLessonInCourse,
   type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
@@ -101,6 +102,28 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
   const isLessonCompleted = await getLessonCompletionStatus(lessonRow.id);
   const learnPathname = `/learn/${slugParam}/${lessonId}`;
 
+  const publishedLessonIds = collectPublishedLessonIds(modules ?? []);
+  let completedLessonIds: string[] = [];
+  if (publishedLessonIds.length > 0) {
+    const { data: compRows, error: compError } = await supabase
+      .from("lesson_completions")
+      .select("lesson_id")
+      .eq("student_id", user.id)
+      .in("lesson_id", publishedLessonIds);
+
+    if (compError) {
+      console.error("[LearnLessonPlayerPage] lesson_completions", compError.message);
+    } else {
+      completedLessonIds = [
+        ...new Set(
+          (compRows ?? [])
+            .map((r) => r.lesson_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+    }
+  }
+
   return (
     <PlayerLayout
       courseSlug={course.slug}
@@ -123,6 +146,7 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
           pathname={learnPathname}
         />
       }
+      completedLessonIds={completedLessonIds}
     />
   );
 }

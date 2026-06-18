@@ -4,7 +4,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   normalizeItemTypingForBlanks,
   resolveReviewDisplayTypingValue,
-  resolveTypingValueForBlank,
 } from "@/lib/grouped-fill-blanks-utils";
 import { cn } from "@/lib/utils";
 import type { TextInputContent } from "@/lib/validations/fill-in-the-blanks-schema";
@@ -50,11 +49,7 @@ function resolveTextareaValue(params: {
     });
   }
 
-  return resolveTypingValueForBlank(
-    params.assignments,
-    params.blankId,
-    params.blankIds,
-  );
+  return params.assignments[params.blankId] ?? "";
 }
 
 export function TextInputQuestion({
@@ -104,7 +99,7 @@ export function TextInputQuestion({
             aria-label={`Поле ответа ${seg.id}`}
             placeholder={isReviewMode ? undefined : "Введите развёрнутый ответ…"}
             className={cn(
-              "min-h-[120px] resize-y",
+              "min-h-[120px] w-full resize-y",
               isReviewMode && "bg-muted/60 cursor-default",
             )}
           />

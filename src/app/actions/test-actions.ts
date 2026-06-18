@@ -42,6 +42,7 @@ import {
   sumOrderingItemPoints,
 } from "@/lib/ordering-utils";
 import { createClient } from "@/lib/supabase/server";
+import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
 import {
   saveFullTestPayloadSchema,
   type SaveFullTestPayload,
@@ -639,6 +640,8 @@ export async function duplicateTest(
       `
       id,
       title,
+      title_student,
+      title_teacher,
       description,
       folder_name,
       user_id,
@@ -795,6 +798,8 @@ export async function getTestWithQuestions(
       `
       id,
       title,
+      title_student,
+      title_teacher,
       description,
       folder_name,
       created_at,
@@ -852,7 +857,7 @@ export async function getTestWithQuestions(
 
   const payload: TestWithQuestionsPayload = {
     id: data.id,
-    title: data.title,
+    title: resolveStudentFacingTestTitle(data),
     description: data.description,
     folder_name: data.folder_name,
     created_at: data.created_at,
@@ -895,6 +900,8 @@ export async function getSafeTestForClient(
       `
       id,
       title,
+      title_student,
+      title_teacher,
       description,
       folder_name,
       created_at,
@@ -957,7 +964,7 @@ export async function getSafeTestForClient(
     success: true,
     data: {
       id: data.id,
-      title: data.title,
+      title: resolveStudentFacingTestTitle(data),
       description: data.description,
       folder_name: data.folder_name,
       created_at: data.created_at,
@@ -2592,7 +2599,7 @@ function mapDbQuestionRowToQuestionField(row: {
           return {
             id: item.id,
             text: normalizedText,
-            parsedHtml: item.parsedHtml ?? reparsed?.parsedHtml,
+            parsedHtml: reparsed?.parsedHtml ?? item.parsedHtml,
             points: resolveQuestionPoints(item.points),
             segments: reparsed?.segments ?? item.segments,
             wordBank: reparsed?.wordBank ?? item.wordBank,
@@ -3072,6 +3079,8 @@ export async function getTestDraftForEdit(
       `
       id,
       title,
+      title_student,
+      title_teacher,
       description,
       folder_name,
       user_id,

@@ -1,7 +1,16 @@
 "use server";
 
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
+import type { Database } from "@/types/database.types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+type DbClient = SupabaseClient<Database>;
+
+function rlsBypassClient(fallback: DbClient): DbClient {
+  return createAdminClient() ?? fallback;
+}
 
 export type ActivityEvent = {
   id: string;
@@ -151,6 +160,7 @@ export async function getRecentActivity(
     tid,
   );
   const assignmentBlockIds = [...assignmentTitlesByBlockId.keys()];
+  const dataClient = rlsBypassClient(supabase);
 
   const [
     { data: enrollmentRows, error: enrollmentsError },
@@ -173,7 +183,7 @@ export async function getRecentActivity(
       .eq("cohorts.courses.teacher_id", tid)
       .order("enrolled_at", { ascending: false })
       .limit(fetchLimit),
-    supabase
+    dataClient
       .from("student_attempts")
       .select(
         `
@@ -197,7 +207,7 @@ export async function getRecentActivity(
       .order("completed_at", { ascending: false })
       .limit(fetchLimit),
     assignmentBlockIds.length > 0
-      ? supabase
+      ? dataClient
           .from("assignment_submissions")
           .select(
             "id, status, created_at, student_id, lesson_block_id",
