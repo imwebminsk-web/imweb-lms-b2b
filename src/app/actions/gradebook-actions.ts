@@ -4,12 +4,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
+import { readBlockIsForKids, readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
+import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 import {
+  clampScorePercent,
   getGradingVisuals,
-  grade10ToPercentScore,
-  normalizeAttemptScoreToPercent,
-  percentToGrade10,
-  resolveQuestionPoints,
   sumQuestionPoints,
   type GradingVisuals,
 } from "@/lib/utils/grading";
@@ -53,8 +52,8 @@ export type GradebookBestAttemptDetails = {
   completedAt: string | null;
   totalQuestions: number;
   totalPossiblePoints: number;
-  /** Балл по попытке на шкале 0–10 (как в успеваемости). */
-  grade10: number | null;
+  /** Балл по попытке на шкале 0–100. */
+  points: number | null;
   isForKids: boolean;
   gradingVisuals: GradingVisuals | null;
   /** Вопросы без `is_correct` на клиенте — как в прохождении теста. */
@@ -323,18 +322,16 @@ export async function getBestTestAttemptDetails(
 
   const scoreVal = attempt?.score ?? 0;
   const scorePercent =
-    attempt?.status === "pending_review"
+    attempt?.status === "pending_review" || attempt?.status === "in_progress"
       ? totalPossiblePoints > 0
-        ? Math.round((earnedPointsTotal / totalPossiblePoints) * 100)
+        ? clampScorePercent(
+            Math.round((earnedPointsTotal / totalPossiblePoints) * 100),
+          )
         : 0
-      : normalizeAttemptScoreToPercent(scoreVal, totalPossiblePoints);
-  const grade10 = attempt ? percentToGrade10(scorePercent) : null;
+      : clampScorePercent(scoreVal);
+  const points = attempt ? scorePercent : null;
   const gradingVisuals = attempt
-    ? getGradingVisuals(
-        attempt.status === "pending_review" ? scorePercent : scoreVal,
-        isForKids,
-        totalPossiblePoints,
-      )
+    ? getGradingVisuals(scorePercent, isForKids, 100)
     : null;
 
   const answeredQuestionIds = new Set(answerRows.map((r) => r.question_id));
@@ -393,7 +390,7 @@ export async function getBestTestAttemptDetails(
       completedAt: attempt?.completed_at ?? null,
       totalQuestions,
       totalPossiblePoints,
-      grade10,
+      points,
       isForKids,
       gradingVisuals,
       questions,
@@ -407,28 +404,27 @@ export async function getBestTestAttemptDetails(
   };
 }
 
-const grade10OverrideSchema = z.coerce.number().int().min(0).max(10);
+const pointsOverrideSchema = z.coerce.number().int().min(0).max(100);
 
 /**
- * Преподаватель вручную выставляет балл 0–10: пересчитывается `student_attempts.score`
- * под ту же формулу, что и при автоподсчёте (пропорция к числу вопросов).
+ * Преподаватель вручную выставляет балл 0–100 в `student_attempts.score`.
  */
 export async function overrideTestAttemptGrade(
   attemptId: string,
-  grade10: number,
+  points: number,
 ): Promise<{ success: true } | { success: false; error: string }> {
   const idParsed = uuidSchema.safeParse(attemptId);
-  const gradeParsed = grade10OverrideSchema.safeParse(grade10);
+  const pointsParsed = pointsOverrideSchema.safeParse(points);
   if (!idParsed.success) {
     return {
       success: false,
       error: idParsed.error.issues[0]?.message ?? "Некорректный ID попытки",
     };
   }
-  if (!gradeParsed.success) {
+  if (!pointsParsed.success) {
     return {
       success: false,
-      error: gradeParsed.error.issues[0]?.message ?? "Оценка должна быть целым числом 0–10",
+      error: pointsParsed.error.issues[0]?.message ?? "Балл должен быть целым числом 0–100",
     };
   }
 
@@ -483,16 +479,7 @@ export async function overrideTestAttemptGrade(
     return { success: false, error: "Этот тест принадлежит другому преподавателю" };
   }
 
-  const { data: questionRows, error: qErr } = await supabase
-    .from("questions")
-    .select("id, points")
-    .eq("test_id", attempt.test_id);
-
-  if (qErr) {
-    return { success: false, error: qErr.message };
-  }
-
-  const newScore = grade10ToPercentScore(gradeParsed.data);
+  const newScore = clampScorePercent(pointsParsed.data);
 
   const { error: updateError } = await supabase
     .from("student_attempts")
@@ -503,7 +490,16 @@ export async function overrideTestAttemptGrade(
     return { success: false, error: updateError.message };
   }
 
+  const { data: cohortRows } = await supabase
+    .from("cohort_assignments")
+    .select("cohort_id")
+    .eq("test_id", attempt.test_id);
+
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/cohorts");
+  for (const row of cohortRows ?? []) {
+    revalidatePath(`/dashboard/cohorts/${row.cohort_id}`, "page");
+  }
   revalidatePath("/learn");
   return { success: true };
 }
@@ -519,6 +515,7 @@ export type MatrixGradebookColumn = {
   /** Название теста для преподавателя (подсказка в матрице). */
   testTitleTeacher?: string | null;
   testType?: "training" | "final";
+  isForKids?: boolean;
 };
 
 export type MatrixGradebookStudent = {
@@ -531,7 +528,7 @@ export type MatrixGradebookCell = {
   studentId: string;
   columnId: string;
   status: StudentProgressStatus;
-  grade10: number | null;
+  points: number | null;
   isForKids: boolean;
   gradingVisuals: GradingVisuals | null;
   testId: string | null;
@@ -548,25 +545,8 @@ export type MatrixGradebookData = {
 
 const cohortIdSchema = z.string().uuid("Некорректный ID группы");
 
-function assignmentGradeToGrade10(grade: number): number {
-  if (grade >= 0 && grade <= 10) {
-    return Math.round(grade);
-  }
-  if (grade > 10 && grade <= 100) {
-    return Math.min(10, Math.max(0, Math.round((grade / 100) * 10)));
-  }
-  return Math.min(10, Math.max(0, Math.round(grade)));
-}
-
 function matrixCellKey(studentId: string, columnId: string): string {
   return `${studentId}:${columnId}`;
-}
-
-function readBlockSaveToJournal(content: Json): boolean {
-  if (!content || typeof content !== "object" || Array.isArray(content)) {
-    return false;
-  }
-  return (content as Record<string, unknown>).save_to_journal === true;
 }
 
 type GradebookTestMeta = {
@@ -858,6 +838,7 @@ export async function getMatrixGradebookData(
           lessonTitle,
           lessonId: lesson.id,
           blockId: block.id,
+          isForKids: readBlockIsForKids(block.content),
         });
       }
     }
@@ -914,8 +895,8 @@ export async function getMatrixGradebookData(
         studentId: student.id,
         columnId: col.id,
         status: "not_started",
-        grade10: null,
-        isForKids: false,
+        points: null,
+        isForKids: col.isForKids ?? false,
         gradingVisuals: null,
         testId: col.testId ?? null,
         blockId: col.blockId ?? null,
@@ -932,34 +913,11 @@ export async function getMatrixGradebookData(
     };
   }
 
-  const questionCountByTest = new Map<string, number>();
-  const pointsSumByTest = new Map<string, number>();
   const isForKidsByTest = new Map<string, boolean>();
   for (const testId of testIds) {
     const meta = testMetaById.get(testId);
     if (meta) {
       isForKidsByTest.set(testId, meta.is_for_kids);
-    }
-  }
-
-  if (testIds.length > 0) {
-    const { data: questionRows, error: questionsErr } = await supabase
-      .from("questions")
-      .select("test_id, points")
-      .in("test_id", testIds);
-    if (questionsErr) {
-      return { success: false, error: questionsErr.message };
-    }
-    for (const q of questionRows ?? []) {
-      questionCountByTest.set(
-        q.test_id,
-        (questionCountByTest.get(q.test_id) ?? 0) + 1,
-      );
-      pointsSumByTest.set(
-        q.test_id,
-        (pointsSumByTest.get(q.test_id) ?? 0) +
-          (q.points != null && q.points > 0 ? q.points : 1),
-      );
     }
   }
 
@@ -975,7 +933,7 @@ export async function getMatrixGradebookData(
     }
 
     type BestCompleted = {
-      grade10: number;
+      points: number;
       attemptId: string;
       gradingVisuals: GradingVisuals;
     };
@@ -987,19 +945,18 @@ export async function getMatrixGradebookData(
       const matchingCols = filteredColumns.filter(
         (c) => c.type === "test" && c.testId === a.test_id,
       );
-      const totalPoints = Math.max(pointsSumByTest.get(a.test_id) ?? 1, 1);
       const kids = isForKidsByTest.get(a.test_id) ?? false;
-      const visuals = getGradingVisuals(a.score, kids, totalPoints);
-      const g10 = visuals.grade10 ?? 0;
+      const pts = clampScorePercent(a.score);
+      const visuals = getGradingVisuals(pts, kids, 100);
 
       for (const col of matchingCols) {
         const cellKey = matrixCellKey(a.student_id, col.id);
 
         if (a.status === "completed") {
           const prev = bestCompleted.get(cellKey);
-          if (!prev || g10 > prev.grade10) {
+          if (!prev || pts > prev.points) {
             bestCompleted.set(cellKey, {
-              grade10: g10,
+              points: pts,
               attemptId: a.id,
               gradingVisuals: visuals,
             });
@@ -1016,7 +973,7 @@ export async function getMatrixGradebookData(
       const cell = cells[cellKey];
       if (!cell) continue;
       cell.status = "completed";
-      cell.grade10 = best.grade10;
+      cell.points = best.points;
       cell.attemptId = best.attemptId;
       cell.isForKids = best.gradingVisuals.isForKids;
       cell.gradingVisuals = best.gradingVisuals;
@@ -1043,7 +1000,7 @@ export async function getMatrixGradebookData(
       if (!cell) continue;
       cell.status = "pending";
       cell.attemptId = attemptId;
-      cell.grade10 = null;
+      cell.points = null;
       cell.gradingVisuals = null;
     }
   }
@@ -1096,8 +1053,9 @@ export async function getMatrixGradebookData(
         cell.status = sub.status;
         cell.submissionId = sub.id;
         if (sub.status === "approved" && sub.grade != null) {
-          cell.grade10 = assignmentGradeToGrade10(sub.grade);
+          cell.points = normalizeStoredAssignmentPoints(sub.grade);
         }
+        cell.isForKids = col.isForKids ?? false;
       }
     }
   }

@@ -122,6 +122,7 @@ export const dict = {
       colType: "Тип",
       colStatus: "Статус",
       colGrade: "Оценка",
+      colPoints: "Баллы",
       noProgress:
         "Пока нет тестов и заданий по этому курсу в вашей успеваемости.",
       badgeTest: "Тест",
@@ -323,6 +324,7 @@ export const dict = {
       colType: "Type",
       colStatus: "Status",
       colGrade: "Grade",
+      colPoints: "Points",
       noProgress: "No tests or assignments in your progress for this course yet.",
       badgeTest: "Test",
       badgeAssignment: "Assignment",

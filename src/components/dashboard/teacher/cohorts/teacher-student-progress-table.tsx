@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { JournalPointsDisplay } from "@/components/dashboard/gradebook/journal-points-display";
 import { cn } from "@/lib/utils";
 
 function typeBadge(
@@ -80,7 +81,7 @@ export function TeacherStudentProgressTable({
               <TableHead className="min-w-[200px]">Урок</TableHead>
               <TableHead className="w-[100px]">Тип</TableHead>
               <TableHead className="w-[140px]">Статус</TableHead>
-              <TableHead className="w-[100px]">Оценка</TableHead>
+              <TableHead className="w-[100px]">Баллы</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -95,8 +96,13 @@ export function TeacherStudentProgressTable({
               </TableRow>
             ) : (
               items.map((item) => {
-                const scoreLabel =
-                  item.grade10 == null ? "—" : String(item.grade10);
+                const pointsCell = (
+                  <JournalPointsDisplay
+                    points={item.points}
+                    isForKids={item.isForKids}
+                    compact
+                  />
+                );
 
                 if (item.type === "assignment") {
                   const blockId = item.lessonBlockId;
@@ -123,7 +129,7 @@ export function TeacherStudentProgressTable({
                       <TableCell>
                         <ProgressStatusBadge item={item} />
                       </TableCell>
-                      <TableCell className="text-sm">{scoreLabel}</TableCell>
+                      <TableCell className="text-sm">{pointsCell}</TableCell>
                     </TableRow>
                   );
                 }
@@ -156,7 +162,7 @@ export function TeacherStudentProgressTable({
                     <TableCell>
                       <ProgressStatusBadge item={item} />
                     </TableCell>
-                    <TableCell className="text-sm">{scoreLabel}</TableCell>
+                    <TableCell className="text-sm">{pointsCell}</TableCell>
                   </TableRow>
                 );
               })

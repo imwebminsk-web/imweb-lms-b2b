@@ -37,6 +37,7 @@ import {
   sortModules,
   type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
+import { JournalPointsDisplay } from "@/components/dashboard/gradebook/journal-points-display";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, CheckCircle2, Circle, MessageCircle } from "lucide-react";
 
@@ -239,7 +240,7 @@ export function CourseHubClient({
                     </TableHead>
                     <TableHead className="w-[100px]">{t("course_view.colType")}</TableHead>
                     <TableHead className="w-[140px]">{t("course_view.colStatus")}</TableHead>
-                    <TableHead className="w-[100px]">{t("course_view.colGrade")}</TableHead>
+                    <TableHead className="w-[100px]">{t("course_view.colPoints")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -254,8 +255,13 @@ export function CourseHubClient({
                     </TableRow>
                   ) : (
                     courseProgress.map((item) => {
-                      const scoreLabel =
-                        item.grade10 == null ? "—" : String(item.grade10);
+                      const pointsCell = (
+                        <JournalPointsDisplay
+                          points={item.points}
+                          isForKids={item.isForKids}
+                          compact
+                        />
+                      );
 
                       if (item.type === "assignment") {
                         const blockId = item.lessonBlockId;
@@ -285,7 +291,7 @@ export function CourseHubClient({
                               <ProgressStatusBadge item={item} />
                             </TableCell>
                             <TableCell className="text-sm">
-                              {scoreLabel}
+                              {pointsCell}
                             </TableCell>
                           </TableRow>
                         );
@@ -319,7 +325,7 @@ export function CourseHubClient({
                           <TableCell>
                             <ProgressStatusBadge item={item} />
                           </TableCell>
-                          <TableCell className="text-sm">{scoreLabel}</TableCell>
+                          <TableCell className="text-sm">{pointsCell}</TableCell>
                         </TableRow>
                       );
                     })

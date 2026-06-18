@@ -95,18 +95,18 @@ export function TestResultSheet({
   }, [isOpen, studentId, testId, loadDetails]);
 
   useEffect(() => {
-    if (details?.grade10 !== null && details?.grade10 !== undefined) {
-      setOverrideGrade(String(details.grade10));
+    if (details?.points !== null && details?.points !== undefined) {
+      setOverrideGrade(String(details.points));
     } else {
       setOverrideGrade("");
     }
-  }, [details?.attemptId, details?.grade10]);
+  }, [details?.attemptId, details?.points]);
 
   function handleSaveOverride() {
     if (!details?.attemptId) return;
     const n = Number(overrideGrade);
-    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 10) {
-      toast.error("Введите целое число от 0 до 10");
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 100) {
+      toast.error("Введите целое число от 0 до 100");
       return;
     }
     startTransition(() => {
@@ -116,7 +116,7 @@ export function TestResultSheet({
           toast.error(res.error);
           return;
         }
-        toast.success("Оценка обновлена");
+        toast.success("Баллы обновлены");
         router.refresh();
         const again = await getBestTestAttemptDetails(studentId, testId);
         if (!again.success) {
@@ -199,9 +199,9 @@ export function TestResultSheet({
                       totalPossiblePoints={details.totalPossiblePoints}
                       compact
                     />
-                  ) : details.grade10 !== null ? (
+                  ) : details.points !== null ? (
                     <Badge variant="outline">
-                      Оценка: {details.grade10} / 10
+                      Баллы: {details.points}
                     </Badge>
                   ) : null}
                 </div>
@@ -212,16 +212,16 @@ export function TestResultSheet({
               !details.resultSummary.requiresManualReview ? (
                 <section className="border-border space-y-3 rounded-xl border p-4">
                   <h3 className="text-sm font-semibold">
-                    Скорректировать оценку (0–10)
+                    Скорректировать баллы (0–100)
                   </h3>
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="space-y-2">
-                      <Label htmlFor="override-grade-10">Балл</Label>
+                      <Label htmlFor="override-grade-100">Баллы</Label>
                       <Input
-                        id="override-grade-10"
+                        id="override-grade-100"
                         type="number"
                         min={0}
-                        max={10}
+                        max={100}
                         step={1}
                         inputMode="numeric"
                         className="w-24"

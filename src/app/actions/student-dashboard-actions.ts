@@ -3,25 +3,16 @@
 import { z } from "zod";
 
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
+import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 import {
-  normalizeAttemptScoreToPercent,
-  percentToGrade10,
-} from "@/lib/utils/grading";
+  readBlockIsForKids,
+  readBlockSaveToJournal,
+} from "@/lib/gradebook/journal-utils";
+import { clampScorePercent } from "@/lib/utils/grading";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database.types";
 
 const studentIdSchema = z.string().uuid("Некорректный ID пользователя");
-
-/** Нормализует оценку из БД (0–10 или устаревшие 0–100) в балл 0–10. */
-function assignmentGradeToGrade10(grade: number): number {
-  if (grade >= 0 && grade <= 10) {
-    return Math.round(grade);
-  }
-  if (grade > 10 && grade <= 100) {
-    return Math.min(10, Math.max(0, Math.round((grade / 100) * 10)));
-  }
-  return Math.min(10, Math.max(0, Math.round(grade)));
-}
 
 /** Для `type: "test"`: завершённая попытка / только черновик / нет попыток. Для задания — статус сдачи. */
 export type StudentProgressStatus =
@@ -37,8 +28,10 @@ export type StudentProgressItem = {
   type: "test" | "assignment";
   title: string;
   status: StudentProgressStatus;
-  /** Балл 0–10: тест — по лучшей завершённой попытке; задание — после принятия (из оценки преподавателя). */
-  grade10: number | null;
+  /** Балл 0–100: тест — по лучшей завершённой попытке; задание — после принятия. */
+  points: number | null;
+  /** Детский режим: в журнале показывается смайлик вместо числа. */
+  isForKids: boolean;
   courseId: string;
   courseSlug: string;
   /** Название курса из enrollments / join к lessons — для UI без разбора строки title. */
@@ -222,42 +215,6 @@ function resolveProgressTestType(
 
 const cohortIdSchema = z.string().uuid("Некорректный ID группы");
 
-type RpcStudentProgressRow = {
-  id: string;
-  type: string;
-  title: string;
-  status: string;
-  grade10: number | null;
-  course_id: string;
-  course_slug: string;
-  course_title: string;
-  lesson_id: string;
-  test_id: string | null;
-  lesson_block_id: string | null;
-  assignment_submission_id: string | null;
-  has_completed_test_attempt: boolean;
-};
-
-function mapRpcStudentProgressRows(
-  rows: RpcStudentProgressRow[],
-): StudentProgressItem[] {
-  return rows.map((row) => ({
-    id: row.id,
-    type: row.type as StudentProgressItem["type"],
-    title: row.title,
-    status: row.status as StudentProgressStatus,
-    grade10: row.grade10,
-    courseId: row.course_id,
-    courseSlug: row.course_slug,
-    courseTitle: row.course_title,
-    lessonId: row.lesson_id,
-    testId: row.test_id,
-    lessonBlockId: row.lesson_block_id,
-    assignmentSubmissionId: row.assignment_submission_id,
-    hasCompletedTestAttempt: row.has_completed_test_attempt,
-  }));
-}
-
 async function fetchStudentProgressItemsForUserId(
   supabase: Awaited<ReturnType<typeof createClient>>,
   studentUserId: string,
@@ -327,71 +284,65 @@ async function fetchStudentProgressItemsForUserId(
           .in("test_id", testIds)
       : Promise.resolve({ data: [], error: null });
 
-  const questionsPromise =
-    testIds.length > 0
-      ? supabase.from("questions").select("test_id, points").in("test_id", testIds)
-      : Promise.resolve({ data: [], error: null });
-
   const testsMetaPromise =
     testIds.length > 0
       ? supabase
           .from("tests")
-          .select("id, test_type, title_teacher, title")
+          .select(
+            "id, test_type, title_teacher, title, save_to_journal, is_published, is_for_kids",
+          )
           .in("id", testIds)
       : Promise.resolve({ data: [], error: null });
 
   const [
     { data: attemptRowsRaw, error: attemptsErr },
-    { data: questionRows, error: questionsErr },
     { data: testMetaRows, error: testsMetaErr },
-  ] = await Promise.all([attemptsPromise, questionsPromise, testsMetaPromise]);
-  if (attemptsErr || questionsErr || testsMetaErr) {
+  ] = await Promise.all([attemptsPromise, testsMetaPromise]);
+  if (attemptsErr || testsMetaErr) {
     return {
       success: false,
-      error:
-        attemptsErr?.message ??
-        questionsErr?.message ??
-        testsMetaErr?.message ??
-        "Ошибка",
+      error: attemptsErr?.message ?? testsMetaErr?.message ?? "Ошибка",
     };
   }
 
   const testTypeById = new Map<string, "training" | "final">();
+  const testMetaById = new Map<
+    string,
+    {
+      save_to_journal: boolean;
+      is_published: boolean | null;
+      is_for_kids: boolean;
+    }
+  >();
   for (const row of testMetaRows ?? []) {
     testTypeById.set(row.id, resolveProgressTestType(row.test_type));
+    testMetaById.set(row.id, {
+      save_to_journal: row.save_to_journal ?? false,
+      is_published: row.is_published,
+      is_for_kids: row.is_for_kids ?? false,
+    });
   }
 
-  const questionCountByTest = new Map<string, number>();
-  const pointsSumByTest = new Map<string, number>();
-  for (const q of questionRows ?? []) {
-    const prev = questionCountByTest.get(q.test_id) ?? 0;
-    questionCountByTest.set(q.test_id, prev + 1);
-    pointsSumByTest.set(
-      q.test_id,
-      (pointsSumByTest.get(q.test_id) ?? 0) +
-        (q.points != null && q.points > 0 ? q.points : 1),
-    );
-  }
-
-  const bestGrade10ByTest = new Map<string, number>();
+  const bestPointsByTest = new Map<string, number>();
   const hasCompletedByTest = new Set<string>();
   const hasInProgressByTest = new Set<string>();
+  const hasPendingReviewByTest = new Set<string>();
 
   for (const a of attemptRowsRaw ?? []) {
     if (a.status === "completed") {
       hasCompletedByTest.add(a.test_id);
-      const totalPoints = Math.max(pointsSumByTest.get(a.test_id) ?? 1, 1);
-      const rawScore = a.score ?? 0;
-      const percent = normalizeAttemptScoreToPercent(rawScore, totalPoints);
-      const g10 = percentToGrade10(percent);
+      const percent = clampScorePercent(a.score);
       const key = a.test_id;
-      const prev = bestGrade10ByTest.get(key);
-      if (prev == null || g10 > prev) {
-        bestGrade10ByTest.set(key, g10);
+      const prev = bestPointsByTest.get(key);
+      if (prev == null || percent > prev) {
+        bestPointsByTest.set(key, percent);
       }
     }
     if (a.status === "in_progress") {
       hasInProgressByTest.add(a.test_id);
+    }
+    if (a.status === "pending_review") {
+      hasPendingReviewByTest.add(a.test_id);
     }
   }
 
@@ -490,49 +441,60 @@ async function fetchStudentProgressItemsForUserId(
     if (lesson.test_id) {
       seenTestIdsForLesson.add(lesson.test_id);
       const tid = lesson.test_id;
-      const title = lesson.title.trim() || "Урок";
+      const meta = testMetaById.get(tid);
+      if (meta?.save_to_journal && meta.is_published === true) {
+        const title = lesson.title.trim() || "Урок";
 
-      let status: StudentProgressStatus = "not_started";
-      let grade10: number | null = null;
-      const hasCompleted = hasCompletedByTest.has(tid);
+        let status: StudentProgressStatus = "not_started";
+        let points: number | null = null;
+        const hasCompleted = hasCompletedByTest.has(tid);
 
-      if (hasCompleted) {
-        grade10 = bestGrade10ByTest.get(tid) ?? null;
-        status = "completed";
-      } else if (hasInProgressByTest.has(tid)) {
-        status = "in_progress";
+        if (hasPendingReviewByTest.has(tid)) {
+          status = "pending";
+        } else if (hasCompleted) {
+          points = bestPointsByTest.get(tid) ?? null;
+          status = "completed";
+        } else if (hasInProgressByTest.has(tid)) {
+          status = "in_progress";
+        }
+
+        items.push({
+          id: `test-${lesson.id}-${tid}`,
+          type: "test",
+          title,
+          status,
+          points,
+          isForKids: meta.is_for_kids,
+          courseId: lesson.courseId,
+          courseSlug: lesson.courseSlug,
+          courseTitle: lesson.courseTitle,
+          lessonId: lesson.id,
+          testId: tid,
+          lessonBlockId: null,
+          assignmentSubmissionId: null,
+          hasCompletedTestAttempt: hasCompleted,
+          testType: testTypeById.get(tid) ?? "final",
+        });
       }
-
-      items.push({
-        id: `test-${lesson.id}-${tid}`,
-        type: "test",
-        title,
-        status,
-        grade10,
-        courseId: lesson.courseId,
-        courseSlug: lesson.courseSlug,
-        courseTitle: lesson.courseTitle,
-        lessonId: lesson.id,
-        testId: tid,
-        lessonBlockId: null,
-        assignmentSubmissionId: null,
-        hasCompletedTestAttempt: hasCompleted,
-        testType: testTypeById.get(tid) ?? "final",
-      });
     }
 
     for (const qb of quizBlocksByLesson.get(lesson.id) ?? []) {
       if (seenTestIdsForLesson.has(qb.testId)) continue;
       seenTestIdsForLesson.add(qb.testId);
       const tid = qb.testId;
+      const meta = testMetaById.get(tid);
+      if (!meta?.save_to_journal || meta.is_published !== true) continue;
+
       const title = lesson.title.trim() || "Урок";
 
       let status: StudentProgressStatus = "not_started";
-      let grade10: number | null = null;
+      let points: number | null = null;
       const hasCompleted = hasCompletedByTest.has(tid);
 
-      if (hasCompleted) {
-        grade10 = bestGrade10ByTest.get(tid) ?? null;
+      if (hasPendingReviewByTest.has(tid)) {
+        status = "pending";
+      } else if (hasCompleted) {
+        points = bestPointsByTest.get(tid) ?? null;
         status = "completed";
       } else if (hasInProgressByTest.has(tid)) {
         status = "in_progress";
@@ -543,7 +505,8 @@ async function fetchStudentProgressItemsForUserId(
         type: "test",
         title,
         status,
-        grade10,
+        points,
+        isForKids: meta.is_for_kids,
         courseId: lesson.courseId,
         courseSlug: lesson.courseSlug,
         courseTitle: lesson.courseTitle,
@@ -558,15 +521,17 @@ async function fetchStudentProgressItemsForUserId(
 
     const blocks = blocksByLesson.get(lesson.id) ?? [];
     for (const block of blocks) {
+      if (!readBlockSaveToJournal(block.content)) continue;
+
       const sub = latestSubmissionByBlock.get(block.id);
       const title = lesson.title.trim() || "Урок";
 
       let status: StudentProgressStatus = "not_started";
-      let grade10: number | null = null;
+      let points: number | null = null;
       if (sub) {
         status = sub.status;
         if (sub.status === "approved" && sub.grade != null) {
-          grade10 = assignmentGradeToGrade10(sub.grade);
+          points = normalizeStoredAssignmentPoints(sub.grade);
         }
       }
 
@@ -575,7 +540,8 @@ async function fetchStudentProgressItemsForUserId(
         type: "assignment",
         title,
         status,
-        grade10,
+        points,
+        isForKids: readBlockIsForKids(block.content),
         courseId: lesson.courseId,
         courseSlug: lesson.courseSlug,
         courseTitle: lesson.courseTitle,
@@ -630,21 +596,7 @@ export async function getStudentProgress(
     return { success: false, error: "Нет доступа к чужому прогрессу" };
   }
 
-  if (profile.role === "admin" && user.id !== parsed.data) {
-    return fetchStudentProgressItemsForUserId(supabase, parsed.data);
-  }
-
-  const { data: rows, error } = await supabase.rpc("get_my_student_progress");
-
-  if (error) {
-    console.error("[getStudentProgress]", error.message);
-    return { success: false, error: "Не удалось загрузить прогресс." };
-  }
-
-  return {
-    success: true,
-    items: mapRpcStudentProgressRows((rows ?? []) as RpcStudentProgressRow[]),
-  };
+  return fetchStudentProgressItemsForUserId(supabase, parsed.data);
 }
 
 export type StudentProgressForTeacherResult =

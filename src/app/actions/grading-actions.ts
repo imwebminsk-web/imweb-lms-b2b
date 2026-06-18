@@ -16,7 +16,7 @@ import { mergeManualItemGradesIntoAnswerData } from "@/lib/manual-grading-utils"
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { sumQuestionPoints } from "@/lib/utils/grading";
+import { clampScorePercent, sumQuestionPoints } from "@/lib/utils/grading";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import type { Json } from "@/types/database.types";
 
@@ -468,10 +468,11 @@ export async function submitManualGrades(
     }
   }
 
-  const percentScore =
+  const percentScore = clampScorePercent(
     totalPossiblePoints > 0
       ? Math.round((earnedPoints / totalPossiblePoints) * 100)
-      : 0;
+      : 0,
+  );
 
   const { data: finalizedAttempt, error: finalizeErr } = await adminClient
     .from("student_attempts")

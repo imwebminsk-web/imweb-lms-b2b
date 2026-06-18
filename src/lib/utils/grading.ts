@@ -9,13 +9,11 @@ export type GradingColor = "green" | "yellow" | "red";
 
 export type GradingVisuals = {
   isForKids: boolean;
-  /** Нормализованный процент 0–100. */
+  /** Нормализованный балл 0–100. */
   scorePercent: number;
-  /** Шкала 0–10 для взрослых тестов и журнала. */
-  grade10: number | null;
   emoji: string | null;
   color: GradingColor | null;
-  /** Показывать числовой балл / процент в UI. */
+  /** Показывать числовой балл в UI. */
   showNumeric: boolean;
 };
 
@@ -47,13 +45,10 @@ export function normalizeAttemptScoreToPercent(
   return Math.max(0, Math.min(100, raw));
 }
 
-export function percentToGrade10(percent: number): number {
-  return Math.max(0, Math.min(10, Math.round(percent / 10)));
-}
-
-/** Обратное преобразование для ручной правки оценки преподавателем (0–10 → 0–100). */
-export function grade10ToPercentScore(grade10: number): number {
-  return Math.max(0, Math.min(100, Math.round(grade10 * 10)));
+/** Итоговый балл попытки в БД: всегда целое 0–100 (процент). */
+export function clampScorePercent(score: number | null | undefined): number {
+  if (score == null || !Number.isFinite(Number(score))) return 0;
+  return Math.max(0, Math.min(100, Math.round(Number(score))));
 }
 
 export function resolveQuestionPoints(points: number | null | undefined): number {
@@ -118,13 +113,11 @@ export function getGradingVisuals(
     score,
     totalPossiblePoints,
   );
-  const grade10 = percentToGrade10(scorePercent);
 
   if (!isForKids) {
     return {
       isForKids: false,
       scorePercent,
-      grade10,
       emoji: null,
       color: null,
       showNumeric: true,
@@ -148,7 +141,6 @@ export function getGradingVisuals(
   return {
     isForKids: true,
     scorePercent,
-    grade10,
     emoji,
     color,
     showNumeric: false,

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useLanguage } from "@/components/providers/language-provider";
-import { normalizeStoredGradeToGrade10 } from "@/lib/learn/assignment-grade-display";
+import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 
 export type AssignmentSheetDisplayStatus =
   | "pending"
@@ -68,7 +68,7 @@ type AssignmentSheetLayoutTeacher = AssignmentSheetLayoutBase & {
 
 type AssignmentSheetLayoutStudent = AssignmentSheetLayoutBase & {
   isTeacher: false;
-  /** Сырое значение из БД; для отображения нормализуется в 0–10. */
+  /** Сырое значение из БД; для отображения нормализуется в 0–100. */
   storedGrade: number | null;
   teacherComment: string | null;
 };
@@ -85,9 +85,9 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
   const { lessonTitle, assignmentText, studentAnswer, status, isTeacher } =
     props;
 
-  const grade10Display = isTeacher
+  const pointsDisplay = isTeacher
     ? null
-    : normalizeStoredGradeToGrade10(props.storedGrade);
+    : normalizeStoredAssignmentPoints(props.storedGrade);
 
   return (
     <div className="space-y-6">
@@ -133,14 +133,14 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
           <section className="border-border space-y-4 rounded-xl border bg-muted/20 p-4">
             <p className="text-sm font-semibold">Проверка</p>
             <div className="space-y-2">
-              <Label htmlFor="sheet-grade-10" className="font-medium">
-                Оценка (0–10, необязательно)
+              <Label htmlFor="sheet-grade-100" className="font-medium">
+                Баллы (0–100, необязательно)
               </Label>
               <Input
-                id="sheet-grade-10"
+                id="sheet-grade-100"
                 type="number"
                 min={0}
-                max={10}
+                max={100}
                 step={1}
                 inputMode="numeric"
                 className="max-w-[120px]"
@@ -191,8 +191,8 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
       ) : (
         <section className="space-y-3 rounded-md border bg-muted/15 p-4 text-sm">
           <p>
-            <span className="font-semibold">{t("lesson_view.grade")}: </span>
-            {grade10Display != null ? `${grade10Display} / 10` : "—"}
+            <span className="font-semibold">{t("course_view.colPoints")}: </span>
+            {pointsDisplay != null ? `${pointsDisplay}` : "—"}
           </p>
           <p>
             <span className="font-semibold">

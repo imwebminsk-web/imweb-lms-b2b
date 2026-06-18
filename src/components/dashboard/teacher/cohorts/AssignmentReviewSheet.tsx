@@ -22,7 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { normalizeStoredGradeToGrade10 } from "@/lib/learn/assignment-grade-display";
+import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 
 export type AssignmentReviewSheetProps = {
   isOpen: boolean;
@@ -118,7 +118,7 @@ export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
       const sub = res.data.submission;
       setActiveSubmissionId(sub?.id ?? null);
       if (sub) {
-        const normalized = normalizeStoredGradeToGrade10(sub.grade);
+        const normalized = normalizeStoredAssignmentPoints(sub.grade);
         setGradeInput(
           normalized != null
             ? String(normalized)
@@ -152,16 +152,16 @@ export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
 
     const gradeParsed = parseOptionalGrade(gradeInput);
     if (status === "approved" && gradeParsed !== null && Number.isNaN(gradeParsed)) {
-      toast.error("Введите целую оценку от 0 до 10 или оставьте поле пустым");
+      toast.error("Введите целый балл от 0 до 100 или оставьте поле пустым");
       return;
     }
     if (
       status === "approved" &&
       gradeParsed != null &&
       !Number.isNaN(gradeParsed) &&
-      (gradeParsed < 0 || gradeParsed > 10)
+      (gradeParsed < 0 || gradeParsed > 100)
     ) {
-      toast.error("Оценка должна быть от 0 до 10");
+      toast.error("Балл должен быть от 0 до 100");
       return;
     }
 

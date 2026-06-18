@@ -806,7 +806,7 @@ export type Database = {
           type: string
           title: string
           status: string
-          grade10: number | null
+          points: number | null
           course_id: string
           course_slug: string
           course_title: string

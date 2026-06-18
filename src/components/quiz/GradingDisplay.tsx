@@ -48,7 +48,7 @@ export function GradingDisplay({
     );
   }
 
-  if (visuals.grade10 != null) {
+  if (visuals.showNumeric) {
     return (
       <span
         className={cn(
@@ -57,7 +57,7 @@ export function GradingDisplay({
           className,
         )}
       >
-        {visuals.grade10}
+        {visuals.scorePercent}
       </span>
     );
   }

@@ -63,6 +63,7 @@ import { OrderingTaskQuestion } from "./OrderingTaskQuestion";
 import {
   canSubmitQuestionDraft,
   emptyQuestionDraft,
+  findNextUnansweredQuestionIndex,
   isQuizFullyAnswered,
   submitQuestionDraft,
   type QuestionDraft,
@@ -186,6 +187,7 @@ export function QuizPlayer({
   const [result, setResult] = useState<AttemptResult | null>(null);
   const [isPending, startTransition] = useTransition();
   const finishingRef = useRef(false);
+  const finishButtonRef = useRef<HTMLButtonElement>(null);
   const draftsRef = useRef(draftsByQuestionId);
   const submittedRef = useRef(submittedQuestionIds);
 
@@ -500,7 +502,25 @@ export function QuizPlayer({
         return;
       }
 
-      setSubmittedQuestionIds((prev) => new Set(prev).add(current.id));
+      const updatedSubmitted = new Set(submittedQuestionIds).add(current.id);
+      setSubmittedQuestionIds(updatedSubmitted);
+
+      const nextIndex = findNextUnansweredQuestionIndex(
+        questions,
+        currentIndex,
+        updatedSubmitted,
+      );
+
+      if (nextIndex !== null) {
+        setCurrentIndex(nextIndex);
+        return;
+      }
+
+      finishButtonRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+      finishButtonRef.current?.focus();
     });
   }
 
@@ -590,6 +610,7 @@ export function QuizPlayer({
           </span>
         )}
         <Button
+          ref={finishButtonRef}
           type="button"
           variant="outline"
           size="sm"

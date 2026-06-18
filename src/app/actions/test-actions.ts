@@ -72,7 +72,7 @@ import {
   type SubmitAnswerInput,
 } from "@/lib/validations/test-schemas";
 import {
-  normalizeAttemptScoreToPercent,
+  clampScorePercent,
   resolveQuestionPoints,
   sumQuestionPoints,
 } from "@/lib/utils/grading";
@@ -2305,11 +2305,7 @@ export async function completeAttempt(
   );
 
   if (attempt.status === "completed" || attempt.status === "pending_review") {
-    const storedScore = attempt.score ?? 0;
-    const percentScore = normalizeAttemptScoreToPercent(
-      storedScore,
-      totalPossiblePoints,
-    );
+    const percentScore = clampScorePercent(attempt.score);
     const { count: answered } = await supabase
       .from("attempt_answers")
       .select("id", { count: "exact", head: true })
@@ -2420,10 +2416,11 @@ export async function completeAttempt(
     }
   }
 
-  const percentScore =
+  const percentScore = clampScorePercent(
     totalPossiblePoints > 0
       ? Math.round((earnedPoints / totalPossiblePoints) * 100)
-      : 0;
+      : 0,
+  );
 
   const completedAt = new Date().toISOString();
   const { error: updateError } = await supabase

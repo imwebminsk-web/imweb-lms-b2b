@@ -67,7 +67,7 @@ function MatrixCell({
   onOpenGrading: (attemptId: string) => void;
 }) {
   const status = cell?.status ?? "not_started";
-  const grade10 = cell?.grade10 ?? null;
+  const points = cell?.points ?? null;
   const isForKids = cell?.isForKids ?? false;
   const gradingVisuals = cell?.gradingVisuals ?? null;
 
@@ -129,7 +129,7 @@ function MatrixCell({
     );
   }
 
-  if (status === "in_progress" && grade10 == null) {
+  if (status === "in_progress" && points == null) {
     return (
       <button
         type="button"
@@ -142,17 +142,17 @@ function MatrixCell({
     );
   }
 
-  if (grade10 != null) {
-    if (isForKids && gradingVisuals?.emoji) {
+  if (points != null) {
+    if (isForKids) {
       return (
         <button
           type="button"
           onClick={handleClick}
           className="inline-flex size-full min-h-8 items-center justify-center rounded-sm hover:bg-muted/60"
-          aria-label={`Результат: ${gradingVisuals.scorePercent}%`}
+          aria-label={`Результат: ${points} баллов`}
         >
           <GradingDisplay
-            score={gradingVisuals.scorePercent}
+            score={points}
             isForKids
             totalPossiblePoints={100}
             compact
@@ -161,7 +161,7 @@ function MatrixCell({
       );
     }
 
-    const pass = grade10 >= 5;
+    const pass = points >= 50;
     return (
       <button
         type="button"
@@ -173,7 +173,7 @@ function MatrixCell({
             : "text-red-600 dark:text-red-400",
         )}
       >
-        {grade10}
+        {points}
       </button>
     );
   }

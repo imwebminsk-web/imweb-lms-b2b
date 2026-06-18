@@ -134,6 +134,32 @@ export function isQuizFullyAnswered(
   });
 }
 
+/**
+ * Следующий вопрос без отправленного ответа: сначала после текущего, затем с начала.
+ * Возвращает null, если все вопросы уже отправлены.
+ */
+export function findNextUnansweredQuestionIndex(
+  questions: SafeTestQuestion[],
+  currentIndex: number,
+  submittedQuestionIds: Set<string>,
+): number | null {
+  if (questions.length === 0) return null;
+
+  const isUnanswered = (index: number): boolean => {
+    const question = questions[index];
+    if (!question) return false;
+    return !submittedQuestionIds.has(question.id);
+  };
+
+  for (let i = currentIndex + 1; i < questions.length; i++) {
+    if (isUnanswered(i)) return i;
+  }
+  for (let i = 0; i < currentIndex; i++) {
+    if (isUnanswered(i)) return i;
+  }
+  return null;
+}
+
 export async function submitQuestionDraft(
   attemptId: string,
   question: SafeTestQuestion,

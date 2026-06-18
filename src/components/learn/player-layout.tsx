@@ -27,7 +27,7 @@ import { useLanguage } from "@/components/providers/language-provider";
 import { youtubeEmbedSrc } from "@/lib/learn/youtube-embed";
 import { cn } from "@/lib/utils";
 import type { Database, Json } from "@/types/database.types";
-import { ArrowLeft, FileText, ListChecks, Video } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle, PlayCircle } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 
 type LessonType = Database["public"]["Enums"]["lesson_type"];
@@ -74,26 +74,35 @@ function readBody(content: Json): string {
   return typeof c.body === "string" ? c.body : "";
 }
 
-function LessonTypeIcon({
-  type,
-  className,
-}: {
-  type: LessonType;
-  className?: string;
-}) {
-  const iconClass = cn("size-4 shrink-0 text-muted-foreground", className);
-  switch (type) {
-    case "video":
-      return <Video className={iconClass} aria-hidden />;
-    case "text":
-      return <FileText className={iconClass} aria-hidden />;
-    case "quiz":
-    case "test":
-      return <ListChecks className={iconClass} aria-hidden />;
-    default: {
-      const _exhaustive: never = type;
-      return _exhaustive;
-    }
+type LessonNavStatus = "active" | "completed" | "pending";
+
+function getLessonNavStatus(
+  lessonId: string,
+  activeLessonId: string,
+  completedSet: Set<string>,
+): LessonNavStatus {
+  if (lessonId === activeLessonId) return "active";
+  if (completedSet.has(lessonId)) return "completed";
+  return "pending";
+}
+
+function LessonStatusIcon({ status }: { status: LessonNavStatus }) {
+  switch (status) {
+    case "completed":
+      return (
+        <CheckCircle2
+          className="size-4 shrink-0 text-green-500"
+          aria-hidden
+        />
+      );
+    case "active":
+      return (
+        <PlayCircle className="size-4 shrink-0 text-primary" aria-hidden />
+      );
+    case "pending":
+      return (
+        <Circle className="text-muted-foreground size-4 shrink-0" aria-hidden />
+      );
   }
 }
 
@@ -173,6 +182,10 @@ export function PlayerLayout({
 }: PlayerLayoutProps) {
   const { t } = useLanguage();
   const sortedMods = useMemo(() => sortModules(modules), [modules]);
+  const completedSet = useMemo(
+    () => new Set(completedLessonIds),
+    [completedLessonIds],
+  );
 
   const sortedBlocks = useMemo(
     () => [...blocks].sort((a, b) => a.order_index - b.order_index),
@@ -233,10 +246,21 @@ export function PlayerLayout({
             >
               {sortedMods.map((mod) => {
                 const lessons = publishedLessonsSorted(mod.lessons);
+                const completedInModule = lessons.filter((l) =>
+                  completedSet.has(l.id),
+                ).length;
+                const totalInModule = lessons.length;
                 return (
                   <AccordionItem key={mod.id} value={mod.id}>
-                    <AccordionTrigger className="py-2 text-left text-sm">
-                      {mod.title}
+                    <AccordionTrigger className="py-2 text-left text-sm hover:no-underline">
+                      <span className="flex min-w-0 flex-1 items-center gap-1 pr-2">
+                        <span className="truncate">{mod.title}</span>
+                        {totalInModule > 0 ? (
+                          <span className="text-muted-foreground ml-2 shrink-0 text-xs font-normal tabular-nums">
+                            {completedInModule}/{totalInModule}
+                          </span>
+                        ) : null}
+                      </span>
                     </AccordionTrigger>
                     <AccordionContent className="pb-1">
                       {lessons.length === 0 ? (
@@ -246,19 +270,32 @@ export function PlayerLayout({
                       ) : (
                         <ul className="space-y-0.5">
                           {lessons.map((l) => {
-                            const active = l.id === activeLessonId;
+                            const status = getLessonNavStatus(
+                              l.id,
+                              activeLessonId,
+                              completedSet,
+                            );
+                            const active = status === "active";
                             return (
                               <li key={l.id}>
                                 <Link
                                   href={`/learn/${encodeURIComponent(courseSlug)}/${l.id}`}
                                   className={cn(
-                                    "hover:bg-accent/80 flex items-start gap-2 rounded-md px-2 py-2 text-sm transition-colors",
-                                    active &&
-                                      "bg-accent text-accent-foreground ring-ring/40 font-medium ring-2",
+                                    "flex items-start gap-2 border-l-4 px-2 py-2 text-sm transition-colors",
+                                    "hover:bg-accent/50",
+                                    active
+                                      ? "bg-primary/10 border-primary text-primary font-medium"
+                                      : "border-transparent",
+                                    !active &&
+                                      status === "pending" &&
+                                      "text-muted-foreground",
+                                    !active &&
+                                      status === "completed" &&
+                                      "text-foreground font-medium",
                                   )}
                                   aria-current={active ? "page" : undefined}
                                 >
-                                  <LessonTypeIcon type={l.type} />
+                                  <LessonStatusIcon status={status} />
                                   <span className="min-w-0 flex-1 leading-snug">
                                     {l.title}
                                   </span>

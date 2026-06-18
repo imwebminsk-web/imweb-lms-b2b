@@ -461,10 +461,10 @@ export async function reviewSubmission(
   if (status === "rejected") {
     gradeOut = null;
   } else if (gradeOut != null) {
-    if (!Number.isInteger(gradeOut) || gradeOut < 0 || gradeOut > 10) {
+    if (!Number.isInteger(gradeOut) || gradeOut < 0 || gradeOut > 100) {
       return {
         success: false,
-        error: "Оценка должна быть целым числом от 0 до 10 или пустой",
+        error: "Балл должен быть целым числом от 0 до 100 или пустым",
       };
     }
   }
