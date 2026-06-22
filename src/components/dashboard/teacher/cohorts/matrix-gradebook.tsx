@@ -148,7 +148,7 @@ function MatrixCell({
         <button
           type="button"
           onClick={handleClick}
-          className="inline-flex size-full min-h-8 items-center justify-center rounded-sm hover:bg-muted/60"
+          className="inline-flex size-full min-h-12 items-center justify-center rounded-sm hover:bg-muted/60"
           aria-label={`Результат: ${points} баллов`}
         >
           <GradingDisplay

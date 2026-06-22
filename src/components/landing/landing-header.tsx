@@ -3,6 +3,7 @@ import Link from "next/link";
 import { signOutAction } from "@/app/actions/auth-actions";
 import { ModeToggle } from "@/components/mode-toggle";
 import { buttonVariants } from "@/components/ui/button";
+import { Logo } from "@/components/ui/logo";
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -26,12 +27,8 @@ export async function LandingHeader() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card shadow-sm">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        <Link
-          href="/"
-          className="shrink-0 text-lg font-bold tracking-tight"
-        >
-          <span className="text-primary">New</span>
-          <span className="text-foreground"> Education</span>
+        <Link href="/" className="flex shrink-0 items-center">
+          <Logo priority className="h-12" />
         </Link>
 
         <NavigationMenu className="hidden max-w-none flex-1 justify-center md:flex">

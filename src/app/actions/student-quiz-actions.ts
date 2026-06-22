@@ -7,6 +7,7 @@ import {
   type SafeTestQuestion,
 } from "@/app/actions/test-actions";
 import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
+import { STUDENT_QUIZ_SINGLE_ATTEMPT_ERROR } from "@/lib/learn/student-quiz-constants";
 import { createClient } from "@/lib/supabase/server";
 
 const testIdSchema = z.string().uuid("Некорректный ID теста");
@@ -111,7 +112,7 @@ export async function initStudentQuiz(
       if ((priorAttempts ?? []).length > 0) {
         return {
           success: false,
-          error: "Этот тест можно пройти только один раз.",
+          error: STUDENT_QUIZ_SINGLE_ATTEMPT_ERROR,
         };
       }
     } else {
@@ -191,7 +192,12 @@ export async function initStudentQuiz(
 export async function getStudentQuizPreviewTitle(
   testId: string,
 ): Promise<
-  | { success: true; title: string; testType: StudentTestType }
+  | {
+      success: true;
+      title: string;
+      testType: StudentTestType;
+      hasExhaustedAttempts: boolean;
+    }
   | { success: false; error: string }
 > {
   const parsed = testIdSchema.safeParse(testId);
@@ -227,5 +233,23 @@ export async function getStudentQuizPreviewTitle(
 
   const title = resolveStudentFacingTestTitle(data);
   const testType = resolveStudentTestType(data.test_type);
-  return { success: true, title, testType };
+
+  let hasExhaustedAttempts = false;
+  if (testType === "final") {
+    const { data: attempts, error: attemptsError } = await supabase
+      .from("student_attempts")
+      .select("status")
+      .eq("student_id", user.id)
+      .eq("test_id", parsed.data);
+
+    if (!attemptsError && attempts) {
+      const hasInProgress = attempts.some((a) => a.status === "in_progress");
+      const hasFinished = attempts.some(
+        (a) => a.status === "completed" || a.status === "pending_review",
+      );
+      hasExhaustedAttempts = hasFinished && !hasInProgress;
+    }
+  }
+
+  return { success: true, title, testType, hasExhaustedAttempts };
 }

@@ -8,6 +8,7 @@ import {
   type InitStudentQuizSuccess,
   type StudentTestType,
 } from "@/app/actions/student-quiz-actions";
+import { STUDENT_QUIZ_SINGLE_ATTEMPT_ERROR } from "@/lib/learn/student-quiz-constants";
 import { QuizPlayer } from "@/components/quiz/QuizPlayer";
 import { useLanguage } from "@/components/providers/language-provider";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Brain, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 type TestRevealWrapperProps = {
   testId: string;
@@ -30,6 +32,9 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
   const fallbackTitle = t("lesson_view.defaultQuizTitle");
   const [cardTitle, setCardTitle] = useState(fallbackTitle);
   const [testType, setTestType] = useState<StudentTestType | null>(null);
+  const [hasExhaustedAttempts, setHasExhaustedAttempts] = useState(false);
+  const [isUnavailable, setIsUnavailable] = useState(false);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
   const [quizData, setQuizData] = useState<InitStudentQuizSuccess | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -37,19 +42,32 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
     let cancelled = false;
 
     async function loadTitle() {
+      setPreviewLoaded(false);
+      setIsUnavailable(false);
+      setHasExhaustedAttempts(false);
+      setTestType(null);
+      setCardTitle(fallbackTitle);
+
       const res = await getStudentQuizPreviewTitle(testId);
-      if (cancelled || !res.success) {
+      if (cancelled) {
+        return;
+      }
+      if (!res.success) {
+        setIsUnavailable(true);
+        setPreviewLoaded(true);
         return;
       }
       setCardTitle(res.title);
       setTestType(res.testType);
+      setHasExhaustedAttempts(res.hasExhaustedAttempts);
+      setPreviewLoaded(true);
     }
 
     void loadTitle();
     return () => {
       cancelled = true;
     };
-  }, [testId]);
+  }, [testId, fallbackTitle]);
 
   async function handleStart() {
     setIsLoading(true);
@@ -58,7 +76,10 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
       if (res.success) {
         setQuizData(res);
       } else {
-        console.error("[TestRevealWrapper]", res.error);
+        if (res.error === STUDENT_QUIZ_SINGLE_ATTEMPT_ERROR) {
+          setHasExhaustedAttempts(true);
+        }
+        toast.error(res.error);
       }
     } finally {
       setIsLoading(false);
@@ -98,29 +119,39 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
                 </Badge>
               ) : null}
             </div>
-            <CardDescription>
-              {t("lesson_view.startQuizDescription")}
+            <CardDescription
+              className={isUnavailable ? "text-amber-700 dark:text-amber-300" : undefined}
+            >
+              {isUnavailable
+                ? t("lesson_view.testUnavailableWarning")
+                : hasExhaustedAttempts
+                  ? t("lesson_view.testSubmitted")
+                  : previewLoaded
+                    ? t("lesson_view.startQuizDescription")
+                    : t("lesson_view.loading")}
             </CardDescription>
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <Button
-          type="button"
-          size="lg"
-          onClick={handleStart}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-              {t("lesson_view.loading")}
-            </>
-          ) : (
-            t("lesson_view.takeTest")
-          )}
-        </Button>
-      </CardContent>
+      {previewLoaded && !hasExhaustedAttempts && !isUnavailable ? (
+        <CardContent>
+          <Button
+            type="button"
+            size="lg"
+            onClick={handleStart}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                {t("lesson_view.loading")}
+              </>
+            ) : (
+              t("lesson_view.takeTest")
+            )}
+          </Button>
+        </CardContent>
+      ) : null}
     </Card>
   );
 }

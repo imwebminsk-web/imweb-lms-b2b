@@ -1,6 +1,6 @@
 import {
   getGradingVisuals,
-  GRADING_COLOR_BG_CLASSES,
+  GRADING_COLOR_RING_CLASSES,
   type GradingVisuals,
 } from "@/lib/utils/grading";
 import { cn } from "@/lib/utils";
@@ -35,9 +35,9 @@ export function GradingDisplay({
     return (
       <span
         className={cn(
-          "inline-flex items-center justify-center rounded-full border font-medium",
-          compact ? "size-8 text-xl" : "size-20 text-5xl",
-          GRADING_COLOR_BG_CLASSES[visuals.color],
+          "inline-flex shrink-0 items-center justify-center rounded-full leading-none",
+          compact ? "size-12 text-3xl" : "size-14 text-4xl",
+          GRADING_COLOR_RING_CLASSES[visuals.color],
           className,
         )}
         aria-label={`Результат: ${visuals.scorePercent} процентов`}

@@ -166,6 +166,9 @@ export const dict = {
       returnToLesson: "Вернуться к уроку",
       startQuizDescription: "Нажмите кнопку, чтобы начать тестирование",
       takeTest: "Пройти тест",
+      testSubmitted: "Тест сдан",
+      testUnavailableWarning:
+        "Тест временно недоступен. Обратитесь к преподавателю.",
       loading: "Загрузка…",
       enterAnswerBeforeSubmit: "Введите ответ перед отправкой",
       answerResubmitted: "Ответ отправлен повторно",
@@ -367,6 +370,9 @@ export const dict = {
       returnToLesson: "Back to lesson",
       startQuizDescription: "Click the button to start the test",
       takeTest: "Take test",
+      testSubmitted: "Test submitted",
+      testUnavailableWarning:
+        "This test is temporarily unavailable. Please contact your teacher.",
       loading: "Loading…",
       enterAnswerBeforeSubmit: "Enter an answer before submitting",
       answerResubmitted: "Answer resubmitted",

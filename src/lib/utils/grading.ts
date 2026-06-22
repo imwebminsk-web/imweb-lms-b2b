@@ -147,10 +147,8 @@ export function getGradingVisuals(
   };
 }
 
-export const GRADING_COLOR_BG_CLASSES: Record<GradingColor, string> = {
-  green:
-    "bg-green-100 text-green-900 dark:bg-green-950 dark:text-green-100 border-green-300 dark:border-green-800",
-  yellow:
-    "bg-yellow-100 text-yellow-900 dark:bg-yellow-950 dark:text-yellow-100 border-yellow-300 dark:border-yellow-800",
-  red: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100 border-red-300 dark:border-red-800",
+export const GRADING_COLOR_RING_CLASSES: Record<GradingColor, string> = {
+  green: "border-2 border-green-500/50 bg-green-500/10",
+  yellow: "border-2 border-yellow-500/50 bg-yellow-500/10",
+  red: "border-2 border-red-500/50 bg-red-500/10",
 };

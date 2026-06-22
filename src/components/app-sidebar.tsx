@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowUpCircleIcon } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
+import { Logo } from "@/components/ui/logo"
 import {
   getSidebarNavForRole,
   type ProfileRole,
@@ -49,9 +49,8 @@ export function AppSidebar({
               className="data-[slot=sidebar-menu-button]:!p-1.5"
               asChild
             >
-              <Link href="/dashboard">
-                <ArrowUpCircleIcon className="h-5 w-5" />
-                <span className="text-base font-semibold">NewEdu</span>
+              <Link href="/dashboard" className="flex items-center">
+                <Logo className="h-10" />
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

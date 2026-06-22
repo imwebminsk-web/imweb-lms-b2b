@@ -1,13 +1,14 @@
 "use client";
 
 import type { ComponentType, SVGProps } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Settings } from "lucide-react";
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { Settings } from "lucide-react"
 
-import { signOut } from "@/app/actions/auth-actions";
-import { useLanguage } from "@/components/providers/language-provider";
-import { Badge } from "@/components/ui/badge";
+import { signOut } from "@/app/actions/auth-actions"
+import { useLanguage } from "@/components/providers/language-provider"
+import { Badge } from "@/components/ui/badge"
+import { Logo } from "@/components/ui/logo"
 import {
   Avatar,
   AvatarFallback,
@@ -187,23 +188,12 @@ export function DashboardSidebar({
       <Link
         href="/dashboard"
         className={cn(
-          "mb-8 flex items-center font-bold tracking-tight transition-all",
-          isCollapsed
-            ? "justify-center px-0"
-            : "px-3 text-2xl",
+          "mb-8 flex items-center transition-all",
+          isCollapsed ? "justify-center px-0" : "px-3",
         )}
-        title="New Edu"
+        title="New Education"
       >
-        {isCollapsed ? (
-          <span className="flex size-10 items-center justify-center rounded-xl bg-growvy-primary text-sm font-bold text-white">
-            N
-          </span>
-        ) : (
-          <>
-            <span className="text-growvy-primary">New</span>
-            <span className="text-foreground"> Edu</span>
-          </>
-        )}
+        <Logo className={isCollapsed ? "h-10" : "h-12"} />
       </Link>
 
       <nav className="flex flex-1 flex-col gap-1">
