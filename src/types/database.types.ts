@@ -696,6 +696,71 @@ export type Database = {
           },
         ]
       }
+      support_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          sender_id: string
+          ticket_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          sender_id: string
+          ticket_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          sender_id?: string
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_ticket_id_fkey"
+            columns: ["ticket_id"]
+            isOneToOne: false
+            referencedRelation: "support_tickets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_tickets: {
+        Row: {
+          created_at: string
+          has_unread_student: boolean
+          has_unread_teacher: boolean
+          id: string
+          status: string
+          subject: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          has_unread_student?: boolean
+          has_unread_teacher?: boolean
+          id?: string
+          status?: string
+          subject: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          has_unread_student?: boolean
+          has_unread_teacher?: boolean
+          id?: string
+          status?: string
+          subject?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       taxonomies: {
         Row: {
           created_at: string
@@ -834,6 +899,20 @@ export type Database = {
           p_pin: string
         }
         Returns: Json
+      }
+      mark_support_ticket_read: {
+        Args: {
+          p_ticket_id: string
+          p_role: string
+        }
+        Returns: undefined
+      }
+      touch_support_ticket: {
+        Args: {
+          p_ticket_id: string
+          p_sender_role: string
+        }
+        Returns: undefined
       }
     }
     Enums: {

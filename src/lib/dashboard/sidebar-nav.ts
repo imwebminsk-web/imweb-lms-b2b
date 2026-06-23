@@ -44,6 +44,7 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
       { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
       { title: "Ученики", url: "/dashboard/students", icon: Users },
       { title: "Тесты", url: "/dashboard/tests", icon: CheckSquare },
+      { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
   }
   return [
@@ -53,6 +54,6 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
       icon: GraduationCapIcon,
     },
     { title: "Каталог", url: "/", icon: BookOpenIcon },
-    { title: "Поддержка", url: "/", icon: LifeBuoyIcon },
+    { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
   ];
 }

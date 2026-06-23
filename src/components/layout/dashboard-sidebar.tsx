@@ -41,6 +41,7 @@ const teacherNav: NavItem[] = [
   { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
   { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
   { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
+  { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
 ];
 
 const studentNav: NavItem[] = [
@@ -59,7 +60,7 @@ const studentNav: NavItem[] = [
   {
     title: "Поддержка",
     labelKey: "nav.support",
-    url: "/",
+    url: "/dashboard/support",
     icon: GrowvySupportIcon,
   },
 ];
@@ -67,6 +68,7 @@ const studentNav: NavItem[] = [
 const adminNav: NavItem[] = [
   { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
   { title: "Справочники", url: "/dashboard/admin/taxonomies", icon: GrowvyDictionariesIcon },
+  { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
   { title: "Финансы", url: "/dashboard", icon: GrowvyCatalogIcon },
   { title: "Все курсы", url: "/dashboard", icon: GrowvyCoursesIcon },
 ];

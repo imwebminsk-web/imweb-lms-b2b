@@ -1,11 +1,16 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 
+import { getSupportUnreadCount } from "@/app/actions/support-actions";
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { getPendingReviewCounts } from "@/app/actions/grading-actions";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { GlobalChatListener } from "@/components/providers/global-chat-listener";
+import { GlobalSupportListener } from "@/components/providers/global-support-listener";
 import { createClient } from "@/lib/supabase/server";
+
+/** URL пункта «Поддержка» — одинаковый для student, teacher и admin навигации. */
+const SUPPORT_NAV_URL = "/dashboard/support";
 
 export default async function DashboardLayout({
   children,
@@ -39,6 +44,11 @@ export default async function DashboardLayout({
   let navBadges: Record<string, number> = {};
   let navPendingBadges: Record<string, number> = {};
 
+  const supportUnreadRes = await getSupportUnreadCount();
+  if (supportUnreadRes.success && supportUnreadRes.count > 0) {
+    navBadges[SUPPORT_NAV_URL] = supportUnreadRes.count;
+  }
+
   if (profile.role === "teacher") {
     const [unreadRes, pendingRes] = await Promise.all([
       getUnreadCounts(),
@@ -51,7 +61,7 @@ export default async function DashboardLayout({
         0,
       );
       if (totalUnread > 0) {
-        navBadges = { "/dashboard/cohorts": totalUnread };
+        navBadges = { ...navBadges, "/dashboard/cohorts": totalUnread };
       }
     }
 
@@ -72,7 +82,7 @@ export default async function DashboardLayout({
         0,
       );
       if (totalUnread > 0) {
-        navBadges = { "/dashboard": totalUnread };
+        navBadges = { ...navBadges, "/dashboard": totalUnread };
       }
     }
   }
@@ -80,6 +90,7 @@ export default async function DashboardLayout({
   return (
     <>
       <GlobalChatListener />
+      <GlobalSupportListener />
       <DashboardShell
         role={profile.role}
         navBadges={navBadges}
