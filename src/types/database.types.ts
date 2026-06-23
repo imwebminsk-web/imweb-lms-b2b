@@ -457,7 +457,6 @@ export type Database = {
         Row: {
           avatar_url: string | null
           bio: string | null
-          email: string | null
           full_name: string | null
           id: string
           profession: string | null
@@ -467,7 +466,6 @@ export type Database = {
         Insert: {
           avatar_url?: string | null
           bio?: string | null
-          email?: string | null
           full_name?: string | null
           id: string
           profession?: string | null
@@ -477,7 +475,6 @@ export type Database = {
         Update: {
           avatar_url?: string | null
           bio?: string | null
-          email?: string | null
           full_name?: string | null
           id?: string
           profession?: string | null
@@ -485,6 +482,29 @@ export type Database = {
           specialization?: string | null
         }
         Relationships: []
+      }
+      profile_secrets: {
+        Row: {
+          email: string | null
+          id: string
+        }
+        Insert: {
+          email?: string | null
+          id: string
+        }
+        Update: {
+          email?: string | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_secrets_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       attempt_answers: {
         Row: {

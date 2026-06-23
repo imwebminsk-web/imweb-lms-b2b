@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import type { Database } from "@/types/database.types";
@@ -237,6 +238,20 @@ async function requireStaffUser() {
   return { ok: true as const, supabase: auth.supabase, user: auth.user, role };
 }
 
+function requireSupportRpcClient():
+  | NonNullable<ReturnType<typeof createAdminClient>>
+  | { success: false; error: string } {
+  const adminClient = createAdminClient();
+  if (!adminClient) {
+    return {
+      success: false,
+      error:
+        "Сервер не настроен для обновления тикетов (отсутствует SUPABASE_SERVICE_ROLE_KEY).",
+    };
+  }
+  return adminClient;
+}
+
 /** Список всех тикетов для учителя или админа. */
 export async function getAllSupportTickets(
   status?: "open" | "closed",
@@ -370,7 +385,12 @@ export async function markSupportTicketAsRead(
       return { success: false, error: "Нет доступа." };
     }
 
-    const { error } = await supabase.rpc("mark_support_ticket_read", {
+    const adminClient = requireSupportRpcClient();
+    if ("success" in adminClient) {
+      return adminClient;
+    }
+
+    const { error } = await adminClient.rpc("mark_support_ticket_read", {
       p_ticket_id: tid,
       p_role: "teacher",
     });
@@ -385,7 +405,12 @@ export async function markSupportTicketAsRead(
       return { success: false, error: access.error };
     }
 
-    const { error } = await supabase.rpc("mark_support_ticket_read", {
+    const adminClient = requireSupportRpcClient();
+    if ("success" in adminClient) {
+      return adminClient;
+    }
+
+    const { error } = await adminClient.rpc("mark_support_ticket_read", {
       p_ticket_id: tid,
       p_role: "student",
     });
@@ -655,13 +680,18 @@ export async function sendSupportMessage(
     return { success: false, error: "Не удалось отправить сообщение." };
   }
 
-  const { error: touchError } = await supabase.rpc("touch_support_ticket", {
-    p_ticket_id: tid,
-    p_sender_role: isStaffRole(userRole ?? undefined) ? "teacher" : "student",
-  });
+  const adminClient = requireSupportRpcClient();
+  if ("success" in adminClient) {
+    console.error("[sendSupportMessage] touch ticket", adminClient.error);
+  } else {
+    const { error: touchError } = await adminClient.rpc("touch_support_ticket", {
+      p_ticket_id: tid,
+      p_sender_role: isStaffRole(userRole ?? undefined) ? "teacher" : "student",
+    });
 
-  if (touchError) {
-    console.error("[sendSupportMessage] touch ticket", touchError.message);
+    if (touchError) {
+      console.error("[sendSupportMessage] touch ticket", touchError.message);
+    }
   }
 
   const profiles = await fetchProfilesByUserIds(supabase, [user.id]);

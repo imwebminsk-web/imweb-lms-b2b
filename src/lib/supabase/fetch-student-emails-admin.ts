@@ -5,7 +5,7 @@ function uniqueUserIds(userIds: string[]): string[] {
   return [...new Set(userIds.filter((id) => id.trim().length > 0))];
 }
 
-async function fetchEmailsFromProfiles(
+async function fetchEmailsFromProfileSecrets(
   userIds: string[],
 ): Promise<Map<string, string | null>> {
   const emailsByUserId = new Map<string, string | null>();
@@ -14,20 +14,20 @@ async function fetchEmailsFromProfiles(
   }
 
   const supabase = await createClient();
-  const { data: profileRows, error } = await supabase
-    .from("profiles")
+  const { data: secretRows, error } = await supabase
+    .from("profile_secrets")
     .select("id, email")
     .in("id", userIds);
 
   if (error) {
     console.warn(
-      "[fetchStudentEmailsByUserIds] profiles query failed",
+      "[fetchStudentEmailsByUserIds] profile_secrets query failed",
       error.message,
     );
     return emailsByUserId;
   }
 
-  for (const row of profileRows ?? []) {
+  for (const row of secretRows ?? []) {
     const email = row.email?.trim();
     if (email) {
       emailsByUserId.set(row.id, email);
@@ -81,8 +81,8 @@ async function fetchEmailsFromAdminApi(
 }
 
 /**
- * Email учеников: сначала `public.profiles.email` (стандартный клиент),
- * затем Auth Admin API при отсутствии service role или пустых профилях.
+ * Email учеников: сначала `public.profile_secrets` (staff / owner через RLS),
+ * затем Auth Admin API при отсутствии service role или пустых строках.
  */
 export async function fetchStudentEmailsByUserIds(
   userIds: string[],
@@ -92,7 +92,7 @@ export async function fetchStudentEmailsByUserIds(
     return new Map();
   }
 
-  const emailsByUserId = await fetchEmailsFromProfiles(uniqueIds);
+  const emailsByUserId = await fetchEmailsFromProfileSecrets(uniqueIds);
 
   const missingIds = uniqueIds.filter((id) => !emailsByUserId.has(id));
   if (missingIds.length === 0) {
@@ -107,11 +107,11 @@ export async function fetchStudentEmailsByUserIds(
   const stillMissing = uniqueIds.filter((id) => !emailsByUserId.has(id));
   if (emailsByUserId.size === 0) {
     console.warn(
-      "[fetchStudentEmailsByUserIds] no emails resolved via profiles or admin API; matrix will show names only",
+      "[fetchStudentEmailsByUserIds] no emails resolved via profile_secrets or admin API; matrix will show names only",
     );
   } else if (stillMissing.length > 0 && !createAdminClient()) {
     console.warn(
-      `[fetchStudentEmailsByUserIds] ${stillMissing.length} student email(s) missing; add SUPABASE_SERVICE_ROLE_KEY or ensure profiles.email is synced`,
+      `[fetchStudentEmailsByUserIds] ${stillMissing.length} student email(s) missing; add SUPABASE_SERVICE_ROLE_KEY or ensure profile_secrets.email is synced`,
     );
   }
 

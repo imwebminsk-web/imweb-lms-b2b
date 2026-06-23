@@ -754,7 +754,7 @@ async function fetchAdminUsers(
 ): Promise<AdminUserRow[]> {
   const { data: profiles, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, email")
+    .select("id, full_name, role, profile_secrets(email)")
     .order("full_name", { ascending: true, nullsFirst: false });
 
   if (error) {
@@ -767,13 +767,19 @@ async function fetchAdminUsers(
     ? await fetchAuthCreatedAtByUserId(adminClient)
     : new Map<string, string>();
 
-  return (profiles ?? []).map((profile) => ({
-    id: profile.id,
-    fullName: profile.full_name,
-    email: profile.email,
-    role: profile.role,
-    createdAt: createdAtById.get(profile.id) ?? null,
-  }));
+  return (profiles ?? []).map((profile) => {
+    const secret = profile.profile_secrets;
+    const email =
+      secret && !Array.isArray(secret) ? secret.email : null;
+
+    return {
+      id: profile.id,
+      fullName: profile.full_name,
+      email,
+      role: profile.role,
+      createdAt: createdAtById.get(profile.id) ?? null,
+    };
+  });
 }
 
 /**

@@ -93,6 +93,254 @@ import type { Database, Json, Tables } from "@/types/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+type ProfileRole = Database["public"]["Enums"]["profile_role"];
+
+const testIdSchema = z.string().uuid("Некорректный ID теста");
+
+type TestAccessContext = {
+  userId: string | null;
+  role: ProfileRole | null;
+};
+
+type TestQuestionsFetchFailure = {
+  success: false;
+  error: string;
+  kind?: "not_found" | "supabase" | "validation";
+};
+
+type RawTestOptionRow = {
+  id: string;
+  content: Json;
+  order_index: number;
+  is_correct?: boolean | null;
+};
+
+type RawTestQuestionRow = {
+  id: string;
+  content: Json;
+  order_index: number;
+  type: string | null;
+  created_at: string | null;
+  media_play_limit: number | null;
+  points: number | null;
+  options: RawTestOptionRow[] | null;
+};
+
+type RawTestWithQuestionsRow = {
+  id: string;
+  title: string;
+  title_student: string | null;
+  title_teacher: string | null;
+  description: string | null;
+  folder_name: string | null;
+  created_at: string | null;
+  is_published: boolean | null;
+  is_for_kids: boolean;
+  time_limit: number;
+  test_type: string;
+  user_id: string | null;
+  questions: RawTestQuestionRow[] | null;
+};
+
+const TEST_WITH_QUESTIONS_SELECT = `
+  id,
+  title,
+  title_student,
+  title_teacher,
+  description,
+  folder_name,
+  created_at,
+  is_published,
+  is_for_kids,
+  time_limit,
+  test_type,
+  user_id,
+  questions (
+    id,
+    content,
+    order_index,
+    type,
+    created_at,
+    media_play_limit,
+    points,
+    options ( id, content, order_index, is_correct )
+  )
+`;
+
+async function resolveTestAccessContext(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<TestAccessContext> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { userId: null, role: null };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return { userId: user.id, role: profile?.role ?? null };
+}
+
+function canViewUnpublishedTest(
+  access: TestAccessContext,
+  testUserId: string | null,
+): boolean {
+  if (!access.userId) {
+    return false;
+  }
+  if (access.role === "admin") {
+    return true;
+  }
+  return testUserId !== null && testUserId === access.userId;
+}
+
+function canViewCorrectAnswers(
+  access: TestAccessContext,
+  testUserId: string | null,
+): boolean {
+  if (!access.userId) {
+    return false;
+  }
+  if (access.role === "admin") {
+    return true;
+  }
+  return access.role === "teacher" && testUserId === access.userId;
+}
+
+function assertPublishedTestReadable(
+  access: TestAccessContext,
+  test: Pick<RawTestWithQuestionsRow, "is_published" | "user_id">,
+): TestQuestionsFetchFailure | null {
+  const isPublished = test.is_published === true;
+
+  if (!access.userId) {
+    if (!isPublished) {
+      return {
+        success: false,
+        error: "Тест не найден",
+        kind: "not_found",
+      };
+    }
+    return null;
+  }
+
+  if (!isPublished && !canViewUnpublishedTest(access, test.user_id)) {
+    return {
+      success: false,
+      error: "Тест не найден",
+      kind: "not_found",
+    };
+  }
+
+  return null;
+}
+
+function mapQuestionContentForClient(
+  content: Json,
+  revealCorrectAnswers: boolean,
+): Json {
+  if (revealCorrectAnswers || !isGroupedChoiceContent(content)) {
+    return content;
+  }
+  return sanitizeGroupedChoiceContentForClient(content);
+}
+
+function mapQuestionsForClient(
+  rawQuestions: RawTestQuestionRow[] | null,
+  revealCorrectAnswers: boolean,
+): SafeTestQuestion[] {
+  return [...(rawQuestions ?? [])]
+    .sort((a, b) => a.order_index - b.order_index)
+    .map((q) => ({
+      id: q.id,
+      content: mapQuestionContentForClient(q.content, revealCorrectAnswers),
+      order_index: q.order_index,
+      type: q.type,
+      created_at: q.created_at,
+      media_play_limit: q.media_play_limit ?? 0,
+      points: q.points ?? 0,
+      options: [...(q.options ?? [])]
+        .sort((a, b) => a.order_index - b.order_index)
+        .map((option) => ({
+          id: option.id,
+          content: option.content,
+          order_index: option.order_index,
+        })),
+    }));
+}
+
+function buildTestWithQuestionsPayload(
+  data: RawTestWithQuestionsRow,
+  revealCorrectAnswers: boolean,
+): TestWithQuestionsPayload {
+  return {
+    id: data.id,
+    title: resolveStudentFacingTestTitle(data),
+    description: data.description,
+    folder_name: data.folder_name,
+    created_at: data.created_at,
+    is_published: data.is_published,
+    is_for_kids: data.is_for_kids ?? false,
+    time_limit: data.time_limit ?? 0,
+    test_type: data.test_type ?? "final",
+    questions: mapQuestionsForClient(data.questions, revealCorrectAnswers),
+  };
+}
+
+async function fetchTestWithQuestionsSecure(
+  testId: string,
+): Promise<
+  | {
+      success: true;
+      data: RawTestWithQuestionsRow;
+      access: TestAccessContext;
+    }
+  | TestQuestionsFetchFailure
+> {
+  const idResult = testIdSchema.safeParse(testId);
+  if (!idResult.success) {
+    const msg = idResult.error.issues[0]?.message ?? "Некорректный ID теста";
+    return { success: false, error: msg, kind: "validation" };
+  }
+
+  const supabase = await createClient();
+  const access = await resolveTestAccessContext(supabase);
+
+  const { data, error } = await supabase
+    .from("tests")
+    .select(TEST_WITH_QUESTIONS_SELECT)
+    .eq("id", idResult.data)
+    .single();
+
+  if (error) {
+    if (error.code === "PGRST116") {
+      return {
+        success: false,
+        error: "Тест не найден",
+        kind: "not_found",
+      };
+    }
+    return {
+      success: false,
+      error: error.message,
+      kind: "supabase",
+    };
+  }
+
+  const accessError = assertPublishedTestReadable(access, data);
+  if (accessError) {
+    return accessError;
+  }
+
+  return { success: true, data, access };
+}
+
 const matchingPairArraySchema = z.array(
   z.object({
     leftOptionId: z.string().uuid(),
@@ -326,7 +574,6 @@ function validateImageLabelingPairsPairedMode(
   return validateImageLabelingPairs(pairs, pairIds, pairIds);
 }
 
-const testIdSchema = z.string().uuid("Некорректный ID теста");
 const attemptIdSchema = z.string().uuid("Некорректный ID попытки");
 
 /** Вариант ответа без `is_correct` — такой набор уходит на клиент. */
@@ -409,7 +656,7 @@ export async function getUniqueTestFolders(): Promise<
 
 /**
  * Список тестов и сводка по `student_attempts` для текущего пользователя.
- * Без входа: все тесты в статусе `not_started`, без баллов.
+ * Гость / student: только опубликованные. Teacher: свои + опубликованные. Admin: все.
  */
 export async function getTests(): Promise<
   | { success: true; data: TestListItemEnriched[] }
@@ -417,10 +664,34 @@ export async function getTests(): Promise<
 > {
   const supabase = await createClient();
 
-  const { data: tests, error: testsError } = await supabase
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let role: ProfileRole | null = null;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    role = profile?.role ?? null;
+  }
+
+  let testsQuery = supabase
     .from("tests")
     .select("id, title, description, folder_name")
     .order("created_at", { ascending: false });
+
+  if (!user || role === "student") {
+    testsQuery = testsQuery.eq("is_published", true);
+  } else if (role === "teacher") {
+    testsQuery = testsQuery.or(
+      `is_published.eq.true,user_id.eq.${user.id}`,
+    );
+  }
+
+  const { data: tests, error: testsError } = await testsQuery;
 
   if (testsError) {
     return { success: false, error: testsError.message };
@@ -446,10 +717,6 @@ export async function getTests(): Promise<
   for (const row of questionsRows ?? []) {
     totalByTest.set(row.test_id, (totalByTest.get(row.test_id) ?? 0) + 1);
   }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   if (!user) {
     return {
@@ -771,7 +1038,8 @@ export async function duplicateTest(
 
 /**
  * Загружает тест с вопросами и вариантами.
- * Для `options` запрашиваются только id, content, order_index — поле is_correct в ответ API не попадает.
+ * Опубликованные тесты доступны без входа; черновики — только владельцу или admin.
+ * `is_correct` и ответы в grouped-choice не отдаются студентам и гостям.
  */
 export async function getTestWithQuestions(
   testId: string,
@@ -783,97 +1051,25 @@ export async function getTestWithQuestions(
       kind?: "not_found" | "supabase" | "validation";
     }
 > {
-  const idResult = testIdSchema.safeParse(testId);
-  if (!idResult.success) {
-    const msg = idResult.error.issues[0]?.message ?? "Некорректный ID теста";
-    return { success: false, error: msg, kind: "validation" };
+  const result = await fetchTestWithQuestionsSecure(testId);
+  if (!result.success) {
+    return result;
   }
 
-  const supabase = await createClient();
-  const uuid = idResult.data;
+  const revealCorrectAnswers = canViewCorrectAnswers(
+    result.access,
+    result.data.user_id,
+  );
 
-  const { data, error } = await supabase
-    .from("tests")
-    .select(
-      `
-      id,
-      title,
-      title_student,
-      title_teacher,
-      description,
-      folder_name,
-      created_at,
-      is_published,
-      is_for_kids,
-      time_limit,
-      test_type,
-      questions (
-        id,
-        content,
-        order_index,
-        type,
-        created_at,
-        media_play_limit,
-        points,
-        options ( id, content, order_index )
-      )
-    `,
-    )
-    .eq("id", uuid)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      return {
-        success: false,
-        error: "Тест не найден",
-        kind: "not_found" as const,
-      };
-    }
-    return {
-      success: false,
-      error: error.message,
-      kind: "supabase" as const,
-    };
-  }
-
-  const rawQuestions = data.questions ?? [];
-
-  const questions: SafeTestQuestion[] = [...rawQuestions]
-    .sort((a, b) => a.order_index - b.order_index)
-    .map((q) => {
-      const opts = (q.options ?? []) as SafeTestOption[];
-      return {
-        id: q.id,
-        content: q.content,
-        order_index: q.order_index,
-        type: q.type,
-        created_at: q.created_at,
-        media_play_limit: q.media_play_limit ?? 0,
-        points: q.points,
-        options: [...opts].sort((a, b) => a.order_index - b.order_index),
-      };
-    });
-
-  const payload: TestWithQuestionsPayload = {
-    id: data.id,
-    title: resolveStudentFacingTestTitle(data),
-    description: data.description,
-    folder_name: data.folder_name,
-    created_at: data.created_at,
-    is_published: data.is_published,
-    is_for_kids: data.is_for_kids ?? false,
-    time_limit: data.time_limit ?? 0,
-    test_type: data.test_type ?? "final",
-    questions,
+  return {
+    success: true,
+    data: buildTestWithQuestionsPayload(result.data, revealCorrectAnswers),
   };
-
-  return { success: true, data: payload };
 }
 
 /**
  * Безопасная версия для клиентского раннера:
- * даже если в ответе есть `is_correct`, поле удаляется перед возвратом.
+ * те же правила доступа, но `is_correct` и ответы в контенте никогда не возвращаются.
  */
 export async function getSafeTestForClient(
   testId: string,
@@ -885,95 +1081,14 @@ export async function getSafeTestForClient(
       kind?: "not_found" | "supabase" | "validation";
     }
 > {
-  const idResult = testIdSchema.safeParse(testId);
-  if (!idResult.success) {
-    const msg = idResult.error.issues[0]?.message ?? "Некорректный ID теста";
-    return { success: false, error: msg, kind: "validation" };
+  const result = await fetchTestWithQuestionsSecure(testId);
+  if (!result.success) {
+    return result;
   }
-
-  const supabase = await createClient();
-  const uuid = idResult.data;
-
-  const { data, error } = await supabase
-    .from("tests")
-    .select(
-      `
-      id,
-      title,
-      title_student,
-      title_teacher,
-      description,
-      folder_name,
-      created_at,
-      is_published,
-      is_for_kids,
-      time_limit,
-      test_type,
-      questions (
-        id,
-        content,
-        order_index,
-        type,
-        created_at,
-        media_play_limit,
-        points,
-        options ( id, content, order_index, is_correct )
-      )
-    `,
-    )
-    .eq("id", uuid)
-    .single();
-
-  if (error) {
-    if (error.code === "PGRST116") {
-      return {
-        success: false,
-        error: "Тест не найден",
-        kind: "not_found" as const,
-      };
-    }
-    return {
-      success: false,
-      error: error.message,
-      kind: "supabase" as const,
-    };
-  }
-
-  const questions: SafeTestQuestion[] = [...(data.questions ?? [])]
-    .sort((a, b) => a.order_index - b.order_index)
-    .map((q) => ({
-      id: q.id,
-      content: isGroupedChoiceContent(q.content)
-        ? sanitizeGroupedChoiceContentForClient(q.content)
-        : q.content,
-      order_index: q.order_index,
-      type: q.type,
-      created_at: q.created_at,
-      media_play_limit: q.media_play_limit ?? 0,
-      points: q.points,
-      options: [...(q.options ?? [])]
-        .sort((a, b) => a.order_index - b.order_index)
-        .map((o) => ({
-          id: o.id,
-          content: o.content,
-          order_index: o.order_index,
-        })),
-    }));
 
   return {
     success: true,
-    data: {
-      id: data.id,
-      title: resolveStudentFacingTestTitle(data),
-      description: data.description,
-      folder_name: data.folder_name,
-      created_at: data.created_at,
-      is_published: data.is_published,
-      is_for_kids: data.is_for_kids ?? false,
-      time_limit: data.time_limit ?? 0,
-      test_type: data.test_type ?? "final",
-      questions,
-    },
+    data: buildTestWithQuestionsPayload(result.data, false),
   };
 }
 
