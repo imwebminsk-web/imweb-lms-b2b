@@ -248,14 +248,16 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
         </div>
       </section>
 
-      <section className="rounded-xl border overflow-hidden">
-        <div className="border-b px-6 py-4">
+      <section className="rounded-xl border">
+        <div className="border-b px-4 py-4 sm:px-6">
           <h2 className="text-lg font-semibold tracking-tight">Ученики</h2>
           <p className="text-muted-foreground text-sm">
             Откройте журнал по каждому ученику — таблица успеваемости по курсу группы.
           </p>
         </div>
-        <CohortStudentsList cohortId={cohort.id} students={cohortStudents} />
+        <div className="px-4 pb-4 sm:px-6">
+          <CohortStudentsList cohortId={cohort.id} students={cohortStudents} />
+        </div>
       </section>
     </>
   );
@@ -276,7 +278,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     <>
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col">
-        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
+        <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
           <div className="flex items-center">
             <Button asChild variant="outline">
               <Link href="/dashboard/cohorts">Назад к группам</Link>

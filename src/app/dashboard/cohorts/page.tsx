@@ -87,15 +87,17 @@ export default async function DashboardCohortsPage() {
     <>
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col">
-        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 lg:px-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-8 px-4 py-8 lg:px-6">
+          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Группы</h1>
               <p className="text-muted-foreground mt-1 text-sm">
                 Создавайте группы по курсам и выдавайте ученикам PIN для доступа.
               </p>
             </div>
-            <CreateCohortDialog courses={courseOptions} />
+            <div className="w-full shrink-0 sm:w-auto">
+              <CreateCohortDialog courses={courseOptions} />
+            </div>
           </div>
 
           {courseOptions.length === 0 ? (

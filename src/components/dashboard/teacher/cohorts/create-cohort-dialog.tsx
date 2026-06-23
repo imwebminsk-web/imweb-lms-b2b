@@ -58,7 +58,7 @@ export function CreateCohortDialog({ courses }: { courses: CourseOption[] }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" disabled={disabled}>
+        <Button type="button" disabled={disabled} className="w-full sm:w-auto">
           Создать группу
         </Button>
       </DialogTrigger>

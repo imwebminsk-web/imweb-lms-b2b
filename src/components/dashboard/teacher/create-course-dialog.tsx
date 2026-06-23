@@ -44,7 +44,7 @@ function CreateCourseDialogInner({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button type="button" variant="default">
+        <Button type="button" variant="default" className="w-full sm:w-auto">
           Создать курс
         </Button>
       </DialogTrigger>

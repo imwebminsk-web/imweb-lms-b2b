@@ -396,8 +396,17 @@ export function CreateTestForm({
   const [questions, setQuestions] = useState<QuestionField[]>(
     initialData?.questions?.length ? initialData.questions : [emptyQuestion()],
   );
+  const [mobileExpandedQuestionIndex, setMobileExpandedQuestionIndex] =
+    useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
+  function jumpToQuestion(index: number) {
+    setMobileExpandedQuestionIndex(index);
+    document
+      .getElementById(`test-question-${index}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -1025,8 +1034,8 @@ export function CreateTestForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div className="sticky top-4 z-10 flex justify-center">
+    <form onSubmit={handleSubmit} className="flex w-full flex-col gap-6">
+      <div className="sticky top-0 z-10 flex shrink-0 justify-center">
         <Badge
           variant="outline"
           className={cn(
@@ -1040,13 +1049,35 @@ export function CreateTestForm({
         </Badge>
       </div>
 
-      <Card>
+      <details className="rounded-lg border bg-muted/30 p-3 lg:hidden">
+        <summary className="cursor-pointer text-sm font-medium">
+          Список заданий ({questions.length})
+        </summary>
+        <ul className="mt-3 flex flex-col gap-1">
+          {questions.map((q, qi) => (
+            <li key={qi}>
+              <button
+                type="button"
+                className={cn(
+                  "hover:bg-muted w-full rounded-md px-2 py-2.5 text-left text-sm transition-colors",
+                  mobileExpandedQuestionIndex === qi && "bg-muted font-medium",
+                )}
+                onClick={() => jumpToQuestion(qi)}
+              >
+                Задание {qi + 1} — {QUESTION_TYPE_LABELS[q.type]}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </details>
+
+      <Card className="shrink-0">
         <CardHeader>
           <CardTitle>
             {testId ? "Редактирование теста" : "Новый тест"}
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="test-folder">Папка</Label>
             <Popover
@@ -1222,7 +1253,7 @@ export function CreateTestForm({
               времени тест завершится автоматически.
             </p>
           </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div className="flex flex-col items-start gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="space-y-0.5">
               <Label htmlFor="test-save-journal">Записывать в журнал</Label>
               <p className="text-muted-foreground text-xs">
@@ -1235,7 +1266,7 @@ export function CreateTestForm({
               onCheckedChange={setSaveToJournal}
             />
           </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div className="flex flex-col items-start gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="space-y-0.5">
               <Label htmlFor="test-for-kids">
                 Детский режим (оценки смайликами)
@@ -1250,7 +1281,7 @@ export function CreateTestForm({
               onCheckedChange={setIsForKids}
             />
           </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
+          <div className="flex flex-col items-start gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="space-y-0.5">
               <Label htmlFor="test-published">Опубликовать тест</Label>
               <p className="text-muted-foreground text-xs">
@@ -1270,10 +1301,25 @@ export function CreateTestForm({
       </Card>
 
       {questions.map((q, qi) => (
-        <Card key={qi}>
-          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <CardTitle>Задание {qi + 1}</CardTitle>
+        <Card key={qi} id={`test-question-${qi}`} className="shrink-0">
+          <CardHeader
+            className="flex cursor-pointer flex-col items-start gap-3 space-y-0 lg:cursor-default lg:flex-row lg:items-center lg:justify-between"
+            onClick={() => {
+              if (typeof window !== "undefined" && window.innerWidth >= 1024) {
+                return;
+              }
+              setMobileExpandedQuestionIndex((current) =>
+                current === qi ? -1 : qi,
+              );
+            }}
+          >
+            <div className="flex w-full flex-col flex-wrap items-start gap-3 sm:flex-row sm:items-center">
+              <CardTitle className="flex w-full items-center justify-between gap-2 lg:w-auto lg:justify-start">
+                <span>Задание {qi + 1}</span>
+                <span className="text-muted-foreground text-xs font-normal lg:hidden">
+                  {mobileExpandedQuestionIndex === qi ? "Свернуть" : "Развернуть"}
+                </span>
+              </CardTitle>
               <div className="flex items-center gap-2">
                 {isItemLevelScoringQuestion(q) ? (
                   <span className="text-muted-foreground text-xs tabular-nums">
@@ -1313,13 +1359,22 @@ export function CreateTestForm({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => removeQuestion(qi)}
+              className="w-full shrink-0 sm:w-auto"
+              onClick={(event) => {
+                event.stopPropagation();
+                removeQuestion(qi);
+              }}
               disabled={questions.length <= 1}
             >
               Удалить задание
             </Button>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
+          <CardContent
+            className={cn(
+              "space-y-4",
+              mobileExpandedQuestionIndex !== qi && "max-lg:hidden",
+            )}
+          >
             <div className="space-y-2">
               <Label htmlFor={`q-text-${qi}`}>
                 Формулировка задания (Инструкция и текст) *
@@ -1575,20 +1630,18 @@ export function CreateTestForm({
         </Card>
       ))}
 
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={addQuestion}>
+      <div className="flex shrink-0 flex-col gap-3">
+        <Button type="button" variant="outline" onClick={addQuestion} className="w-fit">
           + Задание
         </Button>
-      </div>
 
-      {error ? (
-        <p className="text-destructive text-sm" role="alert">
-          {error}
-        </p>
-      ) : null}
+        {error ? (
+          <p className="text-destructive text-sm" role="alert">
+            {error}
+          </p>
+        ) : null}
 
-      <div className="pb-4">
-        <Button type="submit" disabled={pending} className="min-w-40">
+        <Button type="submit" disabled={pending} className="w-fit min-w-40">
           {pending
             ? testId
               ? "Сохранение…"

@@ -54,7 +54,7 @@ export default async function DashboardTestEditPage({ params }: PageProps) {
   const draft = await getTestDraftForEdit(id);
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3">
         <Link
           href="/dashboard/tests"
@@ -82,6 +82,6 @@ export default async function DashboardTestEditPage({ params }: PageProps) {
           initialData={draft.data.initialData}
         />
       )}
-    </main>
+    </div>
   );
 }

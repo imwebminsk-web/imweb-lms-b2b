@@ -1,5 +1,7 @@
 "use client";
 
+import { Menu } from "lucide-react";
+
 import { FontSizeToggler } from "@/components/FontSizeToggler";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { GrowvyMenuIcon } from "@/components/layout/growvy-icons";
@@ -12,6 +14,7 @@ import { cn } from "@/lib/utils";
 type DashboardTopnavProps = {
   isSidebarOpen: boolean;
   onToggleSidebar: () => void;
+  onOpenMobileNav: () => void;
   role: ProfileRole;
   className?: string;
 };
@@ -19,6 +22,7 @@ type DashboardTopnavProps = {
 export function DashboardTopnav({
   isSidebarOpen,
   onToggleSidebar,
+  onOpenMobileNav,
   role,
   className,
 }: DashboardTopnavProps) {
@@ -35,7 +39,18 @@ export function DashboardTopnav({
         type="button"
         variant="ghost"
         size="icon"
-        className="size-10 shrink-0 rounded-xl text-foreground hover:bg-growvy-body"
+        className="size-10 shrink-0 rounded-xl text-foreground hover:bg-growvy-body lg:hidden"
+        onClick={onOpenMobileNav}
+        aria-label="Открыть меню навигации"
+      >
+        <Menu className="size-5" aria-hidden />
+      </Button>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="hidden size-10 shrink-0 rounded-xl text-foreground hover:bg-growvy-body lg:inline-flex"
         onClick={onToggleSidebar}
         aria-label={isSidebarOpen ? "Свернуть боковую панель" : "Развернуть боковую панель"}
         aria-expanded={isSidebarOpen}

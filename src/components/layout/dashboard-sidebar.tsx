@@ -155,6 +155,12 @@ export type DashboardSidebarProps = {
   isCollapsed: boolean;
   navBadges?: Record<string, number>;
   navPendingBadges?: Record<string, number>;
+  /** Доп. классы обёртки (desktop: `hidden lg:flex`). */
+  className?: string;
+  /** Внутри Sheet на мобильных — без `<aside>`. */
+  embedded?: boolean;
+  /** Закрыть мобильное меню после перехода по ссылке. */
+  onNavigate?: () => void;
 };
 
 function initialsFromName(name: string): string {
@@ -164,12 +170,13 @@ function initialsFromName(name: string): string {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-export function DashboardSidebar({
+function DashboardSidebarPanel({
   role,
   user,
   isCollapsed,
   navBadges = {},
   navPendingBadges = {},
+  onNavigate,
 }: DashboardSidebarProps) {
   const pathname = usePathname();
   const { t } = useLanguage();
@@ -182,25 +189,30 @@ export function DashboardSidebar({
     return item.title;
   }
 
+  function handleNavigate() {
+    onNavigate?.();
+  }
+
   return (
-    <aside
-      className={cn(
-        "sticky top-0 z-20 flex h-screen shrink-0 flex-col overflow-y-auto border-r border-border bg-growvy-content py-6 transition-[width,padding] duration-200 ease-in-out",
-        isCollapsed ? "w-20 px-2" : "w-[260px] px-4",
-      )}
-    >
+    <>
       <Link
         href="/dashboard"
+        onClick={handleNavigate}
         className={cn(
-          "mb-8 flex items-center transition-all",
-          isCollapsed ? "justify-center px-0" : "px-3",
+          "mb-8 flex shrink-0 items-center transition-all",
+          isCollapsed ? "justify-center overflow-hidden px-0" : "px-3",
         )}
         title="New Education"
       >
-        <Logo className={isCollapsed ? "h-10" : "h-12"} />
+        <Logo
+          className={cn(
+            "max-w-full object-contain",
+            isCollapsed ? "h-14 max-w-[4.5rem]" : "h-[4.5rem]",
+          )}
+        />
       </Link>
 
-      <nav className="flex flex-1 flex-col gap-1">
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {items.map((item) => {
           const active = isActive(pathname, item.url);
           const badgeCount = navBadges[item.url] ?? 0;
@@ -211,6 +223,7 @@ export function DashboardSidebar({
             <Link
               key={`${item.title}-${item.url}`}
               href={item.url}
+              onClick={handleNavigate}
               title={navLabel(item)}
               className={cn(
                 "relative flex items-center rounded-xl text-sm font-medium transition-colors",
@@ -237,7 +250,7 @@ export function DashboardSidebar({
         })}
       </nav>
 
-      <div className="mt-auto flex flex-col gap-1 border-t border-border pt-4">
+      <div className="mt-auto flex shrink-0 flex-col gap-1 border-t border-border pt-4">
         <div
           className={cn(
             "mb-2 flex items-center rounded-xl border border-border bg-growvy-body",
@@ -267,6 +280,7 @@ export function DashboardSidebar({
 
         <Link
           href="/dashboard/settings"
+          onClick={handleNavigate}
           title={role === "student" ? t("nav.settings") : "Настройки"}
           className={cn(
             "flex items-center rounded-xl text-sm font-medium transition-colors",
@@ -302,6 +316,53 @@ export function DashboardSidebar({
           </button>
         </form>
       </div>
+    </>
+  );
+}
+
+export function DashboardSidebar({
+  role,
+  user,
+  isCollapsed,
+  navBadges = {},
+  navPendingBadges = {},
+  className,
+  embedded = false,
+  onNavigate,
+}: DashboardSidebarProps) {
+  const panel = (
+    <DashboardSidebarPanel
+      role={role}
+      user={user}
+      isCollapsed={isCollapsed}
+      navBadges={navBadges}
+      navPendingBadges={navPendingBadges}
+      onNavigate={onNavigate}
+    />
+  );
+
+  if (embedded) {
+    return (
+      <div
+        className={cn(
+          "flex h-full min-h-0 flex-col overflow-y-auto bg-growvy-content py-6 px-4",
+          className,
+        )}
+      >
+        {panel}
+      </div>
+    );
+  }
+
+  return (
+    <aside
+      className={cn(
+        "z-20 flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-growvy-content py-6 transition-[width,padding] duration-200 ease-in-out",
+        isCollapsed ? "w-20 px-2" : "w-[260px] px-4",
+        className,
+      )}
+    >
+      <div className="flex h-full min-h-0 flex-col">{panel}</div>
     </aside>
   );
 }

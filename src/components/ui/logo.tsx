@@ -13,10 +13,10 @@ export function Logo({ className, priority = false }: LogoProps) {
     <Image
       src="/logo.png"
       alt="New Education Logo"
-      width={220}
-      height={56}
+      width={330}
+      height={84}
       priority={priority}
-      className={cn("h-10 w-auto", className)}
+      className={cn("h-10 w-auto object-contain", className)}
     />
   );
 }

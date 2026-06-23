@@ -118,8 +118,8 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
             Изменение ролей и удаление аккаунтов
           </p>
         </div>
-        <div className="overflow-hidden rounded-lg border">
-          <Table>
+        <div className="w-full overflow-x-auto rounded-lg border">
+          <Table className="min-w-[36rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>Имя</TableHead>

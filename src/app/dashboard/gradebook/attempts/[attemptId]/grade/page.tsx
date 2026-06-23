@@ -52,20 +52,20 @@ export default async function AttemptGradePage({ params }: PageProps) {
 
   if (!result.success) {
     return (
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6">
+      <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
         <Card>
           <CardHeader>
             <CardTitle>Не удалось открыть проверку</CardTitle>
             <CardDescription>{result.error}</CardDescription>
           </CardHeader>
         </Card>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="flex flex-1 flex-col p-4 sm:p-6">
+    <div className="min-w-0">
       <TeacherAttemptGradingView data={result.data} />
-    </main>
+    </div>
   );
 }

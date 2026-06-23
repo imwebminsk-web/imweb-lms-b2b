@@ -593,8 +593,8 @@ export function QuizPlayer({
       ) : null}
       <div
         className={cn(
-          "bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 mb-4 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 backdrop-blur",
-          focusedMode ? "rounded-lg border" : "-mx-6 sm:-mx-0 sm:rounded-lg sm:border",
+          "bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 mb-4 flex w-full min-w-0 flex-col gap-2 border-b px-4 py-3 backdrop-blur sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3",
+          focusedMode ? "rounded-lg border" : "-mx-4 sm:-mx-0 sm:rounded-lg sm:border",
         )}
       >
         {timeLimitMinutes > 0 ? (
@@ -647,14 +647,14 @@ export function QuizPlayer({
       ) : null}
 
       <nav
-        className="flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-muted/30 p-2 sm:p-3"
+        className="flex w-full min-w-0 flex-wrap items-center justify-center gap-2 rounded-xl border bg-muted/30 p-2 sm:p-3"
         aria-label={t("quiz.taskNav")}
       >
         <Button
           type="button"
           variant="outline"
           size="icon"
-          className="shrink-0"
+          className="size-11 shrink-0 sm:size-10"
           disabled={currentIndex === 0 || isPending}
           onClick={() => goToTask(currentIndex - 1)}
           aria-label={t("quiz.prevTask")}
@@ -673,7 +673,7 @@ export function QuizPlayer({
                 size="sm"
                 variant={isActive ? "default" : "outline"}
                 className={cn(
-                  "min-w-9 px-2 tabular-nums",
+                  "min-h-11 min-w-11 px-2 tabular-nums sm:min-h-9 sm:min-w-9",
                   isSubmitted && !isActive && "border-emerald-500/40",
                 )}
                 onClick={() => goToTask(index)}
@@ -691,7 +691,7 @@ export function QuizPlayer({
           type="button"
           variant="outline"
           size="icon"
-          className="shrink-0"
+          className="size-11 shrink-0 sm:size-10"
           disabled={currentIndex >= total - 1 || isPending}
           onClick={() => goToTask(currentIndex + 1)}
           aria-label={t("quiz.nextTask")}
@@ -700,7 +700,7 @@ export function QuizPlayer({
         </Button>
       </nav>
 
-      <div className="border-border flex flex-col gap-6 rounded-xl border bg-card/40 p-4 sm:p-6">
+      <div className="border-border flex w-full min-w-0 flex-col gap-6 rounded-xl border bg-card/40 p-4 sm:p-6">
         {isCurrentSubmitted ? (
           <Badge
             variant="secondary"
@@ -823,7 +823,7 @@ export function QuizPlayer({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="border-border bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-0 z-30 -mx-4 flex flex-wrap items-center gap-3 border-t px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
         {!isCurrentSubmitted ? (
           <Button
             type="button"

@@ -37,7 +37,8 @@ export function CohortStudentsList({
   students,
 }: CohortStudentsListProps) {
   return (
-    <Table>
+    <div className="w-full overflow-x-auto">
+      <Table className="min-w-[40rem]">
       <TableHeader>
         <TableRow>
           <TableHead>Имя</TableHead>
@@ -97,5 +98,6 @@ export function CohortStudentsList({
         )}
       </TableBody>
     </Table>
+    </div>
   );
 }

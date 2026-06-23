@@ -178,7 +178,7 @@ export function StudentsTable({
           placeholder="Поиск по имени или email…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          className="max-w-sm"
+          className="w-full sm:max-w-sm"
           aria-label="Поиск по имени или email ученика"
         />
 
@@ -187,8 +187,8 @@ export function StudentsTable({
             Нет учеников по запросу «{query.trim()}».
           </p>
         ) : (
-          <div className="overflow-hidden rounded-lg border">
-            <Table>
+          <div className="w-full overflow-x-auto rounded-lg border">
+            <Table className="min-w-[44rem]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Имя ученика</TableHead>

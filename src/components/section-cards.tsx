@@ -56,7 +56,7 @@ const TEACHER_METRIC_CARDS: {
 
 function TeacherMetricCards({ metrics }: { metrics: TeacherDashboardMetrics }) {
   return (
-    <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
+    <div className="*:data-[slot=card]:shadow-xs grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card md:grid-cols-2 lg:grid-cols-4 lg:px-6">
       {TEACHER_METRIC_CARDS.map(({ key, label, description, icon: Icon }) => (
         <Card key={key} className="@container/card">
           <CardHeader className="relative">
@@ -87,7 +87,7 @@ function AdminStatCards({ metrics }: { metrics: AdminDashboardMetrics }) {
   ] as const;
 
   return (
-    <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-3 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
+    <div className="*:data-[slot=card]:shadow-xs grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card md:grid-cols-2 lg:grid-cols-3 lg:px-6">
       {cards.map((card) => (
         <Card key={card.label} className="@container/card">
           <CardHeader>
@@ -104,7 +104,7 @@ function AdminStatCards({ metrics }: { metrics: AdminDashboardMetrics }) {
 
 function DefaultSectionCards({ cards }: { cards: DashboardSectionCard[] }) {
   return (
-    <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
+    <div className="*:data-[slot=card]:shadow-xs grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card md:grid-cols-2 lg:grid-cols-4 lg:px-6">
       {cards.map((card) => (
         <Card key={card.label} className="@container/card">
           <CardHeader className="relative">

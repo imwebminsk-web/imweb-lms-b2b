@@ -147,9 +147,9 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 pb-24">
+    <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6 pb-24">
       <div className="flex flex-wrap items-start gap-3">
-        <Button variant="ghost" size="sm" asChild className="-ml-2">
+        <Button variant="ghost" size="sm" asChild className="-ml-2 min-h-11 sm:min-h-9">
           <Link href="/dashboard/cohorts">
             <ArrowLeftIcon className="mr-1 size-4" aria-hidden />
             К группам
@@ -157,8 +157,8 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
         </Button>
       </div>
 
-      <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
+      <header className="min-w-0 space-y-2">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <h1 className="text-2xl font-semibold tracking-tight">{displayTitle}</h1>
           {gradesSaved ? (
             <Badge className="border-emerald-600/50 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200">
@@ -208,9 +208,9 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
             return (
               <section
                 key={q.id}
-                className="border-amber-500/50 bg-amber-500/5 space-y-4 rounded-xl border-2 p-4 sm:p-6"
+                className="border-amber-500/50 bg-amber-500/5 min-w-0 space-y-4 rounded-xl border-2 p-4 sm:p-6"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                   <div className="space-y-1">
                     <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
                       Задание {index + 1} · {questionTypeLabel(q.type ?? "text_input")}
@@ -225,7 +225,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                 </div>
 
                 {view ? (
-                  <div className="w-full max-w-none">
+                  <div className="min-w-0 w-full max-w-none overflow-x-hidden">
                     <GroupedFillBlanksTaskQuestion
                     items={view.items}
                     mode={view.mode}
@@ -244,7 +244,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                   {questionTargets.map((target) => (
                     <div
                       key={target.itemId}
-                      className="flex flex-wrap items-end gap-3 rounded-lg border border-amber-500/30 bg-background p-3"
+                      className="flex flex-col gap-3 rounded-lg border border-amber-500/30 bg-background p-3 sm:flex-row sm:flex-wrap sm:items-end"
                     >
                       <div className="min-w-0 flex-1 space-y-1">
                         <Label htmlFor={`grade-${target.itemId}`}>
@@ -254,7 +254,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                           Максимум: {target.maxPoints} б.
                         </p>
                       </div>
-                      <div className="space-y-1">
+                      <div className="w-full space-y-1 sm:w-auto">
                         <Label htmlFor={`grade-${target.itemId}`} className="sr-only">
                           Баллы
                         </Label>
@@ -265,7 +265,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                           max={target.maxPoints}
                           step={1}
                           inputMode="numeric"
-                          className="w-28 border-amber-500/40 focus-visible:ring-amber-500/50"
+                          className="h-11 w-full border-amber-500/40 focus-visible:ring-amber-500/50 sm:w-28"
                           value={grades[target.itemId] ?? 0}
                           onChange={(e) =>
                             handleGradeChange(
@@ -288,12 +288,12 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
             <section
               key={q.id}
               className={cn(
-                "space-y-3 rounded-xl border p-4 sm:p-6",
+                "min-w-0 space-y-3 rounded-xl border p-4 sm:p-6",
                 "border-muted bg-muted/20 opacity-95",
               )}
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <LockIcon
                     className="text-muted-foreground size-4 shrink-0"
                     aria-hidden
@@ -316,7 +316,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                 ) : null}
               </div>
 
-              <div className="pointer-events-none select-none opacity-90">
+              <div className="pointer-events-none min-w-0 w-full select-none overflow-x-hidden opacity-90">
                 <QuizResultView
                   reviewOnly
                   questionIndexOffset={index}
@@ -350,12 +350,12 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
         })}
       </div>
 
-      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-0 -mx-4 border-t px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-0 z-10 -mx-4 border-t px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
         <Button
           type="button"
           size="lg"
           className={cn(
-            "w-full sm:w-auto",
+            "min-h-11 w-full sm:w-auto",
             gradesSaved &&
               "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
           )}

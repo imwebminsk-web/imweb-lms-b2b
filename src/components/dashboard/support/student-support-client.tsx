@@ -286,8 +286,8 @@ export function StudentSupportClient({
         </p>
       </div>
 
-      <div className="grid min-h-[32rem] grid-cols-1 gap-4 lg:grid-cols-[minmax(260px,320px)_1fr] lg:gap-6">
-        <Card className="flex flex-col">
+      <div className="grid min-h-0 grid-cols-1 gap-4 lg:min-h-[32rem] lg:grid-cols-[minmax(260px,320px)_1fr] lg:gap-6">
+        <Card className="flex max-h-[min(40dvh,16rem)] flex-col lg:max-h-none">
           <CardHeader className="border-b pb-4">
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-base">Мои обращения</CardTitle>
@@ -393,10 +393,10 @@ export function StudentSupportClient({
           </CardContent>
         </Card>
 
-        <Card className="flex flex-col">
+        <Card className="flex min-h-[min(calc(100dvh-14rem),36rem)] flex-col lg:min-h-[32rem]">
           {selectedTicket ? (
             <>
-              <CardHeader className="border-b pb-4">
+              <CardHeader className="shrink-0 border-b pb-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <CardTitle className="text-base">{selectedTicket.subject}</CardTitle>
                   {statusBadge(selectedTicket.status)}
@@ -405,10 +405,10 @@ export function StudentSupportClient({
                   Создано {formatTicketDate(selectedTicket.createdAt)}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-1 flex-col gap-4 p-4">
+              <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
                 <div
                   ref={scrollRef}
-                  className="bg-muted/30 min-h-[20rem] flex-1 space-y-3 overflow-y-auto rounded-lg border p-4"
+                  className="bg-muted/30 mx-4 mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto rounded-lg border p-4"
                   aria-live="polite"
                   aria-busy={isLoadingMessages}
                 >
@@ -473,7 +473,10 @@ export function StudentSupportClient({
                 </div>
 
                 {canCompose ? (
-                  <form onSubmit={handleSend} className="flex gap-2">
+                  <form
+                    onSubmit={handleSend}
+                    className="border-border bg-background flex shrink-0 gap-2 border-t p-4"
+                  >
                     <Input
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
@@ -494,7 +497,7 @@ export function StudentSupportClient({
                     </Button>
                   </form>
                 ) : (
-                  <p className="text-muted-foreground py-2 text-center text-sm">
+                  <p className="text-muted-foreground shrink-0 border-t py-4 text-center text-sm">
                     Обращение закрыто. Новые сообщения отправить нельзя.
                   </p>
                 )}

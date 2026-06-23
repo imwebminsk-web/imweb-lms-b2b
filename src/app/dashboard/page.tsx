@@ -79,8 +79,8 @@ export default async function Page() {
     return (
       <>
         <SiteHeader fullName={displayName} />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-1 flex-col min-w-0">
+          <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
             <StudentDashboardHome
               needsAttention={needsAttention}
               courseSummaries={courseSummaries}
@@ -99,9 +99,9 @@ export default async function Page() {
     return (
       <>
         <SiteHeader fullName={displayName} />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
               <SectionCards adminMetrics={payload.adminMetrics} cards={[]} />
               <UsersTable
                 users={payload.adminUsers ?? []}
@@ -117,9 +117,9 @@ export default async function Page() {
   return (
     <>
       <SiteHeader fullName={displayName} />
-      <div className="flex flex-1 flex-col">
-        <div className="@container/main flex flex-1 flex-col gap-2">
-          <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
             <SectionCards
               cards={payload.sectionCards}
               teacherMetrics={payload.teacherMetrics}

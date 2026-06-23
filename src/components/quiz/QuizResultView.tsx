@@ -605,8 +605,8 @@ export function QuizResultView({
     <section
       className={
         reviewOnly
-          ? "w-full text-left"
-          : "border-border w-full rounded-xl border bg-card/30 p-4 text-left shadow-sm sm:p-6"
+          ? "w-full min-w-0 text-left"
+          : "border-border w-full min-w-0 rounded-xl border bg-card/30 p-4 text-left shadow-sm sm:p-6"
       }
     >
       {!reviewOnly ? (
@@ -624,8 +624,8 @@ export function QuizResultView({
           const selectedIds = getSelectedIdsForQuestion(q.id);
 
           return (
-            <div key={q.id} className="mb-6 space-y-4 rounded-xl border p-6">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <div key={q.id} className="mb-6 min-w-0 w-full space-y-4 rounded-xl border p-4 sm:p-6">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                 <div className="min-w-0 flex-1 space-y-2">
                   <p className="text-muted-foreground text-sm font-medium">
                     {t("quizResult.task")} {displayIndex + 1}
@@ -872,7 +872,7 @@ export function QuizResultView({
   }
 
   return (
-    <div className="flex flex-col gap-10 py-8">
+    <div className="flex min-w-0 w-full flex-col gap-6 py-4 sm:gap-10 sm:py-8">
       {showTestMeta &&
       ((testTitle != null && testTitle !== "") || testDescription) ? (
         <header className="space-y-1 text-center">

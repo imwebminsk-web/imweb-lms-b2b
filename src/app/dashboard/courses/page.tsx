@@ -56,15 +56,17 @@ export default async function DashboardCoursesPage() {
     <>
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col">
-        <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-4 py-6 lg:px-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-8 px-4 py-6 lg:px-6">
+          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Мои курсы</h1>
               <p className="text-muted-foreground mt-1 text-sm">
                 Создавайте курсы и переходите к редактированию по кнопке на карточке.
               </p>
             </div>
-            <CreateCourseDialog />
+            <div className="w-full shrink-0 sm:w-auto">
+              <CreateCourseDialog />
+            </div>
           </div>
 
           {list.length === 0 ? (

@@ -72,8 +72,8 @@ export function PendingReviewsWidget({
               Все работы проверены! 🎉
             </div>
           ) : (
-            <div className="overflow-hidden rounded-lg border">
-              <Table>
+            <div className="w-full overflow-x-auto rounded-lg border">
+              <Table className="min-w-[52rem]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Ученик</TableHead>

@@ -72,8 +72,8 @@ export function CohortsList({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border">
-      <Table>
+    <div className="w-full overflow-x-auto rounded-lg border">
+      <Table className="min-w-[48rem]">
         <TableHeader>
           <TableRow>
             <TableHead>Группа</TableHead>

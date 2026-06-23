@@ -56,17 +56,17 @@ export function CourseEditorTabs({
         <TabsTrigger value="curriculum">Программа</TabsTrigger>
         <TabsTrigger value="students">Ученики</TabsTrigger>
       </TabsList>
-      <TabsContent value="settings" className="mt-4">
+      <TabsContent value="settings" className="mt-4 flex-none">
         <CourseSettingsForm course={course} key={settingsFormKey} />
       </TabsContent>
-      <TabsContent value="curriculum" className="mt-4">
+      <TabsContent value="curriculum" className="mt-4 flex-none">
         <CurriculumTab
           courseId={course.id}
           courseSlug={course.slug}
           modules={modules}
         />
       </TabsContent>
-      <TabsContent value="students" className="mt-4">
+      <TabsContent value="students" className="mt-4 flex-none">
         <Card>
           <CardHeader>
             <CardTitle>Ученики</CardTitle>

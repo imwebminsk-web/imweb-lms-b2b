@@ -161,7 +161,7 @@ export function ChoiceTaskItemsEditor({
             {item.options.map((opt, optionIndex) => (
               <div
                 key={opt.id}
-                className="flex flex-wrap items-center gap-2 sm:flex-nowrap"
+                className="flex flex-col gap-3 rounded-lg border border-border/60 p-3 lg:flex-row lg:flex-nowrap lg:items-center lg:gap-2 lg:border-0 lg:p-0"
               >
                 <ChoiceOptionImageUpload
                   value={opt.imageUrl}
@@ -182,7 +182,7 @@ export function ChoiceTaskItemsEditor({
                   }
                   required={!opt.imageUrl}
                 />
-                <label className="flex shrink-0 items-center gap-2 text-sm whitespace-nowrap">
+                <label className="flex min-h-11 shrink-0 items-center gap-3 text-sm lg:whitespace-nowrap">
                   <input
                     type={isMultiple ? "checkbox" : "radio"}
                     name={`${baseId}-correct-${itemIndex}`}
@@ -208,7 +208,7 @@ export function ChoiceTaskItemsEditor({
                         ),
                       );
                     }}
-                    className="size-4 rounded border-input"
+                    className="size-5 rounded border-input"
                   />
                   Верный
                 </label>
@@ -216,6 +216,7 @@ export function ChoiceTaskItemsEditor({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  className="w-full lg:w-auto"
                   onClick={() => removeOption(itemIndex, optionIndex)}
                   disabled={item.options.length <= 1}
                 >

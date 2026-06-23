@@ -7,7 +7,7 @@ export default function LearnLayout({ children }: { children: ReactNode }) {
   return (
     <LanguageProvider role="student">
       <GlobalChatListener />
-      {children}
+      <div className="h-full overflow-hidden">{children}</div>
     </LanguageProvider>
   );
 }

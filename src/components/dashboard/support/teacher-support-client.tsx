@@ -307,8 +307,8 @@ export function TeacherSupportClient({
         </p>
       </div>
 
-      <div className="grid min-h-[32rem] grid-cols-1 gap-4 lg:grid-cols-[minmax(280px,360px)_1fr] lg:gap-6">
-        <Card className="flex flex-col">
+      <div className="grid min-h-0 grid-cols-1 gap-4 lg:min-h-[32rem] lg:grid-cols-[minmax(280px,360px)_1fr] lg:gap-6">
+        <Card className="flex max-h-[min(40dvh,16rem)] flex-col lg:max-h-none">
           <CardHeader className="border-b pb-4">
             <CardTitle className="text-base">Входящие</CardTitle>
             <Tabs
@@ -394,10 +394,10 @@ export function TeacherSupportClient({
           </CardContent>
         </Card>
 
-        <Card className="flex flex-col">
+        <Card className="flex min-h-[min(calc(100dvh-14rem),36rem)] flex-col lg:min-h-[32rem]">
           {selectedTicket ? (
             <>
-              <CardHeader className="border-b pb-4">
+              <CardHeader className="shrink-0 border-b pb-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -478,10 +478,10 @@ export function TeacherSupportClient({
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="flex flex-1 flex-col gap-4 p-4">
+              <CardContent className="flex min-h-0 flex-1 flex-col gap-0 p-0">
                 <div
                   ref={scrollRef}
-                  className="bg-muted/30 min-h-[20rem] flex-1 space-y-3 overflow-y-auto rounded-lg border p-4"
+                  className="bg-muted/30 mx-4 mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto rounded-lg border p-4"
                   aria-live="polite"
                   aria-busy={isLoadingMessages}
                 >
@@ -550,7 +550,10 @@ export function TeacherSupportClient({
                 </div>
 
                 {canCompose ? (
-                  <form onSubmit={handleSend} className="flex gap-2">
+                  <form
+                    onSubmit={handleSend}
+                    className="border-border bg-background flex shrink-0 gap-2 border-t p-4"
+                  >
                     <Input
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
@@ -571,7 +574,7 @@ export function TeacherSupportClient({
                     </Button>
                   </form>
                 ) : (
-                  <p className="text-muted-foreground py-2 text-center text-sm">
+                  <p className="text-muted-foreground shrink-0 border-t py-4 text-center text-sm">
                     Обращение закрыто. Ответы недоступны.
                   </p>
                 )}

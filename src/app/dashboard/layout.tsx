@@ -88,7 +88,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <>
+    <div className="h-full overflow-hidden">
       <GlobalChatListener />
       <GlobalSupportListener />
       <DashboardShell
@@ -103,6 +103,6 @@ export default async function DashboardLayout({
       >
         {children}
       </DashboardShell>
-    </>
+    </div>
   );
 }

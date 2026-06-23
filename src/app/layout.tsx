@@ -24,11 +24,11 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} h-full antialiased`}
+      className={`${inter.variable} h-full overflow-hidden antialiased`}
     >
       <body
         suppressHydrationWarning
-        className={`${inter.className} flex min-h-full flex-col`}
+        className={`${inter.className} h-full overflow-hidden`}
       >
         <AppProviders>{children}</AppProviders>
       </body>

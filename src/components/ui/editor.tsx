@@ -273,7 +273,7 @@ export function Editor({
     <div
       id={id}
       className={cn(
-        "tiptap-editor-root flex max-w-full min-h-0 flex-col overflow-x-auto rounded-lg border border-input bg-background shadow-xs",
+        "tiptap-editor-root flex max-w-full flex-col overflow-x-hidden rounded-lg border border-input bg-background shadow-xs",
         className,
       )}
     >
@@ -544,12 +544,10 @@ export function Editor({
           <YoutubeIcon />
         </Toggle>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col">
-        <EditorContent
-          editor={editor}
-          className="flex min-h-0 flex-1 flex-col [&_.tiptap]:min-h-[6rem] [&_.tiptap]:grow"
-        />
-      </div>
+      <EditorContent
+        editor={editor}
+        className="[&_.tiptap]:min-h-[6rem]"
+      />
     </div>
   );
 }

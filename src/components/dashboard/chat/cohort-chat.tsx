@@ -236,18 +236,19 @@ export function CohortChat({
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex flex-col">
+      <CardHeader className="shrink-0">
         <CardTitle>{title}</CardTitle>
         <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div
-          ref={scrollRef}
-          className="bg-muted/30 h-96 space-y-3 overflow-y-auto rounded-lg border p-4"
-          aria-live="polite"
-          aria-busy={isLoading}
-        >
+      <CardContent className="flex min-h-0 flex-col p-4 pt-0">
+        <div className="flex h-[min(calc(100dvh-16rem),32rem)] min-h-[14rem] flex-col overflow-hidden rounded-lg border">
+          <div
+            ref={scrollRef}
+            className="bg-muted/30 min-h-0 flex-1 space-y-3 overflow-y-auto p-4"
+            aria-live="polite"
+            aria-busy={isLoading}
+          >
           {isLoading ? (
             <p className="text-muted-foreground text-sm">Загрузка сообщений…</p>
           ) : messages.length === 0 ? (
@@ -328,32 +329,36 @@ export function CohortChat({
               );
             })
           )}
-        </div>
+          </div>
 
-        {canCompose ? (
-          <form onSubmit={handleSend} className="flex gap-2">
-            <Input
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Напишите сообщение…"
-              maxLength={2000}
-              disabled={isPending || isLoading}
-              autoComplete="off"
-            />
-            <Button
-              type="submit"
-              size="icon"
-              disabled={isPending || isLoading || draft.trim().length === 0}
-              aria-label="Отправить сообщение"
+          {canCompose ? (
+            <form
+              onSubmit={handleSend}
+              className="border-border bg-background flex shrink-0 gap-2 border-t p-3"
             >
-              <SendHorizonal className="size-4" />
-            </Button>
-          </form>
-        ) : (
-          <p className="text-muted-foreground py-4 text-center text-sm">
-            Чат отключен преподавателем
-          </p>
-        )}
+              <Input
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Напишите сообщение…"
+                maxLength={2000}
+                disabled={isPending || isLoading}
+                autoComplete="off"
+              />
+              <Button
+                type="submit"
+                size="icon"
+                disabled={isPending || isLoading || draft.trim().length === 0}
+                aria-label="Отправить сообщение"
+              >
+                <SendHorizonal className="size-4" />
+              </Button>
+            </form>
+          ) : (
+            <p className="text-muted-foreground shrink-0 border-t py-4 text-center text-sm">
+              Чат отключен преподавателем
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

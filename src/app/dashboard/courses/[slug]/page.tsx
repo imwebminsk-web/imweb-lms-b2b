@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 
 import { CourseEditorTabs } from "@/components/dashboard/teacher/course-editor-tabs";
 import type { CurriculumModuleRow } from "@/components/dashboard/teacher/curriculum-tab";
-import { SiteHeader } from "@/components/site-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
@@ -108,36 +107,26 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
   }
 
   if (!courseRow) {
-    const displayName =
-      profile.full_name?.trim() ||
-      user.email?.split("@")[0] ||
-      "Пользователь";
-
     return (
-      <>
-        <SiteHeader fullName={displayName} />
-        <div className="flex flex-1 flex-col">
-          <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
-            <Button variant="ghost" className="w-fit px-0" asChild>
-              <Link href="/dashboard/courses">← Назад</Link>
-            </Button>
-            <div
-              className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border px-4 py-6 text-sm"
-              role="alert"
-            >
-              <p className="font-medium">Курс не найден.</p>
-              <p className="mt-2 font-mono text-xs opacity-90">
-                Ожидаемый slug (после decode): {decodedSlug}. Сырой сегмент URL:{" "}
-                <span className="break-all">{slugParam}</span>. Проверьте базу данных
-                (таблица{" "}
-                <code className="bg-muted rounded px-1">courses</code>, поля{" "}
-                <code className="bg-muted rounded px-1">slug</code> и{" "}
-                <code className="bg-muted rounded px-1">teacher_id</code>).
-              </p>
-            </div>
-          </main>
+      <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
+        <Button variant="ghost" className="w-fit px-0" asChild>
+          <Link href="/dashboard/courses">← Назад</Link>
+        </Button>
+        <div
+          className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border px-4 py-6 text-sm"
+          role="alert"
+        >
+          <p className="font-medium">Курс не найден.</p>
+          <p className="mt-2 font-mono text-xs opacity-90">
+            Ожидаемый slug (после decode): {decodedSlug}. Сырой сегмент URL:{" "}
+            <span className="break-all">{slugParam}</span>. Проверьте базу данных
+            (таблица{" "}
+            <code className="bg-muted rounded px-1">courses</code>, поля{" "}
+            <code className="bg-muted rounded px-1">slug</code> и{" "}
+            <code className="bg-muted rounded px-1">teacher_id</code>).
+          </p>
         </div>
-      </>
+      </div>
     );
   }
 
@@ -179,51 +168,41 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         .sort((a, b) => a.order_index - b.order_index),
     }));
 
-  const displayName =
-    profile.full_name?.trim() ||
-    user.email?.split("@")[0] ||
-    "Пользователь";
-
   const isPublished = course.status === "published";
 
   return (
-    <>
-      <SiteHeader fullName={displayName} />
-      <div className="flex flex-1 flex-col">
-        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 lg:px-6">
-          <Button variant="ghost" className="w-fit px-0" asChild>
-            <Link href="/dashboard/courses">← Назад</Link>
-          </Button>
+    <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-8">
+      <Button variant="ghost" className="w-fit px-0" asChild>
+        <Link href="/dashboard/courses">← Назад</Link>
+      </Button>
 
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                {course.title}
-              </h1>
-              <p className="text-muted-foreground font-mono text-xs">
-                /{course.slug}
-              </p>
-            </div>
-            {isPublished ? (
-              <Badge
-                variant="outline"
-                className="shrink-0 border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-              >
-                Опубликован
-              </Badge>
-            ) : (
-              <Badge
-                variant="secondary"
-                className="shrink-0 border-amber-500/35 bg-amber-500/12 text-amber-950 dark:text-amber-100"
-              >
-                Черновик
-              </Badge>
-            )}
-          </header>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {course.title}
+          </h1>
+          <p className="text-muted-foreground font-mono text-xs">
+            /{course.slug}
+          </p>
+        </div>
+        {isPublished ? (
+          <Badge
+            variant="outline"
+            className="shrink-0 border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
+          >
+            Опубликован
+          </Badge>
+        ) : (
+          <Badge
+            variant="secondary"
+            className="shrink-0 border-amber-500/35 bg-amber-500/12 text-amber-950 dark:text-amber-100"
+          >
+            Черновик
+          </Badge>
+        )}
+      </header>
 
-          <CourseEditorTabs course={course} modules={modules} />
-        </main>
-      </div>
-    </>
+      <CourseEditorTabs course={course} modules={modules} />
+    </div>
   );
 }

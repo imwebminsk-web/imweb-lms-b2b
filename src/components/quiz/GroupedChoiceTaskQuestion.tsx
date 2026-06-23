@@ -290,7 +290,7 @@ function ChoiceTextListOption({
     return (
       <label
         className={cn(
-          "border-input hover:bg-muted/60 focus-within:ring-ring flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors focus-within:ring-2 md:min-h-12",
+          "border-input hover:bg-muted/60 focus-within:ring-ring flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-xl border px-4 py-3.5 transition-colors focus-within:ring-2 md:min-h-12",
           reviewSurfaceClass,
           !isReviewMode && isSelected && "ring-primary/30 ring-2",
           isReviewMode && "cursor-default",
@@ -301,7 +301,7 @@ function ChoiceTextListOption({
           checked={isSelected}
           disabled={isReviewMode}
           onChange={onSelect}
-          className="border-input text-primary size-4 shrink-0 rounded"
+          className="border-input text-primary size-5 shrink-0 rounded"
         />
         <span className="min-w-0 flex-1 text-left text-base leading-snug md:text-lg">
           <TaskMediaRenderer html={opt.text} isReviewMode={isReviewMode} />
@@ -320,7 +320,7 @@ function ChoiceTextListOption({
       disabled={isReviewMode}
       onClick={onSelect}
       className={cn(
-        "border-input hover:bg-muted/60 focus-visible:ring-ring flex min-h-11 w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-base transition-colors focus-visible:ring-2 focus-visible:outline-none md:min-h-12 md:text-lg",
+        "border-input hover:bg-muted/60 focus-visible:ring-ring flex min-h-12 w-full items-center gap-3 rounded-xl border px-4 py-3.5 text-left text-base transition-colors focus-visible:ring-2 focus-visible:outline-none md:min-h-12 md:text-lg",
         reviewSurfaceClass,
         !isReviewMode && isSelected && "ring-primary/30 ring-2",
         isReviewMode && "cursor-default",
@@ -399,8 +399,8 @@ export function GroupedChoiceTaskQuestion({
             <div
               className={cn(
                 useImageGrid
-                  ? "grid grid-cols-2 gap-3 sm:grid-cols-3"
-                  : "flex flex-col gap-3",
+                  ? "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                  : "flex w-full flex-col gap-3",
               )}
               role={isMultiple ? "group" : "radiogroup"}
               aria-label={richTextPlainLabel(item.text)}
