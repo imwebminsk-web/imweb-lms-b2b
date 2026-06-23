@@ -13,3 +13,9 @@ export type TeacherDashboardMetrics = {
   totalStudents: number;
   pendingReviews: number;
 };
+
+export type AdminDashboardMetrics = {
+  totalStudents: number;
+  totalTeachers: number;
+  totalCourses: number;
+};

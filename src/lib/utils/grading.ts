@@ -5,7 +5,7 @@ import {
 } from "@/lib/utils/scoring-utils";
 import type { Json } from "@/types/database.types";
 
-export type GradingColor = "green" | "yellow" | "red";
+export type GradingColor = "green" | "blue" | "yellow" | "orange" | "red";
 
 export type GradingVisuals = {
   isForKids: boolean;
@@ -127,12 +127,18 @@ export function getGradingVisuals(
   let emoji: string;
   let color: GradingColor;
 
-  if (scorePercent >= 100) {
+  if (scorePercent >= 81) {
     emoji = "😁";
     color = "green";
-  } else if (scorePercent >= 75) {
+  } else if (scorePercent >= 65) {
     emoji = "🙂";
+    color = "blue";
+  } else if (scorePercent >= 51) {
+    emoji = "😐";
     color = "yellow";
+  } else if (scorePercent >= 26) {
+    emoji = "🙁";
+    color = "orange";
   } else {
     emoji = "😢";
     color = "red";
@@ -149,6 +155,8 @@ export function getGradingVisuals(
 
 export const GRADING_COLOR_RING_CLASSES: Record<GradingColor, string> = {
   green: "border-2 border-green-500/50 bg-green-500/10",
+  blue: "border-2 border-blue-500/50 bg-blue-500/10",
   yellow: "border-2 border-yellow-500/50 bg-yellow-500/10",
+  orange: "border-2 border-orange-500/50 bg-orange-500/10",
   red: "border-2 border-red-500/50 bg-red-500/10",
 };

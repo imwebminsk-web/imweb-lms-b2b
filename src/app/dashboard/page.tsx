@@ -5,7 +5,7 @@ import {
   getStudentProgress,
 } from "@/app/actions/student-dashboard-actions";
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
-import { DataTable } from "@/components/data-table";
+import { UsersTable } from "@/components/dashboard/admin/users-table";
 import { ActivityFeedWidget } from "@/components/dashboard/teacher/activity-feed-widget";
 import { PendingReviewsWidget } from "@/components/dashboard/teacher/pending-reviews-widget";
 import { StudentDashboardHome } from "@/components/dashboard/student/student-dashboard-home";
@@ -95,6 +95,25 @@ export default async function Page() {
 
   const payload = await fetchDashboardData(user.id, profile.role);
 
+  if (profile.role === "admin") {
+    return (
+      <>
+        <SiteHeader fullName={displayName} />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              <SectionCards adminMetrics={payload.adminMetrics} cards={[]} />
+              <UsersTable
+                users={payload.adminUsers ?? []}
+                currentUserId={user.id}
+              />
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <SiteHeader fullName={displayName} />
@@ -112,9 +131,7 @@ export default async function Page() {
                 />
                 <ActivityFeedWidget events={payload.activityEvents ?? []} />
               </>
-            ) : (
-              <DataTable data={payload.tableRows} />
-            )}
+            ) : null}
           </div>
         </div>
       </div>

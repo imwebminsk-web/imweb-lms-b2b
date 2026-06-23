@@ -557,6 +557,7 @@ export function QuizPlayer({
       <QuizResultView
         questions={questions}
         result={result}
+        celebrateKidsEmoji
         reviewRowsByQuestionId={reviewRowsByQuestionId}
         reviewCorrectIdsByQuestionId={reviewCorrectIdsByQuestionId}
         reviewFillByQuestionId={reviewFillByQuestionId}

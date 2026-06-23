@@ -3,6 +3,7 @@
 import type { AttemptResult, SafeTestQuestion } from "@/app/actions/test-actions";
 import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { useLanguage } from "@/components/providers/language-provider";
+import type { TranslationKey } from "@/lib/i18n/dict";
 import { Progress } from "@/components/ui/progress";
 import {
   parseGroupedFillAssignmentsFromAnswerData,
@@ -41,6 +42,10 @@ import {
   resolveTaskPointsForReview,
   type ReviewItemScore,
 } from "@/lib/quiz-result-scoring";
+import {
+  getGradingVisuals,
+  type GradingColor,
+} from "@/lib/utils/grading";
 import type { ReactNode } from "react";
 
 import { GroupedFillBlanksTaskQuestion } from "./GroupedFillBlanksTaskQuestion";
@@ -447,6 +452,8 @@ export type QuizResultViewProps = {
   reviewOnly?: boolean;
   /** Смещение номера вопроса в подписи «Вопрос N» (когда передан один вопрос из полного теста). */
   questionIndexOffset?: number;
+  /** Анимация kids-эмодзи после прохождения теста (только QuizPlayer). */
+  celebrateKidsEmoji?: boolean;
 };
 
 export function QuizResultView({
@@ -467,6 +474,7 @@ export function QuizResultView({
   children,
   reviewOnly = false,
   questionIndexOffset = 0,
+  celebrateKidsEmoji = false,
 }: QuizResultViewProps) {
   const { t } = useLanguage();
   const correctIdsMap = reviewCorrectIdsByQuestionId ?? new Map();
@@ -585,6 +593,13 @@ export function QuizResultView({
 
   const isForKids = result.isForKids;
   const requiresManualReview = result.requiresManualReview;
+  const kidsGradingVisuals = isForKids
+    ? getGradingVisuals(result.score, true, result.totalPossiblePoints)
+    : null;
+
+  function kidsReviewDynamicKey(color: GradingColor): TranslationKey {
+    return `quizResult.kidsReviewDynamic.${color}`;
+  }
 
   const questionsSection = (
     <section
@@ -911,9 +926,12 @@ export function QuizResultView({
                     score={result.score}
                     isForKids
                     totalPossiblePoints={result.totalPossiblePoints}
+                    animate={celebrateKidsEmoji}
                   />
                   <p className="text-muted-foreground text-sm">
-                    {t("quizResult.kidsReviewBelow")}
+                    {kidsGradingVisuals?.color
+                      ? t(kidsReviewDynamicKey(kidsGradingVisuals.color))
+                      : null}
                   </p>
                 </>
               )}

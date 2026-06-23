@@ -335,3 +335,68 @@
     outline-offset: 2px;
   }
 }
+
+@keyframes zoom-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+@utility animate-zoom-pulse {
+  animation: zoom-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes slow-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@utility animate-slow-spin {
+  animation: slow-spin 4s linear infinite;
+}
+
+@keyframes strong-sway {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-25deg);
+  }
+  75% {
+    transform: rotate(25deg);
+  }
+}
+
+@utility animate-strong-sway {
+  animation: strong-sway 1.5s ease-in-out infinite;
+}
+
+@keyframes heavy-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15%,
+  45%,
+  75% {
+    transform: translateX(-6px) rotate(-5deg);
+  }
+  30%,
+  60%,
+  90% {
+    transform: translateX(6px) rotate(5deg);
+  }
+}
+
+@utility animate-heavy-shake {
+  animation: heavy-shake 0.6s ease-in-out infinite;
+}

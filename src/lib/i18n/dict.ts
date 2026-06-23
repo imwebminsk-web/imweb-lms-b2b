@@ -76,7 +76,14 @@ export const dict = {
       manualReviewHint:
         "В тесте есть развёрнутые ответы. Преподаватель проверит их вручную — автоматическая оценка за эти задания не выставляется.",
       kidsWaitReview: "Ответы отправлены преподавателю. Жди проверки!",
-      kidsReviewBelow: "Молодец! Посмотри разбор заданий ниже.",
+      kidsReviewDynamic: {
+        green: "Отличный результат! Посмотри разбор заданий ниже.",
+        blue: "Хорошая работа! Посмотри разбор заданий ниже.",
+        yellow:
+          "Неплохо! Посмотри разбор заданий ниже, чтобы узнать правильные ответы.",
+        orange: "Нужно немного потренироваться. Посмотри разбор заданий ниже.",
+        red: "Не расстраивайся! Посмотри разбор заданий и разбери ошибки.",
+      },
       preliminaryScore: "Автоматически проверенные задания",
       preliminarySuffix: "баллов (предварительно)",
       textInputPending: "Ответ отправлен на проверку преподавателю.",
@@ -290,7 +297,14 @@ export const dict = {
       manualReviewHint:
         "This test includes open-ended responses. Your teacher will grade them manually — those tasks are not auto-scored.",
       kidsWaitReview: "Answers sent to your teacher. Waiting for review!",
-      kidsReviewBelow: "Great job! Review your tasks below.",
+      kidsReviewDynamic: {
+        green: "Excellent result! Review your tasks below.",
+        blue: "Good work! Review your tasks below.",
+        yellow:
+          "Not bad! Review your tasks below to see the correct answers.",
+        orange: "You need a bit more practice. Review your tasks below.",
+        red: "Don't be upset! Review your tasks and learn from your mistakes.",
+      },
       preliminaryScore: "Auto-checked tasks",
       preliminarySuffix: "points (preliminary)",
       textInputPending: "Answer submitted for teacher review.",
@@ -436,7 +450,8 @@ export type TranslationKey =
   | `course_view.${keyof (typeof dict)["ru"]["course_view"]}`
   | `lesson_view.${keyof (typeof dict)["ru"]["lesson_view"]}`
   | `quiz.${keyof (typeof dict)["ru"]["quiz"]}`
-  | `quizResult.${keyof (typeof dict)["ru"]["quizResult"]}`
+  | `quizResult.${Exclude<keyof (typeof dict)["ru"]["quizResult"], "kidsReviewDynamic">}`
+  | `quizResult.kidsReviewDynamic.${keyof (typeof dict)["ru"]["quizResult"]["kidsReviewDynamic"]}`
   | `a11y.${keyof (typeof dict)["ru"]["a11y"]}`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

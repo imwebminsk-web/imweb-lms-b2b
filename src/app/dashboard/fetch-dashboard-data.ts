@@ -2,6 +2,7 @@ import { getRecentActivity, type ActivityEvent } from "@/app/actions/activity-ac
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
+  AdminDashboardMetrics,
   DashboardSectionCard,
   TeacherDashboardMetrics,
 } from "@/lib/dashboard/section-card";
@@ -104,10 +105,20 @@ export type PendingReviewItem =
       courseSlug: string;
     };
 
+export type AdminUserRow = {
+  id: string;
+  fullName: string | null;
+  email: string | null;
+  role: ProfileRole;
+  createdAt: string | null;
+};
+
 export type DashboardData = {
   tableRows: DashboardTableRow[];
   sectionCards: DashboardSectionCard[];
   teacherMetrics?: TeacherDashboardMetrics;
+  adminMetrics?: AdminDashboardMetrics;
+  adminUsers?: AdminUserRow[];
   pendingReviews?: PendingReviewItem[];
   activityEvents?: ActivityEvent[];
 };
@@ -704,6 +715,67 @@ async function getPendingAssignmentReviewsForTeacher(
   return items;
 }
 
+async function fetchAuthCreatedAtByUserId(
+  adminClient: NonNullable<ReturnType<typeof createAdminClient>>,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  let page = 1;
+  const perPage = 1000;
+
+  while (true) {
+    const { data, error } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+
+    if (error) {
+      console.error("[fetchAuthCreatedAtByUserId]", error.message);
+      break;
+    }
+
+    for (const user of data.users) {
+      if (user.created_at) {
+        map.set(user.id, user.created_at);
+      }
+    }
+
+    if (data.users.length < perPage) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return map;
+}
+
+async function fetchAdminUsers(
+  supabase: DbClient,
+): Promise<AdminUserRow[]> {
+  const { data: profiles, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, role, email")
+    .order("full_name", { ascending: true, nullsFirst: false });
+
+  if (error) {
+    console.error("[fetchAdminUsers] profiles", error.message);
+    return [];
+  }
+
+  const adminClient = createAdminClient();
+  const createdAtById = adminClient
+    ? await fetchAuthCreatedAtByUserId(adminClient)
+    : new Map<string, string>();
+
+  return (profiles ?? []).map((profile) => ({
+    id: profile.id,
+    fullName: profile.full_name,
+    email: profile.email,
+    role: profile.role,
+    createdAt: createdAtById.get(profile.id) ?? null,
+  }));
+}
+
 /**
  * Загружает строки таблицы и карточки по роли. Использует cookie-сессию Supabase (RLS).
  * Вызывать только из Server Components / route handlers, не передавать на клиент как action.
@@ -742,72 +814,38 @@ export async function fetchDashboardData(
   }
 
   if (role === "admin") {
-    const { data: courses, error } = await supabase
-      .from("courses")
-      .select(
-        "id, title, status, level, price, slug, language, teacher:profiles!courses_teacher_id_fkey ( full_name )",
-      )
-      .order("id", { ascending: false })
-      .limit(80);
+    const [
+      adminUsers,
+      { count: studentsCount },
+      { count: teachersCount },
+      { count: coursesCount },
+    ] = await Promise.all([
+      fetchAdminUsers(supabase),
+      supabase
+        .from("profiles")
+        .select("*", { count: "exact", head: true })
+        .eq("role", "student"),
+      supabase
+        .from("profiles")
+        .select("*", { count: "exact", head: true })
+        .eq("role", "teacher"),
+      supabase
+        .from("courses")
+        .select("*", { count: "exact", head: true }),
+    ]);
 
-    if (error) {
-      console.error("[fetchDashboardData] admin courses", error.message);
-    }
+    const adminMetrics: AdminDashboardMetrics = {
+      totalStudents: studentsCount ?? 0,
+      totalTeachers: teachersCount ?? 0,
+      totalCourses: coursesCount ?? 0,
+    };
 
-    const tableRows = (courses ?? []).map((c) => mapCourseRow(c));
-
-    const [{ count: studentsCount }, { count: teachersCount }, { count: pub }] =
-      await Promise.all([
-        supabase
-          .from("profiles")
-          .select("*", { count: "exact", head: true })
-          .eq("role", "student"),
-        supabase
-          .from("profiles")
-          .select("*", { count: "exact", head: true })
-          .eq("role", "teacher"),
-        supabase
-          .from("courses")
-          .select("*", { count: "exact", head: true })
-          .eq("status", "published"),
-      ]);
-
-    const sectionCards: DashboardSectionCard[] = [
-      {
-        label: "Студенты",
-        value: String(studentsCount ?? 0),
-        trendPercent: "+0%",
-        trendUp: true,
-        footerTitle: "Профили со ролью student",
-        footerHint: "Источник: public.profiles",
-      },
-      {
-        label: "Преподаватели",
-        value: String(teachersCount ?? 0),
-        trendPercent: "+0%",
-        trendUp: true,
-        footerTitle: "Профили teacher",
-        footerHint: "Управление доступом через RLS",
-      },
-      {
-        label: "Курсы в каталоге",
-        value: String(pub ?? 0),
-        trendPercent: `${pub ?? 0}`,
-        trendUp: (pub ?? 0) > 0,
-        footerTitle: "Опубликованные курсы",
-        footerHint: "Транзакции оплат — отдельная таблица в PRD",
-      },
-      {
-        label: "Все курсы (строки)",
-        value: String((courses ?? []).length),
-        trendPercent: "recent",
-        trendUp: true,
-        footerTitle: "Последние записи",
-        footerHint: "Создания курсов; платежи — когда появится схема",
-      },
-    ];
-
-    return { tableRows, sectionCards };
+    return {
+      tableRows: [],
+      sectionCards: [],
+      adminMetrics,
+      adminUsers,
+    };
   }
 
   const { data: courses, error } = await supabase

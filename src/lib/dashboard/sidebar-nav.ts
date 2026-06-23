@@ -2,9 +2,8 @@ import type { LucideIcon } from "lucide-react";
 import {
   BookOpenIcon,
   CheckSquare,
-  DollarSignIcon,
-  FileQuestionMarkIcon,
   GraduationCapIcon,
+  LayoutDashboardIcon,
   LibraryIcon,
   LifeBuoyIcon,
   Users,
@@ -24,18 +23,13 @@ export type SidebarNavItem = {
 export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
   if (role === "admin") {
     return [
-      {
-        title: "Тесты",
-        url: "/dashboard/tests",
-        icon: FileQuestionMarkIcon,
-      },
+      { title: "Главная", url: "/dashboard", icon: LayoutDashboardIcon },
       {
         title: "Справочники",
         url: "/dashboard/admin/taxonomies",
         icon: LibraryIcon,
       },
-      { title: "Финансы", url: "/dashboard", icon: DollarSignIcon },
-      { title: "Все курсы", url: "/dashboard", icon: BookOpenIcon },
+      { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
   }
   if (role === "teacher") {

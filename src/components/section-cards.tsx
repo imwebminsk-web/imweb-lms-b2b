@@ -9,6 +9,7 @@ import {
 } from "lucide-react"
 
 import type {
+  AdminDashboardMetrics,
   DashboardSectionCard,
   TeacherDashboardMetrics,
 } from "@/lib/dashboard/section-card"
@@ -78,6 +79,29 @@ function TeacherMetricCards({ metrics }: { metrics: TeacherDashboardMetrics }) {
   )
 }
 
+function AdminStatCards({ metrics }: { metrics: AdminDashboardMetrics }) {
+  const cards = [
+    { label: "Студенты", value: metrics.totalStudents },
+    { label: "Преподаватели", value: metrics.totalTeachers },
+    { label: "Курсы", value: metrics.totalCourses },
+  ] as const;
+
+  return (
+    <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-3 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
+      {cards.map((card) => (
+        <Card key={card.label} className="@container/card">
+          <CardHeader>
+            <CardDescription>{card.label}</CardDescription>
+            <CardTitle className="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
+              {card.value}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function DefaultSectionCards({ cards }: { cards: DashboardSectionCard[] }) {
   return (
     <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
@@ -122,12 +146,18 @@ function DefaultSectionCards({ cards }: { cards: DashboardSectionCard[] }) {
 export function SectionCards({
   cards,
   teacherMetrics,
+  adminMetrics,
 }: {
   cards: DashboardSectionCard[]
   teacherMetrics?: TeacherDashboardMetrics
+  adminMetrics?: AdminDashboardMetrics
 }) {
   if (teacherMetrics) {
     return <TeacherMetricCards metrics={teacherMetrics} />
+  }
+
+  if (adminMetrics) {
+    return <AdminStatCards metrics={adminMetrics} />
   }
 
   return <DefaultSectionCards cards={cards} />
