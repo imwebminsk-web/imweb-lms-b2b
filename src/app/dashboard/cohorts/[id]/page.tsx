@@ -8,18 +8,12 @@ import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
 import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { TeacherCohortTabs } from "@/components/dashboard/cohorts/teacher-cohort-tabs";
 import { CohortAssignmentManager } from "@/components/dashboard/teacher/cohorts/cohort-assignment-manager";
+import { CohortSettingsForm } from "@/components/dashboard/teacher/cohorts/cohort-settings-form";
+import { CohortStudentsList } from "@/components/dashboard/teacher/cohorts/cohort-students-list";
 import { CohortStatusToggle } from "@/components/dashboard/teacher/cohorts/cohort-status-toggle";
 import { MatrixGradebook } from "@/components/dashboard/teacher/cohorts/matrix-gradebook";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 
@@ -44,15 +38,6 @@ type LessonWithTestRow = {
 type CohortAssignmentRow = {
   lesson_id: string | null;
 };
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("ru-RU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(d);
-}
 
 export default async function CohortDetailsPage({ params }: CohortPageProps) {
   const { id } = await params;
@@ -87,7 +72,9 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
 
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
-    .select("id, name, pin_code, is_active, created_at, course_id, courses(id, title, teacher_id)")
+    .select(
+      "id, name, pin_code, is_active, is_chat_enabled, created_at, course_id, courses(id, title, teacher_id)",
+    )
     .eq("id", cohortId)
     .maybeSingle();
 
@@ -219,6 +206,14 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
         </div>
       </section>
 
+      <CohortSettingsForm
+        cohort={{
+          id: cohort.id,
+          name: cohort.name,
+          is_chat_enabled: cohort.is_chat_enabled,
+        }}
+      />
+
       <section className="rounded-xl border p-6 space-y-4">
         <h2 className="text-xl font-semibold tracking-tight">Управление контентом</h2>
         <CohortAssignmentManager
@@ -260,53 +255,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
             Откройте журнал по каждому ученику — таблица успеваемости по курсу группы.
           </p>
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Имя</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Дата записи</TableHead>
-              <TableHead>Статус</TableHead>
-              <TableHead className="w-[140px] text-right">Журнал</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {cohortStudents.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-muted-foreground text-center">
-                  В этой группе пока нет учеников.
-                </TableCell>
-              </TableRow>
-            ) : (
-              cohortStudents.map((row) => (
-                <TableRow key={row.enrollmentId}>
-                  <TableCell className="font-medium">{row.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{row.email}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDateTime(row.enrolledAt)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-                    >
-                      Активен
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button asChild size="sm" variant="secondary">
-                      <Link
-                        href={`/dashboard/cohorts/${cohort.id}/student/${row.userId}`}
-                      >
-                        Журнал
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        <CohortStudentsList cohortId={cohort.id} students={cohortStudents} />
       </section>
     </>
   );
@@ -317,6 +266,8 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
       cohortId={cohort.id}
       currentUserId={user.id}
       teacherId={courseRel.teacher_id}
+      isChatEnabled={cohort.is_chat_enabled}
+      isTeacher
       description="Общение с учениками группы в реальном времени."
     />
   );

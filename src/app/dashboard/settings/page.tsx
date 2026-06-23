@@ -26,7 +26,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("full_name, role")
+    .select("full_name, role, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -55,9 +55,12 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <SettingsPageContent
+            userId={user.id}
             email={user.email ?? "—"}
             role={profile.role}
             defaultFullName={profile.full_name ?? ""}
+            avatarUrl={profile.avatar_url}
+            displayName={displayName}
             feedbackKey={feedbackKey}
           />
         </div>

@@ -25,7 +25,13 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
 import { buildGroupedCorrectByQuestionId, buildReviewMaps } from "@/lib/learn/build-review-maps";
+import { initialsFromDisplayName } from "@/lib/utils/user-utils";
 
 type TestResultSheetProps = {
   isOpen: boolean;
@@ -33,6 +39,7 @@ type TestResultSheetProps = {
   studentId: string;
   testId: string;
   studentName: string;
+  studentAvatarUrl?: string | null;
   testTitle: string;
   /** Показать блок ручной корректировки балла (только для преподавателя). */
   isTeacher?: boolean;
@@ -44,6 +51,7 @@ export function TestResultSheet({
   studentId,
   testId,
   studentName,
+  studentAvatarUrl = null,
   testTitle,
   isTeacher = false,
 }: TestResultSheetProps) {
@@ -139,7 +147,20 @@ export function TestResultSheet({
       >
         <SheetHeader className="border-border shrink-0 border-b px-1 pb-4 text-left sm:px-2">
           <SheetTitle className="pr-8">{displayTitle}</SheetTitle>
-          <SheetDescription>Ученик: {studentName}</SheetDescription>
+          <SheetDescription asChild>
+            <div className="flex items-center gap-3 pt-1">
+              <Avatar className="h-10 w-10 shrink-0">
+                <AvatarImage
+                  src={studentAvatarUrl ?? undefined}
+                  alt={studentName}
+                />
+                <AvatarFallback>
+                  {initialsFromDisplayName(studentName)}
+                </AvatarFallback>
+              </Avatar>
+              <span>Ученик: {studentName}</span>
+            </div>
+          </SheetDescription>
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-4 p-4 sm:gap-6 sm:p-6">

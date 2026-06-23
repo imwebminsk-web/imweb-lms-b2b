@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
@@ -19,6 +21,10 @@ export type GetCohortMessagesResult =
 
 export type SendChatMessageResult =
   | { success: true; message: CohortChatMessage }
+  | { success: false; error: string };
+
+export type DeleteChatMessageResult =
+  | { success: true }
   | { success: false; error: string };
 
 const MAX_MESSAGE_LENGTH = 2000;
@@ -150,6 +156,33 @@ export async function sendChatMessage(
     return { success: false, error: "Нужна авторизация." };
   }
 
+  const { data: cohort, error: cohortError } = await supabase
+    .from("cohorts")
+    .select("id, is_chat_enabled, courses(teacher_id)")
+    .eq("id", cid)
+    .maybeSingle();
+
+  if (cohortError || !cohort) {
+    return { success: false, error: "Группа не найдена." };
+  }
+
+  const courseRel = Array.isArray(cohort.courses)
+    ? cohort.courses[0]
+    : cohort.courses;
+  const isCourseTeacher = courseRel?.teacher_id === user.id;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdmin = profile?.role === "admin";
+
+  if (!cohort.is_chat_enabled && !isCourseTeacher && !isAdmin) {
+    return { success: false, error: "Чат отключен" };
+  }
+
   const { data, error } = await supabase
     .from("cohort_messages")
     .insert({
@@ -169,4 +202,80 @@ export async function sendChatMessage(
   const message = mapMessageRow(data as RawMessageRow, profiles.get(user.id));
 
   return { success: true, message };
+}
+
+/** Удаляет сообщение чата (учитель курса или админ). */
+export async function deleteChatMessage(
+  messageId: string,
+): Promise<DeleteChatMessageResult> {
+  const mid = messageId.trim();
+  if (!mid) {
+    return { success: false, error: "Не указано сообщение." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Нужна авторизация." };
+  }
+
+  const { data: message, error: messageError } = await supabase
+    .from("cohort_messages")
+    .select("id, cohort_id")
+    .eq("id", mid)
+    .maybeSingle();
+
+  if (messageError) {
+    console.error("[deleteChatMessage] fetch", messageError.message);
+    return { success: false, error: "Не удалось найти сообщение." };
+  }
+
+  if (!message) {
+    return { success: false, error: "Сообщение не найдено." };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdmin = profile?.role === "admin";
+
+  if (!isAdmin) {
+    const { data: cohort, error: cohortError } = await supabase
+      .from("cohorts")
+      .select("id, courses(teacher_id)")
+      .eq("id", message.cohort_id)
+      .maybeSingle();
+
+    if (cohortError || !cohort) {
+      return { success: false, error: "Группа не найдена." };
+    }
+
+    const courseRel = Array.isArray(cohort.courses)
+      ? cohort.courses[0]
+      : cohort.courses;
+
+    if (courseRel?.teacher_id !== user.id) {
+      return { success: false, error: "Нет прав на удаление сообщения." };
+    }
+  }
+
+  const { error: deleteError } = await supabase
+    .from("cohort_messages")
+    .delete()
+    .eq("id", mid);
+
+  if (deleteError) {
+    console.error("[deleteChatMessage]", deleteError.message);
+    return { success: false, error: "Не удалось удалить сообщение." };
+  }
+
+  revalidatePath("/", "layout");
+
+  return { success: true };
 }

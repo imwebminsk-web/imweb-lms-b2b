@@ -50,6 +50,7 @@ export type CourseHubClientProps = {
   userDisplayName: string;
   cohortId: string | null;
   teacherId: string;
+  isChatEnabled?: boolean;
   unreadCount?: number;
 };
 
@@ -97,6 +98,7 @@ export function CourseHubClient({
   userDisplayName,
   cohortId,
   teacherId,
+  isChatEnabled = true,
   unreadCount = 0,
 }: CourseHubClientProps) {
   const { t } = useLanguage();
@@ -346,6 +348,8 @@ export function CourseHubClient({
                 cohortId={cohortId}
                 currentUserId={userId}
                 teacherId={teacherId}
+                isChatEnabled={isChatEnabled}
+                isTeacher={false}
               />
             ) : (
               <Card className="border-dashed">

@@ -1,12 +1,20 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import { getStudentProgressForTeacher } from "@/app/actions/student-dashboard-actions";
 import { TeacherStudentProgressTable } from "@/components/dashboard/teacher/cohorts/teacher-student-progress-table";
 import { Button } from "@/components/ui/button";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
+import {
+  resolveStudentDisplayName,
+  initialsFromDisplayName,
+} from "@/lib/utils/user-utils";
 
 type PageProps = {
   params: Promise<{ id: string; studentId: string }>;
@@ -61,7 +69,7 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
 
   const { data: studentProfile } = await supabase
     .from("profiles")
-    .select("full_name")
+    .select("full_name, avatar_url")
     .eq("id", studentIdTrim)
     .maybeSingle();
 
@@ -78,6 +86,8 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
     emailRow?.email,
     studentIdTrim,
   );
+
+  const studentAvatarUrl = studentProfile?.avatar_url ?? null;
 
   const displayName =
     profile.full_name?.trim() ||
@@ -103,18 +113,32 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
               {progressRes.cohortName && progressRes.courseTitle ? " · " : null}
               {progressRes.courseTitle ? `Курс: ${progressRes.courseTitle}` : null}
             </p>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Журнал: {studentName}
-            </h1>
-            {emailRow?.email ? (
-              <p className="text-muted-foreground text-sm">{emailRow.email}</p>
-            ) : null}
+            <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10 shrink-0">
+                <AvatarImage
+                  src={studentAvatarUrl ?? undefined}
+                  alt={studentName}
+                />
+                <AvatarFallback>
+                  {initialsFromDisplayName(studentName)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 space-y-1">
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  Журнал: {studentName}
+                </h1>
+                {emailRow?.email ? (
+                  <p className="text-muted-foreground text-sm">{emailRow.email}</p>
+                ) : null}
+              </div>
+            </div>
           </header>
 
           <TeacherStudentProgressTable
             items={progressRes.items}
             viewedStudentId={studentIdTrim}
             viewedStudentName={studentName}
+            viewedStudentAvatarUrl={studentAvatarUrl}
           />
         </main>
       </div>

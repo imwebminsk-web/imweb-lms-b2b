@@ -3,6 +3,7 @@
 import { randomInt } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
@@ -18,6 +19,12 @@ export type CreateCohortResult =
 export type UpdateCohortStatusResult =
   | { success: true; isActive: boolean }
   | { success: false; error: string };
+
+export type UpdateCohortSettingsResult =
+  | { success: true }
+  | { success: false; error: string };
+
+export type DeleteCohortResult = { success: false; error: string };
 
 export type AssignContentToCohortResult =
   | { success: true }
@@ -178,6 +185,91 @@ export async function updateCohortStatus(
   revalidatePath("/dashboard/cohorts");
   revalidatePath(`/dashboard/cohorts/${cohort.id}`);
   return { success: true, isActive };
+}
+
+export async function updateCohortSettings(
+  cohortId: string,
+  data: { name?: string; is_chat_enabled?: boolean },
+): Promise<UpdateCohortSettingsResult> {
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { success: false, error: "Не выбрана группа." };
+  }
+
+  const ownership = await validateTeacherOwnsCohort(cid);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const payload: { name?: string; is_chat_enabled?: boolean } = {};
+
+  if (data.name !== undefined) {
+    const groupName = data.name.trim();
+    if (!groupName) {
+      return { success: false, error: "Введите название группы." };
+    }
+    if (groupName.length > 200) {
+      return { success: false, error: "Название не длиннее 200 символов." };
+    }
+    payload.name = groupName;
+  }
+
+  if (data.is_chat_enabled !== undefined) {
+    payload.is_chat_enabled = data.is_chat_enabled;
+  }
+
+  if (Object.keys(payload).length === 0) {
+    return { success: false, error: "Нет данных для обновления." };
+  }
+
+  const supabase = await createClient();
+  const { error: updateError } = await supabase
+    .from("cohorts")
+    .update(payload)
+    .eq("id", cid);
+
+  if (updateError) {
+    console.error("[updateCohortSettings]", updateError.message);
+    return {
+      success: false,
+      error: updateError.message || "Не удалось обновить настройки группы.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cid}`);
+  return { success: true };
+}
+
+export async function deleteCohort(
+  cohortId: string,
+): Promise<DeleteCohortResult> {
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { success: false, error: "Не выбрана группа." };
+  }
+
+  const ownership = await validateTeacherOwnsCohort(cid);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const supabase = await createClient();
+  const { error: deleteError } = await supabase
+    .from("cohorts")
+    .delete()
+    .eq("id", cid);
+
+  if (deleteError) {
+    console.error("[deleteCohort]", deleteError.message);
+    return {
+      success: false,
+      error: deleteError.message || "Не удалось удалить группу.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  redirect("/dashboard/cohorts");
 }
 
 type AssignableContentInput = {
@@ -446,6 +538,7 @@ export type CohortStudentRow = {
   name: string;
   email: string;
   enrolledAt: string;
+  avatarUrl: string | null;
 };
 
 /**
@@ -490,18 +583,24 @@ export async function getCohortStudents(
   const enrollments = enrollmentsData ?? [];
   const userIds = enrollments.map((e) => e.user_id);
 
-  const profileNameByUserId = new Map<string, string | null>();
+  const profileByUserId = new Map<
+    string,
+    { full_name: string | null; avatar_url: string | null }
+  >();
   if (userIds.length > 0) {
     const { data: profileRows, error: profilesError } = await supabase
       .from("profiles")
-      .select("id, full_name")
+      .select("id, full_name, avatar_url")
       .in("id", userIds);
 
     if (profilesError) {
       console.error("[getCohortStudents] profiles", profilesError.message);
     } else {
       for (const p of profileRows ?? []) {
-        profileNameByUserId.set(p.id, p.full_name);
+        profileByUserId.set(p.id, {
+          full_name: p.full_name,
+          avatar_url: p.avatar_url,
+        });
       }
     }
   }
@@ -515,8 +614,9 @@ export async function getCohortStudents(
   const students: CohortStudentRow[] = enrollments.map((row) => {
     const emailRow = emailByUserId.get(row.user_id);
     const email = emailRow?.email?.trim() || "—";
+    const profileRow = profileByUserId.get(row.user_id);
     const fullName =
-      profileNameByUserId.get(row.user_id) ?? emailRow?.full_name ?? null;
+      profileRow?.full_name ?? emailRow?.full_name ?? null;
     return {
       enrollmentId: row.id,
       userId: row.user_id,
@@ -527,6 +627,7 @@ export async function getCohortStudents(
       ),
       email,
       enrolledAt: row.enrolled_at,
+      avatarUrl: profileRow?.avatar_url ?? null,
     };
   });
 

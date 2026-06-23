@@ -522,6 +522,7 @@ export type MatrixGradebookStudent = {
   id: string;
   name: string;
   email: string;
+  avatarUrl: string | null;
 };
 
 export type MatrixGradebookCell = {
@@ -702,21 +703,29 @@ export async function getMatrixGradebookData(
     );
   }
 
-  const profileNameByUserId = new Map<string, string | null>();
+  const profileByUserId = new Map<
+    string,
+    { full_name: string | null; avatar_url: string | null }
+  >();
   if (studentIds.length > 0) {
     const { data: profileRows } = await supabase
       .from("profiles")
-      .select("id, full_name")
+      .select("id, full_name, avatar_url")
       .in("id", studentIds);
     for (const p of profileRows ?? []) {
-      profileNameByUserId.set(p.id, p.full_name);
+      profileByUserId.set(p.id, {
+        full_name: p.full_name,
+        avatar_url: p.avatar_url,
+      });
     }
   }
 
   const students: MatrixGradebookStudent[] = studentIds.map((sid) => {
     const emailRow = emailByUserId.get(sid);
     const email = emailRow?.email?.trim() || "—";
-    const fullName = profileNameByUserId.get(sid) ?? emailRow?.full_name ?? null;
+    const profileRow = profileByUserId.get(sid);
+    const fullName =
+      profileRow?.full_name ?? emailRow?.full_name ?? null;
     return {
       id: sid,
       name: resolveStudentDisplayName(
@@ -725,6 +734,7 @@ export async function getMatrixGradebookData(
         sid,
       ),
       email,
+      avatarUrl: profileRow?.avatar_url ?? null,
     };
   });
 

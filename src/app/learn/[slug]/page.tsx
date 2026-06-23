@@ -101,6 +101,21 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
     : courseEnrollment;
   let teacherId = courseMeta?.teacher_id ?? "";
 
+  let isChatEnabled = true;
+  if (cohortId) {
+    const { data: cohortRow, error: cohortRowError } = await supabase
+      .from("cohorts")
+      .select("is_chat_enabled")
+      .eq("id", cohortId)
+      .maybeSingle();
+
+    if (cohortRowError) {
+      console.error("[LearnCourseEntryPage] cohorts", cohortRowError.message);
+    } else if (cohortRow) {
+      isChatEnabled = cohortRow.is_chat_enabled;
+    }
+  }
+
   if (!teacherId) {
     const { data: courseRow, error: courseMetaError } = await supabase
       .from("courses")
@@ -129,6 +144,7 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
         userDisplayName={displayName}
         cohortId={cohortId}
         teacherId={teacherId}
+        isChatEnabled={isChatEnabled}
         unreadCount={unreadCount}
       />
     </div>

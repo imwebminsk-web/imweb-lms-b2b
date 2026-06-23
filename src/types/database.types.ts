@@ -115,6 +115,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_chat_enabled: boolean
           name: string
           pin_code: string
         }
@@ -123,6 +124,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_chat_enabled?: boolean
           name: string
           pin_code: string
         }
@@ -131,6 +133,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_chat_enabled?: boolean
           name?: string
           pin_code?: string
         }

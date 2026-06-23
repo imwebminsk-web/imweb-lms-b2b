@@ -48,6 +48,7 @@ export type TeacherStudentProgressTableProps = {
   items: StudentProgressItem[];
   viewedStudentId: string;
   viewedStudentName: string;
+  viewedStudentAvatarUrl?: string | null;
 };
 
 /**
@@ -57,11 +58,13 @@ export function TeacherStudentProgressTable({
   items,
   viewedStudentId,
   viewedStudentName,
+  viewedStudentAvatarUrl = null,
 }: TeacherStudentProgressTableProps) {
   const [selectedTest, setSelectedTest] = useState<{
     studentId: string;
     testId: string;
     studentName: string;
+    studentAvatarUrl: string | null;
     testTitle: string;
   } | null>(null);
 
@@ -145,6 +148,7 @@ export function TeacherStudentProgressTable({
                               studentId: viewedStudentId,
                               testId: item.testId!,
                               studentName: viewedStudentName,
+                              studentAvatarUrl: viewedStudentAvatarUrl,
                               testTitle: item.title,
                             })
                           }
@@ -179,6 +183,7 @@ export function TeacherStudentProgressTable({
         studentId={selectedTest?.studentId ?? ""}
         testId={selectedTest?.testId ?? ""}
         studentName={selectedTest?.studentName ?? ""}
+        studentAvatarUrl={selectedTest?.studentAvatarUrl ?? null}
         testTitle={selectedTest?.testTitle ?? ""}
         isTeacher
       />

@@ -27,7 +27,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { GradingDisplay } from "@/components/quiz/GradingDisplay";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { initialsFromDisplayName } from "@/lib/utils/user-utils";
 
 function cellKey(studentId: string, columnId: string): string {
   return `${studentId}:${columnId}`;
@@ -46,6 +52,7 @@ function MatrixCell({
   cell,
   column,
   studentName,
+  studentAvatarUrl,
   onOpenTest,
   onOpenAssignment,
   onOpenGrading,
@@ -53,10 +60,12 @@ function MatrixCell({
   cell: MatrixGradebookCell | undefined;
   column: MatrixGradebookColumn;
   studentName: string;
+  studentAvatarUrl: string | null;
   onOpenTest: (payload: {
     studentId: string;
     testId: string;
     studentName: string;
+    studentAvatarUrl: string | null;
     testTitle: string;
   }) => void;
   onOpenAssignment: (payload: {
@@ -94,6 +103,7 @@ function MatrixCell({
         studentId: cell.studentId,
         testId: cell.testId,
         studentName,
+        studentAvatarUrl,
         testTitle: column.lessonTitle,
       });
       return;
@@ -210,6 +220,7 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
     studentId: string;
     testId: string;
     studentName: string;
+    studentAvatarUrl: string | null;
     testTitle: string;
   } | null>(null);
 
@@ -281,8 +292,19 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
             {students.map((student: MatrixGradebookStudent) => (
               <TableRow key={student.id}>
                 <TableCell className="sticky left-0 z-10 border-r bg-background font-medium">
-                  <div className="max-w-[160px] truncate" title={student.name}>
-                    {student.name}
+                  <div className="flex max-w-[180px] items-center gap-2">
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarImage
+                        src={student.avatarUrl ?? undefined}
+                        alt={student.name}
+                      />
+                      <AvatarFallback className="text-xs">
+                        {initialsFromDisplayName(student.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="truncate" title={student.name}>
+                      {student.name}
+                    </span>
                   </div>
                 </TableCell>
                 {columns.map((col) => {
@@ -297,6 +319,7 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
                         cell={cell}
                         column={col}
                         studentName={student.name}
+                        studentAvatarUrl={student.avatarUrl}
                         onOpenTest={setSelectedTest}
                         onOpenAssignment={setSelectedAssignment}
                         onOpenGrading={(attemptId) => {
@@ -322,6 +345,7 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
         studentId={selectedTest?.studentId ?? ""}
         testId={selectedTest?.testId ?? ""}
         studentName={selectedTest?.studentName ?? ""}
+        studentAvatarUrl={selectedTest?.studentAvatarUrl ?? null}
         testTitle={selectedTest?.testTitle ?? ""}
         isTeacher
       />

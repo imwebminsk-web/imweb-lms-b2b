@@ -1,6 +1,7 @@
 "use client";
 
 import { updateProfileName } from "@/app/actions/profile-actions";
+import { AvatarUpload } from "@/components/dashboard/settings/avatar-upload";
 import { useLanguage } from "@/components/providers/language-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -20,9 +20,12 @@ import type { TranslationKey } from "@/lib/i18n/dict";
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
 
 type SettingsPageContentProps = {
+  userId: string;
   email: string;
   role: ProfileRole;
   defaultFullName: string;
+  avatarUrl: string | null;
+  displayName: string;
   feedbackKey: "saved" | "empty_name" | "update_failed" | null;
 };
 
@@ -40,9 +43,12 @@ function roleLabel(role: ProfileRole, t: (key: TranslationKey) => string): strin
 }
 
 export function SettingsPageContent({
+  userId,
   email,
   role,
   defaultFullName,
+  avatarUrl,
+  displayName,
   feedbackKey,
 }: SettingsPageContentProps) {
   const { t } = useLanguage();
@@ -74,6 +80,12 @@ export function SettingsPageContent({
             <CardDescription>{t("settings.accountDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
+            <AvatarUpload
+              userId={userId}
+              initialAvatarUrl={avatarUrl}
+              displayName={displayName}
+            />
+
             <div className="space-y-2">
               <Label htmlFor="email">{t("settings.email")}</Label>
               <Input
@@ -120,9 +132,6 @@ export function SettingsPageContent({
               <Button type="submit">{t("settings.save")}</Button>
             </form>
           </CardContent>
-          <CardFooter className="text-muted-foreground text-sm">
-            {t("settings.footerNote")}
-          </CardFooter>
         </Card>
       </div>
     </div>

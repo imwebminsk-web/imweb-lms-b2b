@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { SendHorizonal } from "lucide-react";
+import { SendHorizonal, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
+  deleteChatMessage,
   getCohortMessages,
   sendChatMessage,
   type CohortChatMessage,
@@ -13,6 +14,11 @@ import {
 import { markChatAsRead } from "@/app/actions/chat-receipt-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
 import {
   Card,
   CardContent,
@@ -23,11 +29,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { initialsFromDisplayName } from "@/lib/utils/user-utils";
 
 type CohortChatProps = {
   cohortId: string;
   currentUserId: string;
   teacherId: string;
+  isChatEnabled: boolean;
+  isTeacher: boolean;
   title?: string;
   description?: string;
 };
@@ -81,6 +90,8 @@ export function CohortChat({
   cohortId,
   currentUserId,
   teacherId,
+  isChatEnabled,
+  isTeacher,
   title = DEFAULT_CHAT_TITLE,
   description = DEFAULT_CHAT_DESCRIPTION,
 }: CohortChatProps) {
@@ -89,8 +100,10 @@ export function CohortChat({
   const [draft, setDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canCompose = isChatEnabled || isTeacher;
 
   const loadMessages = useCallback(
     async (withLoading = false) => {
@@ -189,7 +202,7 @@ export function CohortChat({
   function handleSend(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || isPending) {
+    if (!text || isPending || !canCompose) {
       return;
     }
 
@@ -201,6 +214,24 @@ export function CohortChat({
       }
       setDraft("");
       scheduleReload();
+    });
+  }
+
+  function handleDeleteMessage(messageId: string) {
+    setDeletingId(messageId);
+    const previousMessages = messages;
+    setMessages((current) => current.filter((message) => message.id !== messageId));
+
+    startTransition(async () => {
+      const result = await deleteChatMessage(messageId);
+      setDeletingId(null);
+      if (!result.success) {
+        setMessages(previousMessages);
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Сообщение удалено");
+      router.refresh();
     });
   }
 
@@ -235,26 +266,50 @@ export function CohortChat({
                     isOwn ? "ml-auto items-end" : "mr-auto items-start",
                   )}
                 >
-                  <div
-                    className={cn(
-                      "text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs",
-                      isOwn ? "justify-end" : "justify-start",
-                    )}
-                  >
-                    <span className="font-medium break-words text-foreground">
-                      {message.authorName}
-                    </span>
-                    {isTeacherMessage ? (
-                      <Badge
-                        variant="secondary"
-                        className="border-primary/20 bg-primary/10 text-primary shrink-0 text-[10px] uppercase tracking-wide"
+                  <div className="group flex flex-row items-center gap-2">
+                    <Avatar className="h-8 w-8 shrink-0">
+                      <AvatarImage
+                        src={message.authorAvatarUrl ?? undefined}
+                        alt={message.authorName}
+                      />
+                      <AvatarFallback className="text-xs">
+                        {initialsFromDisplayName(message.authorName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div
+                      className={cn(
+                        "text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-xs",
+                        isOwn ? "justify-end" : "justify-start",
+                      )}
+                    >
+                      <span className="font-medium break-words text-foreground">
+                        {message.authorName}
+                      </span>
+                      {isTeacherMessage ? (
+                        <Badge
+                          variant="secondary"
+                          className="border-primary/20 bg-primary/10 text-primary shrink-0 text-[10px] uppercase tracking-wide"
+                        >
+                          Преподаватель
+                        </Badge>
+                      ) : null}
+                      <time dateTime={message.createdAt} className="shrink-0">
+                        {formatMessageDate(message.createdAt)}
+                      </time>
+                    </div>
+                    {isTeacher ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                        aria-label="Удалить сообщение"
+                        disabled={isPending || deletingId === message.id}
+                        onClick={() => handleDeleteMessage(message.id)}
                       >
-                        Преподаватель
-                      </Badge>
+                        <Trash2 className="size-3.5" />
+                      </Button>
                     ) : null}
-                    <time dateTime={message.createdAt} className="shrink-0">
-                      {formatMessageDate(message.createdAt)}
-                    </time>
                   </div>
                   <div
                     className={cn(
@@ -275,24 +330,30 @@ export function CohortChat({
           )}
         </div>
 
-        <form onSubmit={handleSend} className="flex gap-2">
-          <Input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Напишите сообщение…"
-            maxLength={2000}
-            disabled={isPending || isLoading}
-            autoComplete="off"
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={isPending || isLoading || draft.trim().length === 0}
-            aria-label="Отправить сообщение"
-          >
-            <SendHorizonal className="size-4" />
-          </Button>
-        </form>
+        {canCompose ? (
+          <form onSubmit={handleSend} className="flex gap-2">
+            <Input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Напишите сообщение…"
+              maxLength={2000}
+              disabled={isPending || isLoading}
+              autoComplete="off"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              disabled={isPending || isLoading || draft.trim().length === 0}
+              aria-label="Отправить сообщение"
+            >
+              <SendHorizonal className="size-4" />
+            </Button>
+          </form>
+        ) : (
+          <p className="text-muted-foreground py-4 text-center text-sm">
+            Чат отключен преподавателем
+          </p>
+        )}
       </CardContent>
     </Card>
   );
