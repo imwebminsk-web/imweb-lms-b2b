@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 
 const empty: SignUpState = {};
 
@@ -26,23 +27,12 @@ export function RegisterForm() {
       <CardHeader>
         <CardTitle>Регистрация</CardTitle>
         <CardDescription>
-          Укажите имя, адрес почты и пароль. После регистрации вы сразу попадёте
-          в личный кабинет.
+          Укажите почту и пароль. После регистрации вы сразу попадёте в личный
+          кабинет.
         </CardDescription>
       </CardHeader>
       <form action={formAction}>
         <CardContent className="flex flex-col gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="full_name">Полное имя</Label>
-            <Input
-              id="full_name"
-              name="full_name"
-              type="text"
-              autoComplete="name"
-              required
-              placeholder="Иван Иванов"
-            />
-          </div>
           <div className="space-y-2">
             <Label htmlFor="email">Электронная почта</Label>
             <Input
@@ -56,10 +46,9 @@ export function RegisterForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Пароль</Label>
-            <Input
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               autoComplete="new-password"
               required
               minLength={6}

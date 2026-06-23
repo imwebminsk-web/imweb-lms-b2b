@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PasswordInput } from "@/components/ui/password-input";
 import { createClient } from "@/lib/supabase/client";
 
 type LoginFormProps = {
@@ -46,18 +49,11 @@ export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
       onSubmit={handleSubmit}
       className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
     >
-      <div className="space-y-1">
-        <h1 className="text-lg font-semibold tracking-tight">Вход</h1>
-        <p className="text-muted-foreground text-sm">
-          Адрес почты и пароль из Supabase Auth
-        </p>
-      </div>
+      <h1 className="text-lg font-semibold tracking-tight">Вход</h1>
 
       <div className="space-y-2">
-        <label htmlFor="email" className="text-sm font-medium">
-          Электронная почта
-        </label>
-        <input
+        <Label htmlFor="email">Электронная почта</Label>
+        <Input
           id="email"
           name="email"
           type="email"
@@ -65,23 +61,18 @@ export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="border-input bg-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
         />
       </div>
 
       <div className="space-y-2">
-        <label htmlFor="password" className="text-sm font-medium">
-          Пароль
-        </label>
-        <input
+        <Label htmlFor="password">Пароль</Label>
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="current-password"
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="border-input bg-background focus-visible:ring-ring h-9 w-full rounded-md border px-3 text-sm outline-none focus-visible:ring-2"
         />
       </div>
 

@@ -11,19 +11,18 @@ export type SignUpState = {
 const initial: SignUpState = {};
 
 /**
- * Регистрация через Supabase Auth; full_name уходит в user_metadata для триггера profiles.
+ * Регистрация через Supabase Auth.
  * При отключённом «Confirm email» сразу выдаётся сессия — редирект на /dashboard.
  */
 export async function signUp(
   _prev: SignUpState,
   formData: FormData,
 ): Promise<SignUpState> {
-  const fullName = String(formData.get("full_name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
 
-  if (!fullName || !email || !password) {
-    return { ...initial, error: "Заполните все поля." };
+  if (!email || !password) {
+    return { ...initial, error: "Укажите почту и пароль." };
   }
 
   if (password.length < 6) {
@@ -35,11 +34,6 @@ export async function signUp(
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: {
-      data: {
-        full_name: fullName,
-      },
-    },
   });
 
   if (error) {

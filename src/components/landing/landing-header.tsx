@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { signOutAction } from "@/app/actions/auth-actions";
 import { ModeToggle } from "@/components/mode-toggle";
 import { buttonVariants } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -68,45 +67,12 @@ export async function LandingHeader() {
 
         <div className="flex shrink-0 items-center gap-2">
           <ModeToggle />
-          {!isAuthed ? (
-            <>
-              <Link
-                href="/login"
-                className={cn(buttonVariants({ size: "sm" }), "rounded-xl")}
-              >
-                Войти
-              </Link>
-              <Link
-                href="/register"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "rounded-xl",
-                )}
-              >
-                Регистрация
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link
-                href="/dashboard"
-                className={cn(buttonVariants({ size: "sm" }), "rounded-xl")}
-              >
-                Личный кабинет
-              </Link>
-              <form action={signOutAction}>
-                <button
-                  type="submit"
-                  className={cn(
-                    buttonVariants({ variant: "outline", size: "sm" }),
-                    "rounded-xl",
-                  )}
-                >
-                  Выйти
-                </button>
-              </form>
-            </>
-          )}
+          <Link
+            href={isAuthed ? "/dashboard" : "/login"}
+            className={cn(buttonVariants({ size: "sm" }), "rounded-xl")}
+          >
+            {isAuthed ? "Личный кабинет" : "Войти"}
+          </Link>
         </div>
       </div>
     </header>
