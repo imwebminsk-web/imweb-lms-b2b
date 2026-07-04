@@ -5,7 +5,7 @@ import { Menu } from "lucide-react";
 import { FontSizeToggler } from "@/components/FontSizeToggler";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { GrowvyMenuIcon } from "@/components/layout/growvy-icons";
-import { ModeToggle } from "@/components/mode-toggle";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useLanguage } from "@/components/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import type { ProfileRole } from "@/lib/dashboard/sidebar-nav";
@@ -66,7 +66,7 @@ export function DashboardTopnav({
           increaseLabel={t("a11y.increaseFont")}
         />
 
-        <ModeToggle ariaLabel={t("a11y.toggleTheme")} />
+        <ThemeToggle />
       </div>
     </header>
   );
