@@ -27,23 +27,23 @@ export function ReviewsCarousel() {
   };
 
   return (
-    <>
+    <div className="flex flex-col">
       <div
         ref={scrollRef}
-        className="mt-12 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="mt-12 flex min-h-0 snap-x snap-mandatory items-start gap-4 overflow-x-auto pb-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         role="region"
         aria-label="Слайдер отзывов учеников"
       >
         {REVIEW_IMAGES.map((src) => (
           <div
             key={src}
-            className="w-full shrink-0 snap-center md:w-[calc(50%-1rem)] lg:w-[calc(50%-1rem)]"
+            className="h-auto min-h-0 w-full shrink-0 snap-center md:w-[calc(50%-1rem)] lg:w-[calc(50%-1rem)]"
           >
             <Image
               src={src}
               alt="Отзыв ученика"
               width={600}
-              height={1200}
+              height={400}
               sizes="(max-width: 768px) 100vw, 50vw"
               className="h-auto w-full rounded-xl border border-slate-200 bg-white p-2 shadow-sm sm:p-3"
             />
@@ -69,6 +69,6 @@ export function ReviewsCarousel() {
           <ChevronRight className="size-6" aria-hidden />
         </button>
       </div>
-    </>
+    </div>
   );
 }
