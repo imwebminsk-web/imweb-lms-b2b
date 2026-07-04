@@ -40,8 +40,8 @@ export function PublicCourseCard({ course }: PublicCourseCardProps) {
   const audienceLabel = course.marketing_audience?.trim();
 
   return (
-    <article className="flex h-full flex-col rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
-      <div className="relative mb-4 aspect-[3/2] w-full overflow-hidden rounded-lg bg-muted">
+    <article className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+      <div className="relative mb-4 aspect-[3/2] w-full overflow-hidden rounded-lg bg-muted dark:bg-slate-800">
         {course.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -50,34 +50,34 @@ export function PublicCourseCard({ course }: PublicCourseCardProps) {
             className="size-full object-cover"
           />
         ) : (
-          <div className="text-muted-foreground flex size-full items-center justify-center">
+          <div className="text-[#001352] dark:text-slate-300 flex size-full items-center justify-center">
             <BookOpenIcon className="size-12 opacity-35" aria-hidden />
           </div>
         )}
 
         {audienceLabel ? (
-          <Badge className="absolute top-3 left-3 rounded-md border-0 bg-white/95 px-2.5 py-1 text-xs font-medium text-primary shadow-sm">
+          <Badge className="absolute top-3 left-3 rounded-md border-0 bg-white/95 px-2.5 py-1 text-xs font-medium text-[#001352] shadow-sm dark:bg-slate-800 dark:text-slate-300">
             {audienceLabel}
           </Badge>
         ) : null}
       </div>
 
       <div className="flex flex-1 flex-col gap-2">
-        <h3 className="line-clamp-2 text-lg leading-snug font-semibold tracking-tight text-foreground">
+        <h3 className="line-clamp-2 text-lg leading-snug font-semibold tracking-tight text-[#001352] dark:text-white">
           {course.title}
         </h3>
 
         {meta ? (
-          <p className="text-muted-foreground text-xs font-medium">{meta}</p>
+          <p className="text-[#001352] dark:text-slate-300 text-xs font-medium">{meta}</p>
         ) : null}
 
-        <p className="text-muted-foreground line-clamp-3 text-sm leading-relaxed">
+        <p className="text-[#001352] dark:text-slate-300 line-clamp-3 text-sm leading-relaxed">
           {description}
         </p>
 
-        <p className="text-sm text-foreground">
-          <span className="text-muted-foreground">Цена: </span>
-          <span className="font-medium tabular-nums">
+        <p className="text-sm text-[#001352] dark:text-slate-300">
+          <span className="text-[#001352] dark:text-slate-300">Цена: </span>
+          <span className="text-[#001352] dark:text-slate-300 font-medium tabular-nums">
             {formatCoursePrice(course.price)}
           </span>
         </p>

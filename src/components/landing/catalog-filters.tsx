@@ -50,8 +50,8 @@ function FilterPill({
       className={cn(
         "rounded-full border px-4 py-2 text-sm font-medium transition-colors",
         isActive
-          ? "border-primary bg-primary text-primary-foreground shadow-sm"
-          : "border-border bg-transparent text-foreground hover:bg-secondary",
+          ? "border-[#001352] bg-[#001352] text-white shadow-sm"
+          : "border-[#e3efff] bg-[#e3efff] text-[#001352] hover:bg-[#d8e8ff]",
       )}
     >
       {label}
@@ -138,6 +138,23 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
     [audienceSelect, pushParams],
   );
 
+  const hasNoActiveFilters =
+    format === "" &&
+    language === "" &&
+    audienceSelect === "" &&
+    age === "" &&
+    level === "";
+
+  const handleClearAllFilters = useCallback(() => {
+    pushParams({
+      format: null,
+      language: null,
+      audience: null,
+      age: null,
+      level: null,
+    });
+  }, [pushParams]);
+
   return (
     <div
       role="toolbar"
@@ -145,6 +162,11 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
       className="flex w-full flex-col gap-4"
     >
       <PillRow>
+        <FilterPill
+          label="Все"
+          isActive={hasNoActiveFilters}
+          onClick={handleClearAllFilters}
+        />
         {grouped.format.map((row) => (
           <FilterPill
             key={row.id}

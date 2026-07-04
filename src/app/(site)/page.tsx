@@ -13,6 +13,7 @@ import {
   CatalogFiltersFallback,
 } from "@/components/landing/catalog-filters";
 import { LandingFaq } from "@/components/landing/landing-faq";
+import { ContactFormBlock } from "@/components/landing/contact-form-block";
 import { LandingHeader } from "@/components/landing/landing-header";
 import { LandingHero } from "@/components/landing/landing-hero";
 import { PublishedCoursesStorefront } from "@/components/landing/published-courses-storefront";
@@ -29,7 +30,7 @@ type CourseLevel = Database["public"]["Enums"]["course_level"];
 export const metadata: Metadata = {
   title: "New Education — курсы языков в Минске | Новое образование",
   description:
-    "Разговорные курсы иностранных языков в Минске. Оксфордская методика, малые группы, гибкая оплата. Первое занятие бесплатно.",
+    "Разговорные курсы иностранных языков в Минске. Оксфордская коммуникативная методика, малые группы, гибкая оплата. Первое занятие бесплатно.",
 };
 
 export default async function Home({
@@ -115,9 +116,10 @@ export default async function Home({
   const courses = data ?? [];
 
   return (
-    <div className="bg-background flex min-h-screen flex-col">
-      <LandingHeader />
-      <main className="flex-1">
+    <div className="flex min-h-screen flex-col">
+      <div className="bg-card text-[#001352] flex flex-1 flex-col">
+        <LandingHeader />
+        <main className="flex-1">
         <LandingHero />
         <section
           id="course-catalog"
@@ -140,7 +142,13 @@ export default async function Home({
         <LandingSalesCta />
         <LandingReviews />
         <LandingFaq />
-      </main>
+        <section className="container mx-auto max-w-6xl px-4 py-16">
+          <div className="rounded-3xl bg-[#e3efff]/50 p-8 sm:p-12">
+            <ContactFormBlock />
+          </div>
+        </section>
+        </main>
+      </div>
       <LandingFooter />
     </div>
   );

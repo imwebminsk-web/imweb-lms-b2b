@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
 
@@ -18,6 +19,16 @@ function readAssignmentInstructionsFromJson(
   }
   const rec = c as Record<string, unknown>;
   return typeof rec.instructions === "string" ? rec.instructions.trim() : "";
+}
+
+/** Статус сдачи: журнальные задания ждут проверки, остальные завершаются сразу. */
+function submissionOutcomeForBlock(
+  blockContent: Database["public"]["Tables"]["lesson_blocks"]["Row"]["content"],
+): { status: "pending" | "approved"; grade: null } {
+  if (readBlockSaveToJournal(blockContent)) {
+    return { status: "pending", grade: null };
+  }
+  return { status: "approved", grade: null };
 }
 
 /** teacher_id курса, к которому относится блок урока (для проверки прав преподавателя). */
@@ -115,13 +126,15 @@ export async function submitAssignment(
 
   const { data: block, error: blockError } = await supabase
     .from("lesson_blocks")
-    .select("id, type")
+    .select("id, type, content")
     .eq("id", idParsed.data)
     .maybeSingle();
 
   if (blockError || !block || block.type !== "assignment") {
     throw new Error("Блок не является заданием");
   }
+
+  const submissionOutcome = submissionOutcomeForBlock(block.content);
 
   const { data: existing, error: existingError } = await supabase
     .from("assignment_submissions")
@@ -146,8 +159,8 @@ export async function submitAssignment(
         .from("assignment_submissions")
         .update({
           content: trimmed,
-          status: "pending",
-          grade: null,
+          status: submissionOutcome.status,
+          grade: submissionOutcome.grade,
           teacher_comment: null,
         })
         .eq("id", existing.id)
@@ -166,7 +179,8 @@ export async function submitAssignment(
     lesson_block_id: idParsed.data,
     student_id: user.id,
     content: trimmed,
-    status: "pending",
+    status: submissionOutcome.status,
+    grade: submissionOutcome.grade,
   });
 
   if (insertError) {

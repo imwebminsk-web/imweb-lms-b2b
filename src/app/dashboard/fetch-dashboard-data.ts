@@ -265,7 +265,8 @@ async function loadTeacherAssignmentBlockContextMap(
     `,
     )
     .eq("type", "assignment")
-    .eq("lessons.modules.courses.teacher_id", userId);
+    .eq("lessons.modules.courses.teacher_id", userId)
+    .eq("content->>save_to_journal", "true");
 
   if (error) {
     console.error(

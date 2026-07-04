@@ -22,11 +22,11 @@ export function PublishedCoursesStorefront({
 }: PublishedCoursesStorefrontProps) {
   return (
     <div className="min-w-0 flex-1">
-      <div className="mx-auto max-w-2xl text-center lg:mx-0 lg:max-w-none lg:text-left">
-        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+      <div className="text-[#001352] mx-auto max-w-2xl text-center lg:mx-0 lg:max-w-none lg:text-left">
+        <h2 className="text-[#001352] dark:text-white text-3xl font-bold tracking-tight sm:text-4xl">
           Каталог курсов
         </h2>
-        <p className="text-muted-foreground mt-3 text-lg">
+        <p className="text-[#001352] dark:text-white/80 mt-3 text-lg">
           Выберите программу и перейдите на страницу курса, чтобы узнать
           подробности и программу занятий.
         </p>
@@ -35,7 +35,7 @@ export function PublishedCoursesStorefront({
       {toolbar ? <div className="mt-8">{toolbar}</div> : null}
 
       {courses.length === 0 ? (
-        <p className="text-muted-foreground mx-auto mt-16 max-w-md text-center text-base lg:mx-0 lg:text-left">
+        <p className="text-[#001352] dark:text-white/80 mx-auto mt-16 max-w-md text-center text-base lg:mx-0 lg:text-left">
           {filtersYieldEmpty
             ? "По выбранным фильтрам курсов нет. Попробуйте изменить условия или сбросить фильтры."
             : "Курсы пока не добавлены. Загляните позже!"}
