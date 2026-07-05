@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -43,7 +45,11 @@ export function ContactFormBlock({ className }: ContactFormBlockProps) {
           Отправить
         </Button>
         <p className="mt-2 text-center text-xs text-[#001352]/60">
-          Нажимая на кнопку, я соглашаюсь на обработку персональных данных.
+          Нажимая на кнопку, я соглашаюсь на{" "}
+          <Link href="/privacy-agreement" className="underline hover:text-primary">
+            обработку персональных данных
+          </Link>
+          .
         </p>
       </form>
     </div>

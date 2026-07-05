@@ -1,43 +1,50 @@
 "use client";
 
 import Image from "next/image";
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 const REVIEW_IMAGES = [
+  "/review-7.jpg",
   "/review-8.jpg",
   "/review-9.jpg",
   "/review-10.jpg",
   "/review-11.jpg",
   "/review-12.jpg",
   "/review-13.jpg",
-  "/review-14.jpg",
-] as const;
+];
 
 export function ReviewsCarousel() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const scroll = (direction: "left" | "right") => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({
-        left: direction === "left" ? -600 : 600,
-        behavior: "smooth",
-      });
-    }
-  };
+  const scroll = useCallback((direction: "left" | "right") => {
+    const container = scrollRef.current;
+    if (!container) return;
+
+    const slides = container.querySelectorAll<HTMLElement>("[data-review-slide]");
+    if (slides.length < 2) return;
+
+    const step = slides[1].offsetLeft - slides[0].offsetLeft;
+
+    container.scrollBy({
+      left: direction === "left" ? -step : step,
+      behavior: "smooth",
+    });
+  }, []);
 
   return (
     <div className="flex flex-col">
       <div
         ref={scrollRef}
-        className="mt-12 flex min-h-0 snap-x snap-mandatory items-start gap-4 overflow-x-auto pb-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="mt-12 flex min-h-0 flex-row flex-nowrap snap-x snap-mandatory items-start gap-4 overflow-x-auto pb-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         role="region"
         aria-label="Слайдер отзывов учеников"
       >
         {REVIEW_IMAGES.map((src) => (
           <div
             key={src}
-            className="h-auto min-h-0 w-full shrink-0 snap-center md:w-[calc(50%-1rem)] lg:w-[calc(50%-1rem)]"
+            data-review-slide
+            className="h-auto min-h-0 w-full shrink-0 snap-start md:w-[calc(50%-0.5rem)]"
           >
             <Image
               src={src}
