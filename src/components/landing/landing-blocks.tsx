@@ -203,7 +203,7 @@ export function LandingSalesCta() {
 
 export function LandingReviews() {
   return (
-    <section className="border-t py-16 sm:py-20">
+    <section id="reviews" className="border-t py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <h2 className="text-[#001352] dark:text-white text-center text-3xl font-bold tracking-tight sm:text-4xl">
           Отзывы учеников
@@ -219,30 +219,30 @@ export function LandingReviews() {
 
 export function LandingFooter() {
   return (
-    <footer className="text-[#001352] dark:text-[#001352] border-t bg-white py-12">
+    <footer className="border-t bg-slate-100 py-12 text-sm text-[#001352] dark:bg-slate-900 dark:text-slate-300">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         <div>
-          <p className="text-[#001352] text-lg font-bold">NEW EDUCATION.</p>
-          <p className="text-[#001352] mt-2 text-sm">
+          <p className="font-bold text-[#001352] dark:text-white">NEW EDUCATION</p>
+          <p className="mt-2 text-[#001352] dark:text-slate-300">
             Учебный центр «Новое образование» — разговорные курсы иностранных языков в Минске
           </p>
           <a
             href="https://new-edu.by/"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[#001352] mt-3 inline-flex items-center gap-1 text-sm font-medium hover:underline"
+            className="mt-3 inline-flex items-center gap-1 font-medium text-[#001352] hover:underline dark:text-slate-300 dark:hover:text-white"
           >
             <Globe className="size-4" aria-hidden />
             new-edu.by
           </a>
         </div>
         <div>
-          <p className="text-[#001352] text-sm font-semibold">Разделы</p>
-          <ul className="text-[#001352] mt-3 space-y-2 text-sm">
+          <p className="font-semibold text-[#001352] dark:text-white">Разделы</p>
+          <ul className="mt-3 space-y-2 text-[#001352] dark:text-slate-300">
             <li>
               <Link
                 href="#course-catalog"
-                className="text-[#001352] hover:text-[#001352]/80"
+                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               >
                 Курсы
               </Link>
@@ -250,32 +250,33 @@ export function LandingFooter() {
             <li>
               <Link
                 href="#teachers"
-                className="text-[#001352] hover:text-[#001352]/80"
+                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               >
                 Преподаватели
               </Link>
             </li>
             <li>
-              <Link href="#faq" className="text-[#001352] hover:text-[#001352]/80">
+              <Link
+                href="#faq"
+                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+              >
                 FAQ
               </Link>
             </li>
           </ul>
         </div>
         <div>
-          <p className="text-[#001352] text-sm font-semibold">Контакты</p>
-          <ul className="text-[#001352] mt-3 space-y-3 text-sm">
+          <p className="font-semibold text-[#001352] dark:text-white">Контакты</p>
+          <ul className="mt-3 space-y-3 text-[#001352] dark:text-slate-300">
             <li className="flex items-start gap-2">
-              <MapPin className="text-[#001352] mt-0.5 size-4 shrink-0" aria-hidden />
-              <span className="text-[#001352]">
-                г. Минск, ул. Кальварийская, 25, каб. 320
-              </span>
+              <MapPin className="mt-0.5 size-4 shrink-0 text-[#001352] dark:text-slate-300" aria-hidden />
+              <span>г. Минск, ул. Кальварийская, 25, каб. 320</span>
             </li>
             <li className="flex items-center gap-2">
-              <Phone className="text-[#001352] size-4 shrink-0" aria-hidden />
+              <Phone className="size-4 shrink-0 text-[#001352] dark:text-slate-300" aria-hidden />
               <a
                 href="tel:+375291187722"
-                className="text-[#001352] hover:text-[#001352]/80"
+                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               >
                 +375 29 118-77-22
               </a>
@@ -286,7 +287,7 @@ export function LandingFooter() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="WhatsApp"
-                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               >
                 <WhatsAppIcon />
                 <span>WhatsApp</span>
@@ -296,7 +297,7 @@ export function LandingFooter() {
               <a
                 href="viber://chat?number=%2B375291187722"
                 aria-label="Viber"
-                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               >
                 <ViberIcon />
                 <span>Viber</span>
@@ -308,7 +309,7 @@ export function LandingFooter() {
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Telegram"
-                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               >
                 <TelegramIcon />
                 <span>Telegram</span>
@@ -317,14 +318,14 @@ export function LandingFooter() {
           </ul>
         </div>
         <div>
-          <p className="text-[#001352] text-sm font-semibold">Мы в сети</p>
+          <p className="font-semibold text-[#001352] dark:text-white">Мы в сети</p>
           <div className="mt-3 flex flex-col gap-3">
             <a
               href="https://ok.ru/newedu"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Одноклассники"
-              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
             >
               <OkIcon />
               <span>Одноклассники</span>
@@ -334,7 +335,7 @@ export function LandingFooter() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Вконтакте"
-              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
             >
               <VkIcon />
               <span>Вконтакте</span>
@@ -343,7 +344,7 @@ export function LandingFooter() {
               href="https://www.facebook.com/newedutc"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               aria-label="Facebook"
             >
               <Facebook className="h-5 w-5" />
@@ -353,7 +354,7 @@ export function LandingFooter() {
               href="https://x.com/newedu_by"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               aria-label="X (Twitter)"
             >
               <Twitter className="h-5 w-5" />
@@ -363,7 +364,7 @@ export function LandingFooter() {
               href="https://www.instagram.com/new_edu.by/"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               aria-label="Instagram"
             >
               <Instagram className="h-5 w-5" />
@@ -373,7 +374,7 @@ export function LandingFooter() {
               href="https://www.youtube.com/channel/UCuDzA-nMw5rX4J6Z4p-OubQ"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80"
+              className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               aria-label="YouTube"
             >
               <Youtube className="h-5 w-5" />
@@ -382,7 +383,7 @@ export function LandingFooter() {
           </div>
         </div>
       </div>
-      <p className="text-[#001352] mt-10 text-center text-xs">
+      <p className="mt-10 text-center text-[#001352] dark:text-slate-400">
         © 2013-2026 Учебный центр «Новое образование»
       </p>
     </footer>

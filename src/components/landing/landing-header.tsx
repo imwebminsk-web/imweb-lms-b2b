@@ -15,7 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
 const navLinkClassName =
-  "text-[#001352] dark:text-white text-sm font-medium transition-colors hover:text-[#001352]/80 dark:hover:text-white/80";
+  "text-[#001352] dark:text-white text-base font-medium transition-colors hover:text-[#001352]/80 dark:hover:text-white/80";
 
 function WhatsAppIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
@@ -51,12 +51,12 @@ export async function LandingHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card shadow-sm">
-      <div className="relative flex w-full flex-col items-center justify-center overflow-hidden bg-[#16a085] px-4 py-2 sm:flex-row sm:py-3">
-        <div className="relative mx-auto flex w-full max-w-6xl flex-col items-center justify-center gap-3">
-          <div className="flex flex-col items-center justify-center gap-2 sm:flex-row sm:items-center">
+      <div className="w-full bg-gradient-to-r from-blue-50 to-indigo-100 px-4 py-2 dark:from-slate-800 dark:to-slate-900 sm:py-3">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center justify-between gap-3 sm:flex-row lg:relative lg:justify-center">
+          <div className="flex flex-row items-center justify-center gap-2">
             <div className="flex flex-col items-center text-center sm:items-end sm:text-right">
               <div>
-                <span className="text-lg font-bold text-[#001352] sm:text-xl">
+                <span className="text-lg font-bold text-slate-800 dark:text-white sm:text-xl">
                   Скидка до{" "}
                 </span>
                 <span className="text-xl font-black text-red-600 sm:text-2xl">
@@ -73,7 +73,7 @@ export async function LandingHeader() {
             />
           </div>
 
-          <div className="mt-3 flex flex-row items-center justify-center gap-2 sm:absolute sm:right-4 sm:top-1/2 sm:mt-0 sm:-translate-y-1/2 lg:right-8">
+          <div className="flex flex-row flex-wrap items-center justify-center gap-2 sm:justify-end lg:absolute lg:right-4 lg:top-1/2 lg:-translate-y-1/2">
             <Link
               href="/platform"
               className="h-auto whitespace-nowrap rounded-lg bg-[#e3efff] px-2 py-1 text-[11px] font-semibold text-[#001352] transition-colors hover:bg-[#d8e8ff] sm:text-xs"
@@ -109,8 +109,13 @@ export async function LandingHeader() {
               </NavigationMenuLink>
             </NavigationMenuItem>
             <NavigationMenuItem>
+              <NavigationMenuLink className={navLinkClassName} href="#reviews">
+                Отзывы
+              </NavigationMenuLink>
+            </NavigationMenuItem>
+            <NavigationMenuItem>
               <NavigationMenuLink className={navLinkClassName} href="#faq">
-                FAQ
+                Частые вопросы
               </NavigationMenuLink>
             </NavigationMenuItem>
           </NavigationMenuList>
@@ -119,7 +124,7 @@ export async function LandingHeader() {
         <div className="hidden shrink-0 flex-col items-end gap-0.5 text-right text-xs font-medium lg:flex">
           <a
             href="tel:+375291187722"
-            className="whitespace-nowrap text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-white dark:hover:text-white/80"
+            className="whitespace-nowrap text-[#001352] text-sm font-semibold transition-colors hover:text-[#001352]/80 dark:text-white dark:hover:text-white/80"
           >
             +375 29 118-77-22
           </a>
@@ -130,14 +135,14 @@ export async function LandingHeader() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="WhatsApp"
-              className="text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-white dark:hover:text-white/80"
+              className="text-[#2cb742] transition-opacity hover:opacity-80"
             >
               <WhatsAppIcon className="h-6 w-6" />
             </a>
             <a
               href="viber://chat?number=%2B375291187722"
               aria-label="Viber"
-              className="text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-white dark:hover:text-white/80"
+              className="text-[#7360F2] transition-opacity hover:opacity-80"
             >
               <ViberIcon className="h-6 w-6" />
             </a>
@@ -146,7 +151,7 @@ export async function LandingHeader() {
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Telegram"
-              className="text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-white dark:hover:text-white/80"
+              className="text-[#26A5E4] transition-opacity hover:opacity-80"
             >
               <TelegramIcon className="h-6 w-6" />
             </a>
