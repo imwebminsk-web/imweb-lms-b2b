@@ -1,9 +1,12 @@
 import Image from "next/image";
-import Link from "next/link";
 
+import { HelpDialog } from "@/components/landing/help-dialog";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+const primaryCtaClassName =
+  "bg-[#001352] text-white hover:bg-[#0a1d5d]";
 
 export function LandingHero() {
   return (
@@ -36,21 +39,14 @@ export function LandingHero() {
             первого месяца.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="#course-catalog"
-              className={cn(buttonVariants({ size: "lg" }))}
-            >
-              Начать учиться
-            </Link>
-            <Link
-              href="#teachers"
+            <HelpDialog
               className={cn(
-                buttonVariants({ variant: "outline", size: "lg" }),
-                "bg-[#e3efff] text-[#001352] hover:bg-[#d8e8ff]",
+                buttonVariants({ size: "lg" }),
+                primaryCtaClassName,
               )}
             >
-              Наши преподаватели
-            </Link>
+              Помогите с выбором
+            </HelpDialog>
           </div>
         </div>
       </div>
