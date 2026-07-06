@@ -99,7 +99,7 @@ export function LandingBenefits() {
     <section className="bg-muted/30 py-16 sm:py-20">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <h2 className="text-[#001352] dark:text-white text-center text-3xl font-bold tracking-tight sm:text-4xl">
-          Почему New Education
+          Почему NEW EDUCATION
         </h2>
         <ul className="mt-12 grid gap-8 md:grid-cols-3">
           {BENEFITS.map((item) => (
@@ -209,7 +209,7 @@ export function LandingReviews() {
           Отзывы учеников
         </h2>
         <p className="text-[#001352] dark:text-white mt-2 mb-8 text-base sm:text-lg">
-          Вот реальные отзывы из разных источников на учебный центр NEW EDUCATION:
+          Вот реальные отзывы из разных источников на Учебный центр NEW EDUCATION:
         </p>
         <ReviewsCarousel />
       </div>
