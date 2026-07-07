@@ -850,6 +850,19 @@ export function QuizPlayer({
             {t("quiz.answerAlreadySent")}
           </p>
         )}
+
+        {isQuizFullyAnswered(questions, draftsByQuestionId, submittedQuestionIds) && (
+          <Button
+            type="button"
+            size="lg"
+            variant="default"
+            className="min-h-11 w-full sm:w-auto md:min-h-12 bg-emerald-600 hover:bg-emerald-700 text-white"
+            disabled={isPending || finished}
+            onClick={handleFinishTestClick}
+          >
+            {t("quiz.finishTest")}
+          </Button>
+        )}
       </div>
 
       <AlertDialog open={finishDialogOpen} onOpenChange={setFinishDialogOpen}>
