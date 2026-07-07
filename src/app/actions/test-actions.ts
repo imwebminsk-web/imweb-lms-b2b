@@ -1197,6 +1197,59 @@ export async function getOrCreateAttempt(
   };
 }
 
+/** ID вопросов с сохранёнными ответами в попытке `in_progress` (для гидрации QuizPlayer). */
+export async function getSubmittedQuestionIdsForAttempt(
+  attemptId: string,
+): Promise<
+  | { success: true; questionIds: string[] }
+  | { success: false; error: string }
+> {
+  const idResult = attemptIdSchema.safeParse(attemptId);
+  if (!idResult.success) {
+    return { success: false, error: "Некорректный ID попытки" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: attempt, error: attemptError } = await supabase
+    .from("student_attempts")
+    .select("id, student_id, status")
+    .eq("id", idResult.data)
+    .maybeSingle();
+
+  if (attemptError || !attempt) {
+    return { success: false, error: "Попытка не найдена" };
+  }
+
+  if (attempt.student_id !== user.id) {
+    return { success: false, error: "Нет доступа к этой попытке" };
+  }
+
+  if (attempt.status !== "in_progress") {
+    return { success: true, questionIds: [] };
+  }
+
+  const { data: rows, error: answersError } = await supabase
+    .from("attempt_answers")
+    .select("question_id")
+    .eq("attempt_id", idResult.data);
+
+  if (answersError) {
+    return { success: false, error: answersError.message };
+  }
+
+  const questionIds = [
+    ...new Set((rows ?? []).map((row) => row.question_id)),
+  ];
+  return { success: true, questionIds };
+}
+
 /**
  * Песочница преподавателя: удаляет все предыдущие попытки текущего пользователя
  * по этому тесту (каскадом уходят `attempt_answers`) и создаёт новую тренировочную.

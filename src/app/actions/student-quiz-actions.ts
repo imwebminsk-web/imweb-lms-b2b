@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import {
+  getSubmittedQuestionIdsForAttempt,
   getTestWithQuestions,
   type SafeTestQuestion,
 } from "@/app/actions/test-actions";
@@ -19,6 +20,7 @@ export type InitStudentQuizSuccess = {
   test: { title: string; description: string | null; isForKids: boolean; timeLimitMinutes: number };
   questions: SafeTestQuestion[];
   attemptId: string;
+  initialSubmittedIds: string[];
 };
 
 export type InitStudentQuizResult =
@@ -172,6 +174,9 @@ export async function initStudentQuiz(
     }
   }
 
+  const submittedRes = await getSubmittedQuestionIdsForAttempt(attemptId);
+  const initialSubmittedIds = submittedRes.success ? submittedRes.questionIds : [];
+
   return {
     success: true,
     test: {
@@ -182,6 +187,7 @@ export async function initStudentQuiz(
     },
     questions: data.questions,
     attemptId,
+    initialSubmittedIds,
   };
 }
 

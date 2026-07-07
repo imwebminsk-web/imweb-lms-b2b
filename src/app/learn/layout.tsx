@@ -7,7 +7,9 @@ export default function LearnLayout({ children }: { children: ReactNode }) {
   return (
     <LanguageProvider role="student">
       <GlobalChatListener />
-      <div className="h-full overflow-hidden">{children}</div>
+      <div className="flex h-full min-h-0 flex-col overflow-y-auto overscroll-y-contain">
+        {children}
+      </div>
     </LanguageProvider>
   );
 }

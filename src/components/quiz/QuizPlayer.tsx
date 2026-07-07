@@ -161,6 +161,8 @@ export type QuizPlayerProps = {
   focusedMode?: boolean;
   /** Выход из полноэкранного режима (черновик попытки сохраняется на сервере). */
   onExit?: () => void;
+  /** ID вопросов, ответы на которые уже сохранены в БД для текущей попытки. */
+  initialSubmittedIds?: string[];
 };
 
 export function QuizPlayer({
@@ -173,6 +175,7 @@ export function QuizPlayer({
   isSandbox = false,
   focusedMode = false,
   onExit,
+  initialSubmittedIds = [],
 }: QuizPlayerProps) {
   const { t } = useLanguage();
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -180,7 +183,7 @@ export function QuizPlayer({
     Record<string, QuestionDraft>
   >({});
   const [submittedQuestionIds, setSubmittedQuestionIds] = useState<Set<string>>(
-    () => new Set(),
+    () => new Set(initialSubmittedIds),
   );
   const [actionError, setActionError] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
@@ -350,6 +353,9 @@ export function QuizPlayer({
       isQuizFullyAnswered(questions, draftsByQuestionId, submittedQuestionIds),
     [questions, draftsByQuestionId, submittedQuestionIds],
   );
+
+  const isAllStrictlyAnswered =
+    submittedQuestionIds.size === questions.length;
 
   const finalizeQuiz = useCallback(() => {
     if (finishingRef.current || finished) return;
@@ -613,9 +619,14 @@ export function QuizPlayer({
         <Button
           ref={finishButtonRef}
           type="button"
-          variant="outline"
+          variant={isAllStrictlyAnswered ? "default" : "outline"}
           size="sm"
-          className="border-destructive/40 text-destructive hover:bg-destructive/10 shrink-0"
+          className={cn(
+            "shrink-0",
+            isAllStrictlyAnswered
+              ? "bg-emerald-600 text-white hover:bg-emerald-700"
+              : "border-destructive/40 text-destructive hover:bg-destructive/10",
+          )}
           disabled={isPending || finished}
           onClick={handleFinishTestClick}
         >
@@ -851,7 +862,7 @@ export function QuizPlayer({
           </p>
         )}
 
-        {isQuizFullyAnswered(questions, draftsByQuestionId, submittedQuestionIds) && (
+        {isAllStrictlyAnswered && (
           <Button
             type="button"
             size="lg"

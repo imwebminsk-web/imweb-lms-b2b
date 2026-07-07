@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { getOrCreateAttempt, getTestWithQuestions } from "@/app/actions/test-actions";
+import { getOrCreateAttempt, getSubmittedQuestionIdsForAttempt, getTestWithQuestions } from "@/app/actions/test-actions";
 import { QuizPlayer } from "@/components/quiz/QuizPlayer";
 import { WithSiteHeader } from "@/components/site/with-site-header";
 
@@ -96,6 +96,11 @@ export default async function TestViewPage({ params }: PageProps) {
 
   const { data } = res;
   const attempt = await getOrCreateAttempt(id);
+  const submittedRes = attempt.success
+    ? await getSubmittedQuestionIdsForAttempt(attempt.attemptId)
+    : null;
+  const initialSubmittedIds =
+    submittedRes?.success === true ? submittedRes.questionIds : [];
 
   return (
     <WithSiteHeader>
@@ -135,6 +140,7 @@ export default async function TestViewPage({ params }: PageProps) {
           questions={data.questions}
           isForKids={data.is_for_kids}
           timeLimitMinutes={data.time_limit ?? 0}
+          initialSubmittedIds={initialSubmittedIds}
         />
       )}
     </main>

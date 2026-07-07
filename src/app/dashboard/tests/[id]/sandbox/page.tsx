@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import {
+  getSubmittedQuestionIdsForAttempt,
   getTestWithQuestions,
   resetAndCreatePreviewAttempt,
 } from "@/app/actions/test-actions";
@@ -96,6 +97,11 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
   }
 
   const { data } = testRes;
+  const submittedRes = attempt.success
+    ? await getSubmittedQuestionIdsForAttempt(attempt.attemptId)
+    : null;
+  const initialSubmittedIds =
+    submittedRes?.success === true ? submittedRes.questionIds : [];
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 p-6">
@@ -138,6 +144,7 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
           questions={data.questions}
           isForKids={data.is_for_kids}
           timeLimitMinutes={data.time_limit ?? 0}
+          initialSubmittedIds={initialSubmittedIds}
         />
       )}
     </main>

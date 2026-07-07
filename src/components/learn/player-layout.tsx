@@ -211,7 +211,7 @@ export function PlayerLayout({
   }, [sortedMods, activeLessonId]);
 
   return (
-    <div className="bg-background flex min-h-screen flex-col lg:flex-row">
+    <div className="bg-background flex h-full min-h-0 flex-col lg:flex-row">
       <aside
         className="border-border bg-muted/15 sticky top-0 z-30 flex max-h-[40vh] flex-col border-b lg:fixed lg:left-0 lg:h-screen lg:max-h-none lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0"
         aria-label={t("lesson_view.curriculumAria")}
@@ -314,7 +314,7 @@ export function PlayerLayout({
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 lg:ml-72">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto lg:ml-72">
         <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-8 lg:px-8 lg:py-10">
           <header className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight lg:text-3xl">
