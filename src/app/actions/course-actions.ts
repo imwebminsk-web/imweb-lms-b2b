@@ -236,7 +236,6 @@ export async function createCourse(
 }
 
 type CourseStatus = Database["public"]["Enums"]["course_status"];
-type CourseLevel = Database["public"]["Enums"]["course_level"];
 type TargetAudience = Database["public"]["Enums"]["target_audience"];
 
 const DURATION_UNIT = new Set(["hours", "weeks", "months"]);
@@ -325,8 +324,28 @@ export async function updateCourse(
     return { error: "Некорректный язык курса." };
   }
 
-  let level: CourseLevel | null = null;
-  if (marketing_audience === "Взрослые") {
+  const delivery_format =
+    deliveryParsed.data.length > 0 ? deliveryParsed.data : null;
+  const language = languageParsed.data.length > 0 ? languageParsed.data : null;
+
+  let target_audience: TargetAudience = "adults";
+  if (marketing_audience) {
+    const supabase = await createClient();
+    const { data: tax } = await supabase
+      .from("taxonomies")
+      .select("value")
+      .eq("id", marketing_audience)
+      .maybeSingle();
+    
+    if (tax?.value === "children") {
+      target_audience = "kids";
+    } else if (tax?.value === "adults") {
+      target_audience = "adults";
+    }
+  }
+
+  let level: string | null = null;
+  if (target_audience === "adults") {
     if (levelParsed.data === "") {
       return { error: "Выберите уровень CEFR для аудитории «Взрослые»." };
     }
@@ -334,7 +353,7 @@ export async function updateCourse(
   }
 
   let age_group: string | null = null;
-  if (marketing_audience === "Дети") {
+  if (target_audience === "kids") {
     if (ageParsed.data === "") {
       return {
         error: "Выберите возрастную группу для аудитории «Дети».",
@@ -366,17 +385,6 @@ export async function updateCourse(
   }
 
   const status = statusRaw as CourseStatus;
-
-  const delivery_format =
-    deliveryParsed.data.length > 0 ? deliveryParsed.data : null;
-  const language = languageParsed.data.length > 0 ? languageParsed.data : null;
-
-  let target_audience: TargetAudience = "adults";
-  if (marketing_audience === "Дети") {
-    target_audience = "kids";
-  } else if (marketing_audience === "Взрослые") {
-    target_audience = "adults";
-  }
 
   const supabase = await createClient();
   const {

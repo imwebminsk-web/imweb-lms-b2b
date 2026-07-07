@@ -16,13 +16,18 @@ import {
   CourseSettingsForm,
   type CourseSettingsFormCourse,
 } from "./course-settings-form";
+import type { Database } from "@/types/database.types";
+
+type TaxonomyRow = Database["public"]["Tables"]["taxonomies"]["Row"];
 
 export function CourseEditorTabs({
   course,
   modules,
+  taxonomies,
 }: {
   course: CourseSettingsFormCourse;
   modules: CurriculumModuleRow[];
+  taxonomies: TaxonomyRow[];
 }) {
   const settingsFormKey = [
     course.id,
@@ -57,7 +62,7 @@ export function CourseEditorTabs({
         <TabsTrigger value="students">Ученики</TabsTrigger>
       </TabsList>
       <TabsContent value="settings" className="mt-4 flex-none">
-        <CourseSettingsForm course={course} key={settingsFormKey} />
+        <CourseSettingsForm course={course} taxonomies={taxonomies} key={settingsFormKey} />
       </TabsContent>
       <TabsContent value="curriculum" className="mt-4 flex-none">
         <CurriculumTab

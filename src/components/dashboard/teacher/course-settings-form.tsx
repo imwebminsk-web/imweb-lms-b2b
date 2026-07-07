@@ -32,11 +32,6 @@ import { Editor } from "@/components/ui/editor";
 import { Textarea } from "@/components/ui/textarea";
 import { compressImage } from "@/lib/utils/image-compression";
 import type { Database } from "@/types/database.types";
-import {
-  AGE_GROUP_LABELS,
-  COURSE_LANGUAGE_LABELS,
-  DELIVERY_FORMAT_LABELS,
-} from "@/lib/validations/course-settings-schema";
 
 import { CourseImageUpload } from "./course-image-upload";
 import { CourseVideoUpload } from "./course-video-upload";
@@ -67,24 +62,9 @@ export type CourseSettingsFormCourse = Pick<
   | "language"
 >;
 
-type CourseLevel = Database["public"]["Enums"]["course_level"];
+type CourseLevel = string;
 
 const initialState: UpdateCourseState = {};
-
-/** Легаси-коды (kids/…) → русские метки после миграции. */
-function normalizeMarketingAudience(raw: string | null | undefined): string {
-  if (raw == null || !String(raw).trim()) return "";
-  const v = String(raw).trim();
-  const legacy: Record<string, string> = {
-    kids: "Дети",
-    adults: "Взрослые",
-    all: "Все",
-    teens: "",
-  };
-  if (v in legacy) return legacy[v] ?? "";
-  if (v === "Дети" || v === "Взрослые" || v === "Все") return v;
-  return "";
-}
 
 function dateInputValue(iso: string | null): string {
   if (!iso) return "";
@@ -93,20 +73,16 @@ function dateInputValue(iso: string | null): string {
 
 export function CourseSettingsForm({
   course,
+  taxonomies,
 }: {
   course: CourseSettingsFormCourse;
+  taxonomies: Database["public"]["Tables"]["taxonomies"]["Row"][];
 }) {
   const [status, setStatus] = useState(course.status);
-  const [level, setLevel] = useState<CourseLevel | "">(
-    (course.level ?? "") as CourseLevel | "",
-  );
-  const [marketingAudience, setMarketingAudience] = useState(() =>
-    normalizeMarketingAudience(course.marketing_audience),
-  );
+  const [level, setLevel] = useState<string>(course.level ?? "");
+  const [marketingAudience, setMarketingAudience] = useState(course.marketing_audience ?? "");
   const [ageGroup, setAgeGroup] = useState(course.age_group ?? "");
-  const [deliveryFormat, setDeliveryFormat] = useState(
-    course.delivery_format ?? "",
-  );
+  const [deliveryFormat, setDeliveryFormat] = useState(course.delivery_format ?? "");
   const [language, setLanguage] = useState(course.language ?? "");
   const [durationUnit, setDurationUnit] = useState(
     course.duration_unit ?? "",
@@ -126,6 +102,16 @@ export function CourseSettingsForm({
     updateCourse,
     initialState,
   );
+
+  const audienceTaxonomies = taxonomies.filter((t) => t.type === "audience");
+  const cefrLevelTaxonomies = taxonomies.filter((t) => t.type === "cefr_level");
+  const ageGroupTaxonomies = taxonomies.filter((t) => t.type === "age_group");
+  const formatTaxonomies = taxonomies.filter((t) => t.type === "format");
+  const languageTaxonomies = taxonomies.filter((t) => t.type === "language");
+
+  const selectedAudienceTaxonomy = taxonomies.find((t) => t.id === marketingAudience);
+  const isChildren = selectedAudienceTaxonomy?.value === "children";
+  const isAdults = selectedAudienceTaxonomy?.value === "adults";
 
   async function onGalleryFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -171,8 +157,8 @@ export function CourseSettingsForm({
 
   useEffect(() => {
     setStatus(course.status);
-    setLevel((course.level ?? "") as CourseLevel | "");
-    setMarketingAudience(normalizeMarketingAudience(course.marketing_audience));
+    setLevel(course.level ?? "");
+    setMarketingAudience(course.marketing_audience ?? "");
     setAgeGroup(course.age_group ?? "");
     setDeliveryFormat(course.delivery_format ?? "");
     setLanguage(course.language ?? "");
@@ -205,10 +191,10 @@ export function CourseSettingsForm({
       <input type="hidden" name="id" value={course.id} />
       <input type="hidden" name="status" value={status} />
       <input type="hidden" name="marketing_audience" value={marketingAudience} />
-      {marketingAudience === "Взрослые" && level !== "" ? (
+      {isAdults && level !== "" ? (
         <input type="hidden" name="level" value={level} />
       ) : null}
-      {marketingAudience === "Дети" && ageGroup !== "" ? (
+      {isChildren && ageGroup !== "" ? (
         <input type="hidden" name="age_group" value={ageGroup} />
       ) : null}
       <input type="hidden" name="duration_unit" value={durationUnit} />
@@ -526,8 +512,9 @@ export function CourseSettingsForm({
                     onValueChange={(v) => {
                       const next = v === "__empty__" ? "" : v;
                       setMarketingAudience(next);
-                      if (next !== "Дети") setAgeGroup("");
-                      if (next !== "Взрослые") setLevel("");
+                      const nextTax = taxonomies.find((t) => t.id === next);
+                      if (nextTax?.value !== "children") setAgeGroup("");
+                      if (nextTax?.value !== "adults") setLevel("");
                     }}
                     disabled={isPending}
                   >
@@ -536,19 +523,21 @@ export function CourseSettingsForm({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__empty__">Не выбрано</SelectItem>
-                      <SelectItem value="Дети">Дети</SelectItem>
-                      <SelectItem value="Взрослые">Взрослые</SelectItem>
-                      <SelectItem value="Все">Все</SelectItem>
+                      {audienceTaxonomies.map((tax) => (
+                        <SelectItem key={tax.id} value={tax.id}>
+                          {tax.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {marketingAudience === "Взрослые" ? (
+                {isAdults ? (
                   <div className="grid gap-2">
                     <Label htmlFor="course-level">Уровень CEFR</Label>
                     <Select
                       value={level || "__empty__"}
                       onValueChange={(v) =>
-                        setLevel(v === "__empty__" ? "" : (v as CourseLevel))
+                        setLevel(v === "__empty__" ? "" : v)
                       }
                       disabled={isPending}
                     >
@@ -557,20 +546,16 @@ export function CourseSettingsForm({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__empty__">Не выбрано</SelectItem>
-                        <SelectItem value="0">0</SelectItem>
-                        <SelectItem value="A1">A1</SelectItem>
-                        <SelectItem value="A2">A2</SelectItem>
-                        <SelectItem value="B1">B1</SelectItem>
-                        <SelectItem value="B1+">B1+</SelectItem>
-                        <SelectItem value="B2">B2</SelectItem>
-                        <SelectItem value="B2+">B2+</SelectItem>
-                        <SelectItem value="C1">C1</SelectItem>
-                        <SelectItem value="C2">C2</SelectItem>
+                        {cefrLevelTaxonomies.map((tax) => (
+                          <SelectItem key={tax.id} value={tax.id}>
+                            {tax.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
                 ) : null}
-                {marketingAudience === "Дети" ? (
+                {isChildren ? (
                   <div className="grid gap-2">
                     <Label htmlFor="course-age-group">Возрастная группа</Label>
                     <Select
@@ -585,9 +570,9 @@ export function CourseSettingsForm({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__empty__">Не выбрано</SelectItem>
-                        {AGE_GROUP_LABELS.map((label) => (
-                          <SelectItem key={label} value={label}>
-                            {label}
+                        {ageGroupTaxonomies.map((tax) => (
+                          <SelectItem key={tax.id} value={tax.id}>
+                            {tax.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -623,9 +608,9 @@ export function CourseSettingsForm({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__empty__">Не выбрано</SelectItem>
-                      {DELIVERY_FORMAT_LABELS.map((label) => (
-                        <SelectItem key={label} value={label}>
-                          {label}
+                      {formatTaxonomies.map((tax) => (
+                        <SelectItem key={tax.id} value={tax.id}>
+                          {tax.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -645,9 +630,9 @@ export function CourseSettingsForm({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__empty__">Не выбрано</SelectItem>
-                      {COURSE_LANGUAGE_LABELS.map((label) => (
-                        <SelectItem key={label} value={label}>
-                          {label}
+                      {languageTaxonomies.map((tax) => (
+                        <SelectItem key={tax.id} value={tax.id}>
+                          {tax.label}
                         </SelectItem>
                       ))}
                     </SelectContent>

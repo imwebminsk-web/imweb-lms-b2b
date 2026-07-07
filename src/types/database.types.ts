@@ -27,7 +27,7 @@ export type Database = {
           has_certificate: boolean
           id: string
           image_url: string | null
-          level: Database["public"]["Enums"]["course_level"] | null
+          level: string | null
           marketing_audience: string | null
           language: string | null
           price: string
@@ -55,7 +55,7 @@ export type Database = {
           has_certificate?: boolean
           id?: string
           image_url?: string | null
-          level?: Database["public"]["Enums"]["course_level"] | null
+          level?: string | null
           marketing_audience?: string | null
           language?: string | null
           price?: string
@@ -83,7 +83,7 @@ export type Database = {
           has_certificate?: boolean
           id?: string
           image_url?: string | null
-          level?: Database["public"]["Enums"]["course_level"] | null
+          level?: string | null
           marketing_audience?: string | null
           language?: string | null
           price?: string

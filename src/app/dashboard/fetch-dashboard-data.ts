@@ -58,7 +58,7 @@ function mapCourseRow(
     id: string;
     title: string;
     status: Database["public"]["Enums"]["course_status"];
-    level: Database["public"]["Enums"]["course_level"] | null;
+    level: string | null;
     price: string | number | null;
     slug: string;
     language: string | null;

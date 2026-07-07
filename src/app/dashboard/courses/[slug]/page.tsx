@@ -168,6 +168,13 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         .sort((a, b) => a.order_index - b.order_index),
     }));
 
+  const { data: taxonomies } = await supabase
+    .from("taxonomies")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("label", { ascending: true });
+
   const isPublished = course.status === "published";
 
   return (
@@ -202,7 +209,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         )}
       </header>
 
-      <CourseEditorTabs course={course} modules={modules} />
+      <CourseEditorTabs course={course} modules={modules} taxonomies={taxonomies ?? []} />
     </div>
   );
 }
