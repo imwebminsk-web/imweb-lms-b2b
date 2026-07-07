@@ -189,12 +189,13 @@ function TextBlockEditor({
   content: Json;
 }) {
   const router = useRouter();
-  const [html, setHtml] = useState(() => readHtml(content));
+  const serverHtml = readHtml(content);
+  const [html, setHtml] = useState(() => serverHtml);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setHtml(readHtml(content));
-  }, [blockId, content]);
+    setHtml(serverHtml);
+  }, [blockId, serverHtml]);
 
   async function save() {
     setSaving(true);
