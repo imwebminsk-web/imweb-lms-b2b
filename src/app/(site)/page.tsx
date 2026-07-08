@@ -21,11 +21,8 @@ import {
   catalogHasActiveFilters,
   parseCatalogFilters,
 } from "@/lib/catalog-filter-params";
-import { taxonomyLabelForValue } from "@/lib/catalog-taxonomies";
+import { findCatalogTaxonomy } from "@/lib/catalog-taxonomies";
 import { createClient } from "@/lib/supabase/server";
-import type { Database } from "@/types/database.types";
-
-type CourseLevel = Database["public"]["Enums"]["course_level"];
 
 export const metadata: Metadata = {
   title: "New Education — курсы языков в Минске | Новое образование",
@@ -62,48 +59,48 @@ export default async function Home({
     )
     .eq("status", "published");
 
-  const audienceLabel = taxonomyLabelForValue(
+  const audienceTaxonomy = findCatalogTaxonomy(
     taxonomies,
     "audience",
     filters.audience,
   );
-  if (audienceLabel) {
-    query = query.eq("marketing_audience", audienceLabel);
+  if (audienceTaxonomy) {
+    query = query.eq("marketing_audience", audienceTaxonomy.id);
   }
 
-  const formatLabel = taxonomyLabelForValue(
+  const formatTaxonomy = findCatalogTaxonomy(
     taxonomies,
     "format",
     filters.format,
   );
-  if (formatLabel) {
-    query = query.eq("delivery_format", formatLabel);
+  if (formatTaxonomy) {
+    query = query.eq("delivery_format", formatTaxonomy.id);
   }
 
-  const languageLabel = taxonomyLabelForValue(
+  const languageTaxonomy = findCatalogTaxonomy(
     taxonomies,
     "language",
     filters.language,
   );
-  if (languageLabel) {
-    query = query.eq("language", languageLabel);
+  if (languageTaxonomy) {
+    query = query.eq("language", languageTaxonomy.id);
   }
 
   if (filters.audience === "children" && filters.age) {
-    const ageLabel = taxonomyLabelForValue(taxonomies, "age_group", filters.age);
-    if (ageLabel) {
-      query = query.eq("age_group", ageLabel);
+    const ageTaxonomy = findCatalogTaxonomy(taxonomies, "age_group", filters.age);
+    if (ageTaxonomy) {
+      query = query.eq("age_group", ageTaxonomy.id);
     }
   }
 
   if (filters.audience === "adults" && filters.level) {
-    const levelLabel = taxonomyLabelForValue(
+    const levelTaxonomy = findCatalogTaxonomy(
       taxonomies,
       "cefr_level",
       filters.level,
     );
-    if (levelLabel) {
-      query = query.eq("level", levelLabel as CourseLevel);
+    if (levelTaxonomy) {
+      query = query.eq("level", levelTaxonomy.id);
     }
   }
 
@@ -113,7 +110,18 @@ export default async function Home({
     console.error("[Home] published courses", error.message);
   }
 
-  const courses = data ?? [];
+  const courses = (data ?? []).map((course) => {
+    return {
+      ...course,
+      resolvedTaxonomies: {
+        audience: taxonomies.find((t) => t.id === course.marketing_audience)?.label,
+        format: taxonomies.find((t) => t.id === course.delivery_format)?.label,
+        language: taxonomies.find((t) => t.id === course.language)?.label,
+        ageGroup: taxonomies.find((t) => t.id === course.age_group)?.label,
+        level: taxonomies.find((t) => t.id === course.level)?.label,
+      },
+    };
+  });
 
   return (
     <div className="flex min-h-screen flex-col">

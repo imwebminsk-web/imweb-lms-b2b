@@ -10,6 +10,8 @@ export default {
   theme: {
     extend: {
       colors: {
+        landing: "#001352",
+        "landing-hover": "#2563eb",
         growvy: {
           primary: "#1D4ED8",
           body: "#F4F6F8",

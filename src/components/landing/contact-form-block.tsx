@@ -38,10 +38,7 @@ export function ContactFormBlock({ className }: ContactFormBlockProps) {
         <Input type="text" name="name" placeholder="Имя" required />
         <Input type="tel" name="phone" placeholder="Телефон" required />
         <Input type="email" name="email" placeholder="Email" required />
-        <Button
-          type="submit"
-          className="w-full bg-[#001352] text-white hover:bg-[#0a1d5d]"
-        >
+        <Button type="submit" variant="landing" className="w-full">
           Отправить
         </Button>
         <p className="mt-2 text-center text-xs text-[#001352]/60">

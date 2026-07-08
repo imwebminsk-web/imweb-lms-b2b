@@ -5,9 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const primaryCtaClassName =
-  "bg-[#001352] text-white hover:bg-[#0a1d5d]";
-
 export function LandingHero() {
   return (
     <section className="border-border/40 bg-muted/20 border-b">
@@ -41,8 +38,7 @@ export function LandingHero() {
           <div className="flex flex-wrap gap-3">
             <HelpDialog
               className={cn(
-                buttonVariants({ size: "lg" }),
-                primaryCtaClassName,
+                buttonVariants({ size: "lg", variant: "landing" }),
               )}
             >
               Помогите с выбором

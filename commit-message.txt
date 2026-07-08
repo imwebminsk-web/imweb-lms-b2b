@@ -1,0 +1,6 @@
+﻿feat(quiz): add conditional finish test button next to answer button
+
+- Added a duplicate Finish Test button in the bottom action bar next to the Submit/Next buttons.
+- This button only appears when all questions in the test have been fully answered (either submitted or have a complete draft ready).
+- Bound the same handleFinishTestClick function to ensure consistent test completion behavior.
+- Styled with a green (emerald) background to stand out.

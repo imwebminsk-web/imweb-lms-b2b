@@ -178,8 +178,8 @@ export function LandingSalesCta() {
           <a
             href="tel:+375291187722"
             className={cn(
-              buttonVariants({ size: "lg" }),
-              "inline-flex bg-[#001352] text-white hover:bg-[#001352]/90",
+              buttonVariants({ size: "lg", variant: "landing" }),
+              "inline-flex",
             )}
           >
             +375 29 118-77-22
@@ -190,7 +190,7 @@ export function LandingSalesCta() {
             rel="noopener noreferrer"
             className={cn(
               buttonVariants({ size: "lg", variant: "outline" }),
-              "inline-flex border-[#001352] bg-transparent text-[#001352] hover:bg-[#001352]/10",
+              "inline-flex border-landing bg-transparent text-landing hover:bg-landing/10",
             )}
           >
             Сайт new-edu.by
@@ -257,10 +257,26 @@ export function LandingFooter() {
             </li>
             <li>
               <Link
+                href="#reviews"
+                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+              >
+                Отзывы
+              </Link>
+            </li>
+            <li>
+              <Link
                 href="#faq"
                 className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
               >
                 FAQ
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/platform"
+                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+              >
+                О платформе
               </Link>
             </li>
           </ul>

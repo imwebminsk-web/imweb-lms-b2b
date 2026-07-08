@@ -3,6 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { Button } from "@/components/ui/button";
 import {
   groupCatalogTaxonomies,
   type CatalogTaxonomy,
@@ -43,19 +44,18 @@ function FilterPill({
   onClick: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant={isActive ? "landing" : "secondary"}
       aria-pressed={isActive}
       onClick={onClick}
       className={cn(
-        "rounded-full border px-4 py-2 text-sm font-medium transition-colors",
-        isActive
-          ? "border-[#001352] bg-[#001352] text-white shadow-sm"
-          : "border-[#e3efff] bg-[#e3efff] text-[#001352] hover:bg-[#d8e8ff]",
+        "h-auto rounded-full px-4 py-2 transition-colors duration-200",
+        !isActive && "hover:bg-blue-100 hover:text-blue-900",
       )}
     >
       {label}
-    </button>
+    </Button>
   );
 }
 

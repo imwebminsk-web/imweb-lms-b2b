@@ -23,13 +23,23 @@ export type PublicCourseCardModel = Pick<
 >;
 
 type PublicCourseCardProps = {
-  course: PublicCourseCardModel;
+  course: PublicCourseCardModel & {
+    resolvedTaxonomies?: {
+      audience?: string;
+      format?: string;
+      language?: string;
+      ageGroup?: string;
+      level?: string;
+    };
+  };
 };
 
-function formatMetaLine(course: PublicCourseCardModel): string | null {
+function formatMetaLine(course: PublicCourseCardProps["course"]): string | null {
   const parts: string[] = [];
-  if (course.language?.trim()) parts.push(course.language.trim());
-  if (course.delivery_format?.trim()) parts.push(course.delivery_format.trim());
+  const lang = course.resolvedTaxonomies?.language || course.language;
+  const fmt = course.resolvedTaxonomies?.format || course.delivery_format;
+  if (lang?.trim()) parts.push(lang.trim());
+  if (fmt?.trim()) parts.push(fmt.trim());
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
@@ -37,7 +47,8 @@ export function PublicCourseCard({ course }: PublicCourseCardProps) {
   const href = `/courses/${encodeURIComponent(course.slug)}`;
   const description = course.description?.trim() || "Описание курса скоро появится.";
   const meta = formatMetaLine(course);
-  const audienceLabel = course.marketing_audience?.trim();
+  const audienceLabel = course.resolvedTaxonomies?.audience || course.marketing_audience?.trim();
+  const extraLabel = course.resolvedTaxonomies?.ageGroup || course.resolvedTaxonomies?.level;
 
   return (
     <article className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
@@ -55,9 +66,9 @@ export function PublicCourseCard({ course }: PublicCourseCardProps) {
           </div>
         )}
 
-        {audienceLabel ? (
+        {audienceLabel || extraLabel ? (
           <Badge className="absolute top-3 left-3 rounded-md border-0 bg-white/95 px-2.5 py-1 text-xs font-medium text-[#001352] shadow-sm dark:bg-slate-800 dark:text-slate-300">
-            {audienceLabel}
+            {[audienceLabel, extraLabel].filter(Boolean).join(" • ")}
           </Badge>
         ) : null}
       </div>
@@ -83,7 +94,11 @@ export function PublicCourseCard({ course }: PublicCourseCardProps) {
         </p>
       </div>
 
-      <Button className="mt-auto w-full rounded-xl" asChild>
+      <Button
+        variant="landing"
+        className="mt-auto w-full rounded-xl"
+        asChild
+      >
         <Link href={href}>Подробнее</Link>
       </Button>
     </article>

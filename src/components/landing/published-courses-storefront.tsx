@@ -5,7 +5,15 @@ import {
   type PublicCourseCardModel,
 } from "@/components/public/public-course-card";
 
-export type PublishedCourseCard = PublicCourseCardModel;
+export type PublishedCourseCard = PublicCourseCardModel & {
+  resolvedTaxonomies?: {
+    audience?: string;
+    format?: string;
+    language?: string;
+    ageGroup?: string;
+    level?: string;
+  };
+};
 
 type PublishedCoursesStorefrontProps = {
   courses: PublishedCourseCard[];
