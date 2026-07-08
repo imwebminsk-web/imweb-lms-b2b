@@ -36,8 +36,8 @@ type PublicCourseCardProps = {
 
 function formatMetaLine(course: PublicCourseCardProps["course"]): string | null {
   const parts: string[] = [];
-  const lang = course.resolvedTaxonomies?.language || course.language;
-  const fmt = course.resolvedTaxonomies?.format || course.delivery_format;
+  const lang = course.resolvedTaxonomies?.language;
+  const fmt = course.resolvedTaxonomies?.format;
   if (lang?.trim()) parts.push(lang.trim());
   if (fmt?.trim()) parts.push(fmt.trim());
   return parts.length > 0 ? parts.join(" · ") : null;
@@ -47,7 +47,7 @@ export function PublicCourseCard({ course }: PublicCourseCardProps) {
   const href = `/courses/${encodeURIComponent(course.slug)}`;
   const description = course.description?.trim() || "Описание курса скоро появится.";
   const meta = formatMetaLine(course);
-  const audienceLabel = course.resolvedTaxonomies?.audience || course.marketing_audience?.trim();
+  const audienceLabel = course.resolvedTaxonomies?.audience;
   const extraLabel = course.resolvedTaxonomies?.ageGroup || course.resolvedTaxonomies?.level;
 
   return (
