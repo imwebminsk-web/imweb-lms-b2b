@@ -172,7 +172,7 @@ async function requireAuthenticatedUser() {
 }
 
 function isStaffRole(role: ProfileRole | undefined): boolean {
-  return role === "teacher" || role === "admin";
+  return role === "teacher" || role === "admin" || role === "head_teacher";
 }
 
 async function getProfileRole(

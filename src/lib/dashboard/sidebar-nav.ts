@@ -29,6 +29,15 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
         url: "/dashboard/admin/taxonomies",
         icon: LibraryIcon,
       },
+    ];
+  }
+  if (role === "head_teacher") {
+    return [
+      { title: "Главная", url: "/dashboard", icon: LayoutDashboardIcon },
+      { title: "Курсы", url: "/dashboard/courses", icon: BookOpenIcon },
+      { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
+      { title: "Ученики", url: "/dashboard/students", icon: Users },
+      { title: "Тесты", url: "/dashboard/tests", icon: CheckSquare },
       { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
   }

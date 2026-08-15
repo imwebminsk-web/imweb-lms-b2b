@@ -48,7 +48,11 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     redirect("/dashboard");
   }
 

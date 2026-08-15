@@ -194,7 +194,7 @@ function canViewUnpublishedTest(
   if (!access.userId) {
     return false;
   }
-  if (access.role === "admin") {
+  if (access.role === "admin" || access.role === "head_teacher") {
     return true;
   }
   return testUserId !== null && testUserId === access.userId;
@@ -207,7 +207,7 @@ function canViewCorrectAnswers(
   if (!access.userId) {
     return false;
   }
-  if (access.role === "admin") {
+  if (access.role === "admin" || access.role === "head_teacher") {
     return true;
   }
   return access.role === "teacher" && testUserId === access.userId;
@@ -634,10 +634,22 @@ export async function getUniqueTestFolders(): Promise<
     return { success: false, error: "Требуется вход в систему" };
   }
 
-  const { data, error } = await supabase
-    .from("tests")
-    .select("folder_name")
-    .eq("user_id", user.id);
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  let query = supabase.from("tests").select("folder_name");
+
+  if (!isAdminOrHead) {
+    query = query.eq("user_id", user.id);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return { success: false, error: error.message };
@@ -826,18 +838,30 @@ export async function deleteTest(
       return { success: false, error: "Требуется вход в систему" };
     }
 
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const isAdminOrHead =
+      profile?.role === "admin" || profile?.role === "head_teacher";
+
     const tid = idResult.data;
 
-    // Удаляем только ту строку, которая принадлежит текущему пользователю.
+    let query = supabase
+      .from("tests")
+      .delete()
+      .eq("id", tid);
+
+    if (!isAdminOrHead) {
+      query = query.eq("user_id", user.id);
+    }
+
     const {
       data: deleted,
       error: deleteError,
-    } = await supabase
-      .from("tests")
-      .delete()
-      .eq("id", tid)
-      .eq("user_id", user.id)
-      .select("id");
+    } = await query.select("id");
 
     const effectiveCount = deleted?.length ?? 0;
 
@@ -896,7 +920,11 @@ export async function duplicateTest(
     return { success: false, error: forbiddenMessage };
   }
 
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    profile.role !== "teacher"
+  ) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -934,7 +962,11 @@ export async function duplicateTest(
     };
   }
 
-  if (profile.role !== "admin" && sourceTest.user_id !== user.id) {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    sourceTest.user_id !== user.id
+  ) {
     return {
       success: false,
       error: "Вы можете копировать только свои тесты.",
@@ -1292,7 +1324,11 @@ export async function resetAndCreatePreviewAttempt(
     return { success: false, error: forbiddenMessage };
   }
 
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    profile.role !== "teacher"
+  ) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -1312,7 +1348,11 @@ export async function resetAndCreatePreviewAttempt(
     return { success: false, error: "Тест не найден" };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    testRow.user_id !== user.id
+  ) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -3232,7 +3272,11 @@ export async function getTestDraftForEdit(
     return { success: false, error: forbiddenMessage };
   }
 
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    profile.role !== "teacher"
+  ) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -3278,7 +3322,11 @@ export async function getTestDraftForEdit(
     return { success: false, error: error.message };
   }
 
-  if (profile.role !== "admin" && data.user_id !== user.id) {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    data.user_id !== user.id
+  ) {
     return {
       success: false,
       error: "Вы можете редактировать только свои тесты.",
@@ -3354,7 +3402,11 @@ export async function updateFullTest(
     return { success: false, error: forbiddenMessage };
   }
 
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    profile.role !== "teacher"
+  ) {
     return { success: false, error: forbiddenMessage };
   }
 
@@ -3390,7 +3442,11 @@ export async function updateFullTest(
     };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    testRow.user_id !== user.id
+  ) {
     return {
       success: false,
       error: "Вы можете редактировать только свои тесты.",
@@ -3532,7 +3588,11 @@ export async function saveFullTest(
     return { success: false, error: forbiddenMessage };
   }
 
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    profile.role !== "teacher"
+  ) {
     return { success: false, error: forbiddenMessage };
   }
 

@@ -60,7 +60,11 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
     redirect("/dashboard");
   }
 
-  if (profile.role !== "admin" && profile.role !== "teacher") {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "teacher" &&
+    profile.role !== "head_teacher"
+  ) {
     redirect("/dashboard");
   }
 

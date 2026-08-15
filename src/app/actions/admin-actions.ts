@@ -76,7 +76,12 @@ export async function updateUserRole(
     return { success: false, error: "Нельзя изменить свою роль." };
   }
 
-  if (role !== "student" && role !== "teacher" && role !== "admin") {
+  if (
+    role !== "student" &&
+    role !== "teacher" &&
+    role !== "admin" &&
+    role !== "head_teacher"
+  ) {
     return { success: false, error: "Недопустимая роль." };
   }
 

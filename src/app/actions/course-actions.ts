@@ -178,9 +178,13 @@ export async function createCourse(
     return { error: "Профиль не найден." };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     return {
-      error: "Создавать курсы могут только преподаватели и администраторы.",
+      error: "Создавать курсы могут только преподаватели, руководители и администраторы.",
     };
   }
 
@@ -405,7 +409,16 @@ export async function updateCourse(
     return { error: "Курс не найден." };
   }
 
-  if (existing.teacher_id !== user.id) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  if (!isAdminOrHead && existing.teacher_id !== user.id) {
     return { error: "Нет прав на изменение этого курса." };
   }
 
@@ -456,7 +469,7 @@ export async function updateCourse(
     }
   }
 
-  const { error: updateError } = await supabase
+  let query = supabase
     .from("courses")
     .update({
       title,
@@ -480,8 +493,13 @@ export async function updateCourse(
       start_date,
       has_certificate,
     })
-    .eq("id", id)
-    .eq("teacher_id", user.id);
+    .eq("id", id);
+
+  if (!isAdminOrHead) {
+    query = query.eq("teacher_id", user.id);
+  }
+
+  const { error: updateError } = await query;
 
   if (updateError) {
     console.error("[updateCourse]", updateError.message);
@@ -564,8 +582,21 @@ export async function uploadCourseGalleryImage(
     .eq("id", cid)
     .maybeSingle();
 
-  if (fetchError || !row || row.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав на загрузку." };
+  if (fetchError || !row) {
+    return { error: "Курс не найден." };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  if (!isAdminOrHead && row.teacher_id !== user.id) {
+    return { error: "Нет прав на загрузку." };
   }
 
   const ext = galleryExtFromMime(file.type);
@@ -623,15 +654,33 @@ export async function updateCourseImage(
     .eq("id", id)
     .maybeSingle();
 
-  if (fetchError || !course || course.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав." };
+  if (fetchError || !course) {
+    return { error: "Курс не найден." };
   }
 
-  const { error: updateError } = await supabase
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  if (!isAdminOrHead && course.teacher_id !== user.id) {
+    return { error: "Нет прав." };
+  }
+
+  let query = supabase
     .from("courses")
     .update({ image_url: url.length > 0 ? url : null })
-    .eq("id", id)
-    .eq("teacher_id", user.id);
+    .eq("id", id);
+
+  if (!isAdminOrHead) {
+    query = query.eq("teacher_id", user.id);
+  }
+
+  const { error: updateError } = await query;
 
   if (updateError) {
     console.error("[updateCourseImage]", updateError.message);
@@ -676,15 +725,33 @@ export async function updateCourseVideo(
     .eq("id", id)
     .maybeSingle();
 
-  if (fetchError || !course || course.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав." };
+  if (fetchError || !course) {
+    return { error: "Курс не найден." };
   }
 
-  const { error: updateError } = await supabase
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  if (!isAdminOrHead && course.teacher_id !== user.id) {
+    return { error: "Нет прав." };
+  }
+
+  let query = supabase
     .from("courses")
     .update({ video_url: url.length > 0 ? url : null })
-    .eq("id", id)
-    .eq("teacher_id", user.id);
+    .eq("id", id);
+
+  if (!isAdminOrHead) {
+    query = query.eq("teacher_id", user.id);
+  }
+
+  const { error: updateError } = await query;
 
   if (updateError) {
     console.error("[updateCourseVideo]", updateError.message);

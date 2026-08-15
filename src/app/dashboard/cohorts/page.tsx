@@ -36,7 +36,11 @@ export default async function DashboardCohortsPage() {
     redirect("/login");
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     redirect("/dashboard");
   }
 

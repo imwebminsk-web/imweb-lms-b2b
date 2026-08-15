@@ -72,10 +72,19 @@ const adminNav: NavItem[] = [
     url: "/dashboard/admin/taxonomies",
     icon: GrowvyDictionariesIcon,
   },
+];
+
+const headTeacherNav: NavItem[] = [
+  { title: "Главная", url: "/dashboard", icon: GrowvyCatalogIcon },
+  { title: "Курсы", url: "/dashboard/courses", icon: GrowvyCoursesIcon },
+  { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
+  { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
+  { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
   { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
 ];
 
 function getNavForRole(role: ProfileRole): NavItem[] {
+  if (role === "head_teacher") return headTeacherNav;
   if (role === "teacher") return teacherNav;
   if (role === "admin") return adminNav;
   return studentNav;

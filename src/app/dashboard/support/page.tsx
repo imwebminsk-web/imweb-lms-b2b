@@ -59,7 +59,11 @@ export default async function SupportPage() {
     );
   }
 
-  if (profile.role === "teacher" || profile.role === "admin") {
+  if (
+    profile.role === "teacher" ||
+    profile.role === "admin" ||
+    profile.role === "head_teacher"
+  ) {
     const ticketsRes = await getAllSupportTickets("open");
     if (!ticketsRes.success) {
       throw new Error(ticketsRes.error);

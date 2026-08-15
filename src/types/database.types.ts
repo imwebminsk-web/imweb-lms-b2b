@@ -957,7 +957,7 @@ export type Database = {
         | "assignment"
         | "quiz"
       lesson_type: "video" | "text" | "test" | "quiz"
-      profile_role: "admin" | "teacher" | "student"
+      profile_role: "admin" | "teacher" | "student" | "head_teacher"
       start_date_type: "fixed" | "on_demand"
       target_audience: "kids" | "adults"
     }
@@ -1110,7 +1110,7 @@ export const Constants = {
         "quiz",
       ],
       lesson_type: ["video", "text", "test", "quiz"],
-      profile_role: ["admin", "teacher", "student"],
+      profile_role: ["admin", "teacher", "student", "head_teacher"],
       start_date_type: ["fixed", "on_demand"],
       target_audience: ["kids", "adults"],
     },

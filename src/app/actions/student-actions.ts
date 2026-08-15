@@ -68,7 +68,14 @@ async function assertTeacherAccess(
     return { ok: false, error: "Профиль не найден." };
   }
 
-  if (profile.role !== "admin" && user.id !== teacherId) {
+  if (
+    profile.role === "admin" ||
+    profile.role === "head_teacher"
+  ) {
+    return { ok: true, userId: user.id };
+  }
+
+  if (user.id !== teacherId) {
     return { ok: false, error: "Нет доступа к списку учеников." };
   }
 
@@ -297,20 +304,29 @@ export async function unenrollStudentFromCohorts(
     return { success: false, error: "Профиль не найден." };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     return { success: false, error: "Нет прав на отчисление." };
   }
 
-  const teacherCohortIds = new Set(await getTeacherCohortIds(supabase, user.id));
-  const unauthorized = normalizedCohortIds.filter(
-    (cohortId) => !teacherCohortIds.has(cohortId),
-  );
+  const isAdminOrHead =
+    profile.role === "admin" || profile.role === "head_teacher";
 
-  if (unauthorized.length > 0) {
-    return {
-      success: false,
-      error: "Нет доступа к одной или нескольким выбранным группам.",
-    };
+  if (!isAdminOrHead) {
+    const teacherCohortIds = new Set(await getTeacherCohortIds(supabase, user.id));
+    const unauthorized = normalizedCohortIds.filter(
+      (cohortId) => !teacherCohortIds.has(cohortId),
+    );
+
+    if (unauthorized.length > 0) {
+      return {
+        success: false,
+        error: "Нет доступа к одной или нескольким выбранным группам.",
+      };
+    }
   }
 
   const { error: deleteError } = await supabase

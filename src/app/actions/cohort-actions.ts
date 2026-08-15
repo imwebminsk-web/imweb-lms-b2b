@@ -83,7 +83,16 @@ export async function createCohort(
     return { success: false, error: "Курс не найден." };
   }
 
-  if (course.teacher_id !== user.id) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  if (!isAdminOrHead && course.teacher_id !== user.id) {
     return { success: false, error: "Нет прав на создание группы для этого курса." };
   }
 
@@ -165,7 +174,16 @@ export async function updateCohortStatus(
     return { success: false, error: "Курс группы не найден." };
   }
 
-  if (course.teacher_id !== user.id) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  if (!isAdminOrHead && course.teacher_id !== user.id) {
     return { success: false, error: "Нет прав на изменение статуса этой группы." };
   }
 
@@ -312,7 +330,16 @@ async function validateTeacherOwnsCohort(cohortId: string): Promise<
     return { ok: false, error: "Курс группы не найден." };
   }
 
-  if (course.teacher_id !== user.id) {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const isAdminOrHead =
+    profile?.role === "admin" || profile?.role === "head_teacher";
+
+  if (!isAdminOrHead && course.teacher_id !== user.id) {
     return { ok: false, error: "Нет прав на изменение назначений этой группы." };
   }
 

@@ -48,6 +48,7 @@ const ROLE_LABELS: Record<ProfileRole, string> = {
   student: "Студент",
   teacher: "Преподаватель",
   admin: "Администратор",
+  head_teacher: "Руководитель",
 };
 
 function formatRegisteredAt(iso: string | null): string {
@@ -202,6 +203,15 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                                     }
                                   >
                                     Сделать Админом
+                                  </DropdownMenuItem>
+                                )}
+                                {user.role !== "head_teacher" && (
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleRoleChange(user.id, "head_teacher")
+                                    }
+                                  >
+                                    Сделать Руководителем
                                   </DropdownMenuItem>
                                 )}
                                 <DropdownMenuSeparator />
