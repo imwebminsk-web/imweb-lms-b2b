@@ -24,11 +24,13 @@ import {
   updateBlock,
   updateLessonMeta,
 } from "@/app/actions/lesson-block-actions";
+import { createInlineTest } from "@/app/actions/test-actions";
 import type {
   LessonBlockActionState,
   LessonBlockType,
 } from "@/lib/lesson-blocks/lesson-block-types";
 import { LessonBlockImageUpload } from "@/components/dashboard/teacher/lesson-block-image-upload";
+import { InlineTestEditor } from "@/components/dashboard/teacher/inline-test-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -36,6 +38,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Editor } from "@/components/ui/editor";
@@ -299,6 +302,33 @@ export function LessonBlockEditor({
     router.refresh();
   }
 
+  async function handleCreateInlineTest() {
+    setAdding("quiz");
+    const blockRes = await addBlock(lesson.id, "quiz");
+    if (blockRes.error || !blockRes.blockId) {
+      setAdding(null);
+      window.alert(blockRes.error || "Не удалось создать блок");
+      return;
+    }
+
+    const testRes = await createInlineTest(blockRes.blockId, "Встроенный тест");
+    if (!testRes.success) {
+      setAdding(null);
+      window.alert(testRes.error || "Не удалось создать тест");
+      return;
+    }
+
+    const updateRes = await updateBlock(blockRes.blockId, { test_id: testRes.testId });
+    setAdding(null);
+    
+    if (updateRes.error) {
+      window.alert(updateRes.error);
+      return;
+    }
+    
+    router.refresh();
+  }
+
   async function handleDeleteBlock(blockId: string) {
     if (!window.confirm("Удалить этот блок?")) return;
     const res = await deleteBlock(blockId);
@@ -400,7 +430,6 @@ export function LessonBlockEditor({
                 "youtube",
                 "vimeo",
                 "assignment",
-                "quiz",
               ] as const
             ).map((t) => (
               <DropdownMenuItem
@@ -414,6 +443,25 @@ export function LessonBlockEditor({
                 </span>
               </DropdownMenuItem>
             ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={adding !== null}
+              onSelect={() => void handleAdd("quiz")}
+            >
+              <span className="flex items-center gap-2">
+                <ListChecksIcon className="size-4" aria-hidden />
+                Тест из библиотеки
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={adding !== null}
+              onSelect={() => void handleCreateInlineTest()}
+            >
+              <span className="flex items-center gap-2">
+                <PlusIcon className="size-4" aria-hidden />
+                Новый тест (встроенный)
+              </span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -575,45 +623,77 @@ export function LessonBlockEditor({
                     </div>
                   </div>
                 ) : null}
-                {block.type === "quiz" ? (
-                  <div className="grid gap-2">
-                    <Label>Тест из библиотеки</Label>
-                    {tests.length === 0 ? (
-                      <p className="text-muted-foreground text-sm">
-                        Создайте тест в разделе «Тесты».
-                      </p>
-                    ) : (
-                      <Select
-                        value={readTestId(block.content) || undefined}
-                        onValueChange={async (test_id) => {
-                          const res = await updateBlock(block.id, {
-                            test_id,
-                          });
-                          if (res.error) window.alert(res.error);
-                          else router.refresh();
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Выберите тест…" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {groupedTests.map((group) => (
-                            <SelectGroup key={group.folderName}>
-                              <SelectLabel>
-                                {group.folderName} ({group.tests.length})
-                              </SelectLabel>
-                              {group.tests.map((t) => (
-                                <SelectItem key={t.id} value={t.id}>
-                                  {t.title}
-                                </SelectItem>
+                {block.type === "quiz" ? (() => {
+                  const testId = readTestId(block.content);
+                  const isLibraryTest = testId ? tests.some((t) => t.id === testId) : false;
+
+                  if (!testId) {
+                    return (
+                      <div className="grid gap-2">
+                        <Label>Тест из библиотеки</Label>
+                        {tests.length === 0 ? (
+                          <p className="text-muted-foreground text-sm">
+                            Создайте тест в разделе «Тесты».
+                          </p>
+                        ) : (
+                          <Select
+                            value={undefined}
+                            onValueChange={async (test_id) => {
+                              const res = await updateBlock(block.id, {
+                                test_id,
+                              });
+                              if (res.error) window.alert(res.error);
+                              else router.refresh();
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Выберите тест…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {groupedTests.map((group) => (
+                                <SelectGroup key={group.folderName}>
+                                  <SelectLabel>
+                                    {group.folderName} ({group.tests.length})
+                                  </SelectLabel>
+                                  {group.tests.map((t) => (
+                                    <SelectItem key={t.id} value={t.id}>
+                                      {t.title}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
                               ))}
-                            </SelectGroup>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                ) : null}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  if (isLibraryTest) {
+                    const testTitle = tests.find((t) => t.id === testId)?.title;
+                    return (
+                      <div className="grid gap-2 rounded-lg border p-4">
+                        <Label>Выбран тест из библиотеки</Label>
+                        <p className="text-sm font-medium">{testTitle}</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-fit mt-2 text-destructive"
+                          onClick={async () => {
+                            const res = await updateBlock(block.id, { test_id: "" });
+                            if (res.error) window.alert(res.error);
+                            else router.refresh();
+                          }}
+                        >
+                          Убрать тест
+                        </Button>
+                      </div>
+                    );
+                  }
+
+                  return <InlineTestEditor testId={testId} />;
+                })() : null}
               </CardContent>
             </Card>
           ))

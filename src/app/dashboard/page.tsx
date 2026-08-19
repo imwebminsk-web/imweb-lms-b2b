@@ -4,13 +4,22 @@ import {
   getStudentDashboardCourses,
   getStudentProgress,
 } from "@/app/actions/student-dashboard-actions";
+import { getB2BDashboardCourses } from "@/app/actions/b2b-user-actions";
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
-import { UsersTable } from "@/components/dashboard/admin/users-table";
 import { ActivityFeedWidget } from "@/components/dashboard/teacher/activity-feed-widget";
 import { PendingReviewsWidget } from "@/components/dashboard/teacher/pending-reviews-widget";
 import { StudentDashboardHome } from "@/components/dashboard/student/student-dashboard-home";
+import { CorporateDashboardHome } from "@/components/dashboard/student/corporate-dashboard-home";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { SectionCards } from "@/components/section-cards";
 import { SiteHeader } from "@/components/site-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { APP_MODE } from "@/lib/config/app-mode";
 import { createClient } from "@/lib/supabase/server";
 
 import { fetchDashboardData } from "./fetch-dashboard-data";
@@ -22,7 +31,7 @@ export default async function Page() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -32,7 +41,7 @@ export default async function Page() {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   const displayName =
@@ -41,10 +50,13 @@ export default async function Page() {
     "Пользователь";
 
   if (profile.role === "student") {
-    const [progressRes, coursesRes, unreadRes] = await Promise.all([
+    const [progressRes, coursesRes, unreadRes, b2bCoursesRes] = await Promise.all([
       getStudentProgress(user.id),
       getStudentDashboardCourses(user.id),
       getUnreadCounts(),
+      APP_MODE === "corporate" || APP_MODE === "all"
+        ? getB2BDashboardCourses(user.id)
+        : Promise.resolve({ success: true, courses: [] }),
     ]);
 
     if (!progressRes.success) {
@@ -52,6 +64,9 @@ export default async function Page() {
     }
     if (!coursesRes.success) {
       throw new Error(coursesRes.error);
+    }
+    if (!b2bCoursesRes.success) {
+      throw new Error(b2bCoursesRes.error);
     }
 
     const unreadMap = unreadRes.success ? unreadRes.counts : {};
@@ -75,6 +90,53 @@ export default async function Page() {
       (i) => i.type === "assignment" && i.status === "rejected",
     );
     const courseSummaries = coursesRes.courses;
+    const b2bCourses = b2bCoursesRes.courses;
+
+    if (APP_MODE === "corporate") {
+      return (
+        <>
+          <SiteHeader fullName={displayName} />
+          <div className="flex flex-1 flex-col min-w-0">
+            <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
+              <CorporateDashboardHome courses={b2bCourses} />
+            </div>
+          </div>
+        </>
+      );
+    }
+
+    if (APP_MODE === "all") {
+      return (
+        <>
+          <SiteHeader fullName={displayName} />
+          <div className="flex flex-1 flex-col min-w-0">
+            <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
+              <Tabs defaultValue="school" className="mt-4 px-4 lg:px-6">
+                <TabsList className="mb-4 h-auto flex-wrap rounded-xl">
+                  <TabsTrigger value="school" className="rounded-lg">
+                    Школа (B2C)
+                  </TabsTrigger>
+                  <TabsTrigger value="corporate" className="rounded-lg">
+                    Корпорация (B2B)
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="school" className="mt-0">
+                  <StudentDashboardHome
+                    needsAttention={needsAttention}
+                    courseSummaries={courseSummaries}
+                    unreadMap={unreadMap}
+                    cohortIdByCourseId={cohortIdByCourseId}
+                  />
+                </TabsContent>
+                <TabsContent value="corporate" className="mt-0">
+                  <CorporateDashboardHome courses={b2bCourses} />
+                </TabsContent>
+              </Tabs>
+            </div>
+          </div>
+        </>
+      );
+    }
 
     return (
       <>
@@ -103,10 +165,14 @@ export default async function Page() {
           <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
             <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
               <SectionCards adminMetrics={payload.adminMetrics} cards={[]} />
-              <UsersTable
-                users={payload.adminUsers ?? []}
-                currentUserId={user.id}
-              />
+              <Card>
+                <CardHeader>
+                  <CardTitle>Дашборд</CardTitle>
+                  <CardDescription>
+                    Аналитика и статистика в разработке
+                  </CardDescription>
+                </CardHeader>
+              </Card>
             </div>
           </div>
         </div>

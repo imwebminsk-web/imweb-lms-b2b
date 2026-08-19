@@ -1,11 +1,5 @@
 "use client";
 
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import {
@@ -16,9 +10,9 @@ import {
   CourseSettingsForm,
   type CourseSettingsFormCourse,
 } from "./course-settings-form";
-import type { Database } from "@/types/database.types";
+import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
 
-type TaxonomyRow = Database["public"]["Tables"]["taxonomies"]["Row"];
+type TaxonomyRow = TaxonomyWithGroup;
 
 export function CourseEditorTabs({
   course,
@@ -59,7 +53,6 @@ export function CourseEditorTabs({
       <TabsList variant="line" className="h-auto w-full flex-wrap justify-start">
         <TabsTrigger value="settings">Настройки</TabsTrigger>
         <TabsTrigger value="curriculum">Программа</TabsTrigger>
-        <TabsTrigger value="students">Ученики</TabsTrigger>
       </TabsList>
       <TabsContent value="settings" className="mt-4 flex-none">
         <CourseSettingsForm course={course} taxonomies={taxonomies} key={settingsFormKey} />
@@ -70,14 +63,6 @@ export function CourseEditorTabs({
           courseSlug={course.slug}
           modules={modules}
         />
-      </TabsContent>
-      <TabsContent value="students" className="mt-4 flex-none">
-        <Card>
-          <CardHeader>
-            <CardTitle>Ученики</CardTitle>
-            <CardDescription>Список учеников.</CardDescription>
-          </CardHeader>
-        </Card>
       </TabsContent>
     </Tabs>
   );

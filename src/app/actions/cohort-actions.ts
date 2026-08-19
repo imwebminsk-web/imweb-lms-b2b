@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
-import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
+import { isAdminOrHead, resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
 const PIN_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const PIN_LENGTH = 6;
@@ -89,10 +89,7 @@ export async function createCohort(
     .eq("id", user.id)
     .maybeSingle();
 
-  const isAdminOrHead =
-    profile?.role === "admin" || profile?.role === "head_teacher";
-
-  if (!isAdminOrHead && course.teacher_id !== user.id) {
+  if (!isAdminOrHead(profile?.role) && course.teacher_id !== user.id) {
     return { success: false, error: "Нет прав на создание группы для этого курса." };
   }
 
@@ -180,10 +177,7 @@ export async function updateCohortStatus(
     .eq("id", user.id)
     .maybeSingle();
 
-  const isAdminOrHead =
-    profile?.role === "admin" || profile?.role === "head_teacher";
-
-  if (!isAdminOrHead && course.teacher_id !== user.id) {
+  if (!isAdminOrHead(profile?.role) && course.teacher_id !== user.id) {
     return { success: false, error: "Нет прав на изменение статуса этой группы." };
   }
 
@@ -336,10 +330,7 @@ async function validateTeacherOwnsCohort(cohortId: string): Promise<
     .eq("id", user.id)
     .maybeSingle();
 
-  const isAdminOrHead =
-    profile?.role === "admin" || profile?.role === "head_teacher";
-
-  if (!isAdminOrHead && course.teacher_id !== user.id) {
+  if (!isAdminOrHead(profile?.role) && course.teacher_id !== user.id) {
     return { ok: false, error: "Нет прав на изменение назначений этой группы." };
   }
 

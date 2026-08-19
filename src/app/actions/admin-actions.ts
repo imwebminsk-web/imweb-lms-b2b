@@ -134,3 +134,49 @@ export async function deleteUser(userId: string): Promise<AdminActionResult> {
   revalidatePath("/dashboard");
   return { success: true };
 }
+
+export type ResetUserPasswordResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/** Задаёт новый пароль пользователю (только admin, через service role). */
+export async function resetUserPassword(
+  userId: string,
+  newPassword: string,
+): Promise<ResetUserPasswordResult> {
+  const auth = await requireAdmin();
+  if ("error" in auth) {
+    return { ok: false, error: auth.error };
+  }
+
+  const uid = userId.trim();
+  if (!uid) {
+    return { ok: false, error: "Не указан пользователь." };
+  }
+
+  if (uid === auth.userId) {
+    return { ok: false, error: "Нельзя сбросить свой пароль через эту форму." };
+  }
+
+  const password = newPassword.trim();
+  if (password.length < 6) {
+    return { ok: false, error: "Пароль должен содержать минимум 6 символов." };
+  }
+
+  const adminClient = requireServiceRoleClient();
+  if ("success" in adminClient) {
+    return { ok: false, error: adminClient.error };
+  }
+
+  const { error } = await adminClient.auth.admin.updateUserById(uid, {
+    password,
+  });
+
+  if (error) {
+    console.error("[resetUserPassword]", error.message);
+    return { ok: false, error: "Не удалось обновить пароль." };
+  }
+
+  revalidatePath("/dashboard");
+  return { ok: true };
+}

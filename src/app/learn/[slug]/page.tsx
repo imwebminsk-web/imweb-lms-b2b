@@ -32,14 +32,20 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(`/login?next=${encodeURIComponent(`/learn/${slugParam}`)}`);
+    redirect(`/?next=${encodeURIComponent(`/learn/${slugParam}`)}`);
   }
 
-  const course = await fetchPublishedCourseForLearn(decodedSlug, user.id);
-  if (!course) {
+  const courseResult = await fetchPublishedCourseForLearn(decodedSlug, user.id);
+  if (!courseResult.ok) {
+    if (courseResult.reason === "not_enrolled") {
+      redirect(
+        `/learn/not-enrolled?slug=${encodeURIComponent(decodedSlug)}`,
+      );
+    }
     notFound();
   }
 
+  const { course, cohortId, teacherId } = courseResult;
   const modulesSorted = sortModules(course.modules ?? []);
   const lessonIds = collectPublishedLessonIds(modulesSorted);
 
@@ -83,24 +89,6 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
     user.email?.split("@")[0] ||
     "Студент";
 
-  const { data: enrollment, error: enrollmentError } = await supabase
-    .from("enrollments")
-    .select("cohort_id, courses(teacher_id)")
-    .eq("user_id", user.id)
-    .eq("course_id", course.id)
-    .maybeSingle();
-
-  if (enrollmentError) {
-    console.error("[LearnCourseEntryPage] enrollments", enrollmentError.message);
-  }
-
-  const cohortId = enrollment?.cohort_id ?? null;
-  const courseEnrollment = enrollment?.courses;
-  const courseMeta = Array.isArray(courseEnrollment)
-    ? courseEnrollment[0]
-    : courseEnrollment;
-  let teacherId = courseMeta?.teacher_id ?? "";
-
   let isChatEnabled = true;
   if (cohortId) {
     const { data: cohortRow, error: cohortRowError } = await supabase
@@ -114,19 +102,6 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
     } else if (cohortRow) {
       isChatEnabled = cohortRow.is_chat_enabled;
     }
-  }
-
-  if (!teacherId) {
-    const { data: courseRow, error: courseMetaError } = await supabase
-      .from("courses")
-      .select("teacher_id")
-      .eq("id", course.id)
-      .maybeSingle();
-
-    if (courseMetaError) {
-      console.error("[LearnCourseEntryPage] courses", courseMetaError.message);
-    }
-    teacherId = courseRow?.teacher_id ?? "";
   }
 
   const unreadRes = await getUnreadCounts();

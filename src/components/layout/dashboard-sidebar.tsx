@@ -3,9 +3,10 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Settings } from "lucide-react"
+import { Building, Settings, Users } from "lucide-react"
 
 import { signOut } from "@/app/actions/auth-actions"
+import { isCorporateMode, isSchoolMode } from "@/lib/config/app-mode"
 import { useLanguage } from "@/components/providers/language-provider"
 import { Badge } from "@/components/ui/badge"
 import { Logo } from "@/components/ui/logo"
@@ -21,6 +22,7 @@ import {
   GrowvyGroupsIcon,
   GrowvyLearningIcon,
   GrowvyLogoutIcon,
+  GrowvySettingsIcon,
   GrowvyStudentsIcon,
   GrowvySupportIcon,
   GrowvyTestsIcon,
@@ -67,10 +69,21 @@ const studentNav: NavItem[] = [
 
 const adminNav: NavItem[] = [
   { title: "Главная", url: "/dashboard", icon: GrowvyCatalogIcon },
+  { title: "Пользователи", url: "/dashboard/admin/users", icon: Users },
   {
     title: "Справочники",
     url: "/dashboard/admin/taxonomies",
     icon: GrowvyDictionariesIcon,
+  },
+  {
+    title: "Оргструктура",
+    url: "/dashboard/admin/structure",
+    icon: Building,
+  },
+  {
+    title: "Настройки платформы",
+    url: "/dashboard/admin/settings",
+    icon: GrowvySettingsIcon,
   },
 ];
 
@@ -84,10 +97,17 @@ const headTeacherNav: NavItem[] = [
 ];
 
 function getNavForRole(role: ProfileRole): NavItem[] {
-  if (role === "head_teacher") return headTeacherNav;
-  if (role === "teacher") return teacherNav;
-  if (role === "admin") return adminNav;
-  return studentNav;
+  let nav: NavItem[] = [];
+  if (role === "head_teacher") nav = headTeacherNav;
+  else if (role === "teacher") nav = teacherNav;
+  else if (role === "admin") nav = adminNav;
+  else nav = studentNav;
+
+  return nav.filter((item) => {
+    if (item.url === "/dashboard/cohorts") return isSchoolMode;
+    if (item.url === "/dashboard/admin/structure") return isCorporateMode;
+    return true;
+  });
 }
 
 function isActive(pathname: string, url: string): boolean {

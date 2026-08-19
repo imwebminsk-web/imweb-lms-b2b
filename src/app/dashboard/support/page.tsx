@@ -22,7 +22,7 @@ export default async function SupportPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -32,7 +32,7 @@ export default async function SupportPage() {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   const displayName =

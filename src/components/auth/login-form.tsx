@@ -47,9 +47,16 @@ export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-card p-6 shadow-sm"
+      className="flex w-full max-w-sm flex-col gap-4"
     >
-      <h1 className="text-lg font-semibold tracking-tight">Вход</h1>
+      <div className="mb-2 flex flex-col gap-1">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          Добро пожаловать
+        </h1>
+        <p className="text-sm text-slate-500">
+          Рады видеть вас. Пожалуйста, авторизуйтесь.
+        </p>
+      </div>
 
       <div className="space-y-2">
         <Label htmlFor="email">Электронная почта</Label>
@@ -65,7 +72,15 @@ export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">Пароль</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="password">Пароль</Label>
+          <Link
+            href="/forgot-password"
+            className="text-muted-foreground text-xs underline-offset-4 hover:underline"
+          >
+            Забыли пароль?
+          </Link>
+        </div>
         <PasswordInput
           id="password"
           name="password"

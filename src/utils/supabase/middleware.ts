@@ -52,12 +52,18 @@ export async function updateSession(request: NextRequest) {
 
   if (!user && (pathname.startsWith("/dashboard") || pathname.startsWith("/learn"))) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/";
     url.searchParams.set("next", pathname);
     return withSessionCookies(NextResponse.redirect(url));
   }
 
-  if (user && (pathname === "/login" || pathname === "/register")) {
+  if (pathname === "/login") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return withSessionCookies(NextResponse.redirect(url));
+  }
+
+  if (user && (pathname === "/" || pathname === "/register")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     url.search = "";

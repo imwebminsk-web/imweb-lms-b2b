@@ -1,11 +1,13 @@
 import Image from "next/image";
 
-import { HelpDialog } from "@/components/landing/help-dialog";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
-export function LandingHero() {
+type LandingHeroProps = {
+  platformName: string;
+  description: string;
+};
+
+export function LandingHero({ platformName, description }: LandingHeroProps) {
   return (
     <section className="border-border/40 bg-muted/20 border-b">
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:py-24">
@@ -28,22 +30,13 @@ export function LandingHero() {
             Английский БЕЗ ДОМАШКИ — новинка!
           </Badge>
           <h1 className="text-[#001352] dark:text-white text-4xl font-bold tracking-tight text-balance sm:text-5xl lg:text-6xl">
-            Учиться — легко, если с удовольствием!
+            {platformName}
           </h1>
-          <p className="text-[#001352] dark:text-white/90 max-w-lg text-lg leading-relaxed">
-            Разговорные курсы иностранных языков в Минске. Оксфордская
-            коммуникативная методика, малые группы и результат уже после
-            первого месяца.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <HelpDialog
-              className={cn(
-                buttonVariants({ size: "lg", variant: "landing" }),
-              )}
-            >
-              Помогите с выбором
-            </HelpDialog>
-          </div>
+          {description ? (
+            <p className="text-[#001352] dark:text-white/90 max-w-lg text-lg leading-relaxed">
+              {description}
+            </p>
+          ) : null}
         </div>
       </div>
     </section>

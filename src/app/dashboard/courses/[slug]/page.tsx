@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
 import { CourseEditorTabs } from "@/components/dashboard/teacher/course-editor-tabs";
 import type { CurriculumModuleRow } from "@/components/dashboard/teacher/curriculum-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import { selectionsFromCourseTaxonomies } from "@/lib/course-taxonomy-map";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -41,7 +43,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -51,7 +53,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   if (
@@ -79,15 +81,17 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
       vimeo_url,
       category,
       has_certificate,
-      marketing_audience,
-      age_group,
-      delivery_format,
-      language,
+      course_taxonomies (
+        taxonomy_id,
+        taxonomies (
+          id,
+          taxonomy_groups ( slug )
+        )
+      ),
       promotional_images,
       duration_value,
       duration_unit,
       start_date,
-      level,
       modules (
         id,
         title,
@@ -134,6 +138,10 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     );
   }
 
+  const taxonomySelections = selectionsFromCourseTaxonomies(
+    courseRow.course_taxonomies ?? [],
+  );
+
   const course = {
     id: courseRow.id,
     title: courseRow.title,
@@ -148,15 +156,11 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     vimeo_url: courseRow.vimeo_url,
     category: courseRow.category,
     has_certificate: courseRow.has_certificate,
-    marketing_audience: courseRow.marketing_audience,
-    age_group: courseRow.age_group,
     promotional_images: courseRow.promotional_images ?? [],
     duration_value: courseRow.duration_value,
     duration_unit: courseRow.duration_unit,
     start_date: courseRow.start_date,
-    level: courseRow.level,
-    delivery_format: courseRow.delivery_format,
-    language: courseRow.language,
+    ...taxonomySelections,
   };
 
   const rawModules = courseRow.modules ?? [];
@@ -172,12 +176,18 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         .sort((a, b) => a.order_index - b.order_index),
     }));
 
-  const { data: taxonomies } = await supabase
+  const { data: taxonomyRows } = await supabase
     .from("taxonomies")
-    .select("*")
+    .select("*, taxonomy_groups!inner(slug, name)")
     .eq("is_active", true)
     .order("sort_order", { ascending: true })
     .order("label", { ascending: true });
+
+  const taxonomies: TaxonomyWithGroup[] = (taxonomyRows ?? []).map((row) => ({
+    ...row,
+    group_slug: row.taxonomy_groups?.slug ?? "",
+    group_name: row.taxonomy_groups?.name ?? "",
+  }));
 
   const isPublished = course.status === "published";
 
@@ -213,7 +223,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         )}
       </header>
 
-      <CourseEditorTabs course={course} modules={modules} taxonomies={taxonomies ?? []} />
+      <CourseEditorTabs course={course} modules={modules} taxonomies={taxonomies} />
     </div>
   );
 }

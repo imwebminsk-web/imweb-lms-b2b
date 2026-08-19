@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { getPendingReviewCounts } from "@/app/actions/grading-actions";
 import { getCohortStudents } from "@/app/actions/cohort-actions";
+import { isAdminOrHead } from "@/lib/utils/user-utils";
 import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
 import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { TeacherCohortTabs } from "@/components/dashboard/cohorts/teacher-cohort-tabs";
@@ -53,7 +54,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -63,7 +64,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   if (
@@ -91,7 +92,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     notFound();
   }
 
-  if (courseRel.teacher_id !== user.id) {
+  if (!isAdminOrHead(profile.role) && courseRel.teacher_id !== user.id) {
     redirect("/dashboard/cohorts");
   }
 

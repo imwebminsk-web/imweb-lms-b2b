@@ -18,7 +18,7 @@ export async function updateProfileName(formData: FormData): Promise<void> {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { error } = await supabase

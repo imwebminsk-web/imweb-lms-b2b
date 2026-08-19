@@ -6,8 +6,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   groupCatalogTaxonomies,
+  taxonomiesForGroup,
   type CatalogTaxonomy,
 } from "@/lib/catalog-taxonomies";
+import { TAXONOMY_GROUP_SLUG } from "@/lib/course-taxonomy-map";
 import { cn } from "@/lib/utils";
 
 const AUDIENCE_CHILDREN = "children";
@@ -104,9 +106,13 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
   const level = searchParams.get("level") ?? "";
 
   const audienceSelect = useMemo(() => {
-    const allowed = new Set(grouped.audience.map((row) => row.value));
+    const allowed = new Set(
+      taxonomiesForGroup(grouped, TAXONOMY_GROUP_SLUG.audience).map(
+        (row) => row.value,
+      ),
+    );
     return allowed.has(audience) ? audience : "";
-  }, [audience, grouped.audience]);
+  }, [audience, grouped]);
 
   const toggleParam = useCallback(
     (key: string, value: string, current: string) => {
@@ -167,7 +173,7 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
           isActive={hasNoActiveFilters}
           onClick={handleClearAllFilters}
         />
-        {grouped.format.map((row) => (
+        {taxonomiesForGroup(grouped, TAXONOMY_GROUP_SLUG.format).map((row) => (
           <FilterPill
             key={row.id}
             label={row.label}
@@ -178,7 +184,7 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
       </PillRow>
 
       <PillRow>
-        {grouped.language.map((row) => (
+        {taxonomiesForGroup(grouped, TAXONOMY_GROUP_SLUG.language).map((row) => (
           <FilterPill
             key={row.id}
             label={row.label}
@@ -189,7 +195,7 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
       </PillRow>
 
       <PillRow>
-        {grouped.audience.map((row) => (
+        {taxonomiesForGroup(grouped, TAXONOMY_GROUP_SLUG.audience).map((row) => (
           <FilterPill
             key={row.id}
             label={row.label}
@@ -201,7 +207,7 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
 
       {audienceSelect === AUDIENCE_CHILDREN ? (
         <PillRow>
-          {grouped.age_group.map((row) => (
+          {taxonomiesForGroup(grouped, TAXONOMY_GROUP_SLUG.ageGroup).map((row) => (
             <FilterPill
               key={row.id}
               label={row.label}
@@ -214,7 +220,7 @@ export function CatalogFilters({ taxonomies }: CatalogFiltersProps) {
 
       {audienceSelect === AUDIENCE_ADULTS ? (
         <PillRow>
-          {grouped.cefr_level.map((row) => (
+          {taxonomiesForGroup(grouped, TAXONOMY_GROUP_SLUG.cefrLevel).map((row) => (
             <FilterPill
               key={row.id}
               label={row.label}

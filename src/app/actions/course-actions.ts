@@ -14,6 +14,10 @@ import {
   marketingAudienceFormSchema,
 } from "@/lib/validations/course-settings-schema";
 import type { Database } from "@/types/database.types";
+import {
+  collectCourseTaxonomyIds,
+  type CourseTaxonomySelections,
+} from "@/lib/course-taxonomy-map";
 
 export type CreateCourseState = {
   success?: boolean;
@@ -240,9 +244,44 @@ export async function createCourse(
 }
 
 type CourseStatus = Database["public"]["Enums"]["course_status"];
-type TargetAudience = Database["public"]["Enums"]["target_audience"];
 
 const DURATION_UNIT = new Set(["hours", "weeks", "months"]);
+
+async function syncCourseTaxonomies(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  courseId: string,
+  selections: CourseTaxonomySelections,
+): Promise<string | null> {
+  const taxonomyIds = collectCourseTaxonomyIds(selections);
+
+  const { error: deleteError } = await supabase
+    .from("course_taxonomies")
+    .delete()
+    .eq("course_id", courseId);
+
+  if (deleteError) {
+    console.error("[syncCourseTaxonomies:delete]", deleteError.message);
+    return deleteError.message;
+  }
+
+  if (taxonomyIds.length === 0) {
+    return null;
+  }
+
+  const { error: insertError } = await supabase.from("course_taxonomies").insert(
+    taxonomyIds.map((taxonomy_id) => ({
+      course_id: courseId,
+      taxonomy_id,
+    })),
+  );
+
+  if (insertError) {
+    console.error("[syncCourseTaxonomies:insert]", insertError.message);
+    return insertError.message;
+  }
+
+  return null;
+}
 
 export async function updateCourse(
   _prev: UpdateCourseState,
@@ -332,24 +371,25 @@ export async function updateCourse(
     deliveryParsed.data.length > 0 ? deliveryParsed.data : null;
   const language = languageParsed.data.length > 0 ? languageParsed.data : null;
 
-  let target_audience: TargetAudience = "adults";
+  const supabase = await createClient();
+
+  let audienceKind: "kids" | "adults" | null = null;
   if (marketing_audience) {
-    const supabase = await createClient();
     const { data: tax } = await supabase
       .from("taxonomies")
       .select("value")
       .eq("id", marketing_audience)
       .maybeSingle();
-    
+
     if (tax?.value === "children") {
-      target_audience = "kids";
+      audienceKind = "kids";
     } else if (tax?.value === "adults") {
-      target_audience = "adults";
+      audienceKind = "adults";
     }
   }
 
   let level: string | null = null;
-  if (target_audience === "adults") {
+  if (audienceKind === "adults") {
     if (levelParsed.data === "") {
       return { error: "Выберите уровень CEFR для аудитории «Взрослые»." };
     }
@@ -357,7 +397,7 @@ export async function updateCourse(
   }
 
   let age_group: string | null = null;
-  if (target_audience === "kids") {
+  if (audienceKind === "kids") {
     if (ageParsed.data === "") {
       return {
         error: "Выберите возрастную группу для аудитории «Дети».",
@@ -390,7 +430,6 @@ export async function updateCourse(
 
   const status = statusRaw as CourseStatus;
 
-  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -481,12 +520,6 @@ export async function updateCourse(
       vimeo_url,
       price,
       status,
-      level,
-      marketing_audience,
-      age_group,
-      target_audience,
-      delivery_format,
-      language,
       promotional_images,
       duration_value: durationValue,
       duration_unit,
@@ -505,6 +538,20 @@ export async function updateCourse(
     console.error("[updateCourse]", updateError.message);
     return {
       error: updateError.message || "Не удалось сохранить изменения.",
+    };
+  }
+
+  const taxonomySyncError = await syncCourseTaxonomies(supabase, id, {
+    marketing_audience,
+    delivery_format,
+    language,
+    age_group,
+    level,
+  });
+
+  if (taxonomySyncError) {
+    return {
+      error: taxonomySyncError || "Не удалось сохранить таксономии курса.",
     };
   }
 

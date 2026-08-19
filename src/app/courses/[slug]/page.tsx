@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatCoursePrice } from "@/lib/format-course-price";
+import { labelsFromCourseTaxonomies } from "@/lib/course-taxonomy-map";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
 
@@ -43,18 +44,22 @@ type CourseRow = Pick<
   | "youtube_url"
   | "vimeo_url"
   | "category"
-  | "delivery_format"
-  | "marketing_audience"
-  | "age_group"
-  | "language"
   | "duration_value"
   | "duration_unit"
   | "has_certificate"
   | "start_date"
   | "start_date_type"
-  | "level"
   | "promotional_images"
 > & {
+  course_taxonomies: Array<{
+    taxonomy_id: string;
+    taxonomies: {
+      id: string;
+      label: string;
+      value: string;
+      taxonomy_groups: { slug: string } | null;
+    } | null;
+  }>;
   modules:
     | {
         id: string;
@@ -253,16 +258,20 @@ const getPublishedCourseBySlug = cache(
         youtube_url,
         vimeo_url,
         category,
-        delivery_format,
-        marketing_audience,
-        age_group,
-        language,
+        course_taxonomies (
+          taxonomy_id,
+          taxonomies (
+            id,
+            label,
+            value,
+            taxonomy_groups ( slug )
+          )
+        ),
         duration_value,
         duration_unit,
         has_certificate,
         start_date,
         start_date_type,
-        level,
         promotional_images,
         modules (
           id,
@@ -353,13 +362,17 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
   const galleryUrls = (course.promotional_images ?? []).filter(
     (u) => typeof u === "string" && u.trim().length > 0,
   );
-  const audienceRaw = course.marketing_audience?.trim() ?? "";
+  const taxonomyLabels = labelsFromCourseTaxonomies(course.course_taxonomies ?? []);
+  const audienceRaw = taxonomyLabels.audience?.trim() ?? "";
   const audienceLower = audienceRaw.toLowerCase();
   const isAdultAudience = audienceLower.includes("взросл");
   const isKidsAudience =
     audienceLower.includes("дет") || audienceLower.includes("подрост");
-  const formatRaw = course.delivery_format?.trim() ?? "";
+  const formatRaw = taxonomyLabels.format?.trim() ?? "";
   const formatLower = formatRaw.toLowerCase();
+  const languageRaw = taxonomyLabels.language?.trim() ?? "";
+  const levelLabel = taxonomyLabels.level?.trim() ?? "";
+  const ageGroupLabel = taxonomyLabels.ageGroup?.trim() ?? "";
 
   const markerBase =
     "rounded-sm px-2 py-1 text-sm font-bold uppercase tracking-wider";
@@ -389,9 +402,9 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
                   {course.category.trim()}
                 </span>
               ) : null}
-              {course.language?.trim() ? (
+              {languageRaw ? (
                 <span className={`${markerBase} bg-[#fb7185] text-black`}>
-                  {course.language.trim()}
+                  {languageRaw}
                 </span>
               ) : null}
               {audienceRaw ? (
@@ -399,14 +412,14 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
                   {audienceRaw}
                 </span>
               ) : null}
-              {isAdultAudience && course.level != null ? (
+              {isAdultAudience && levelLabel ? (
                 <span className={`${markerBase} bg-white/20 text-white`}>
-                  Уровень: {course.level}
+                  Уровень: {levelLabel}
                 </span>
               ) : null}
-              {isKidsAudience && course.age_group?.trim() ? (
+              {isKidsAudience && ageGroupLabel ? (
                 <span className={`${markerBase} bg-white/20 text-white`}>
-                  Возраст: {course.age_group.trim()}
+                  Возраст: {ageGroupLabel}
                 </span>
               ) : null}
             </div>
@@ -590,7 +603,7 @@ export default async function PublicCourseLandingPage({ params }: PageProps) {
             <CardFooter className="flex flex-col gap-2">
               <Button className="w-full" size="lg" asChild>
                 <Link
-                  href={`/login?returnTo=${encodeURIComponent(`/courses/${course.slug}`)}`}
+                  href={`/?returnTo=${encodeURIComponent(`/courses/${course.slug}`)}`}
                 >
                   Присоединиться
                 </Link>

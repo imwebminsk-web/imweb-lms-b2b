@@ -1,11 +1,15 @@
 "use client";
 
-import { MoreHorizontal } from "lucide-react";
+import { Key, MoreHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { deleteUser, updateUserRole } from "@/app/actions/admin-actions";
+import {
+  deleteUser,
+  resetUserPassword,
+  updateUserRole,
+} from "@/app/actions/admin-actions";
 import type { AdminUserRow } from "@/app/dashboard/fetch-dashboard-data";
 import {
   AlertDialog,
@@ -20,12 +24,22 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -51,6 +65,9 @@ const ROLE_LABELS: Record<ProfileRole, string> = {
   head_teacher: "Руководитель",
 };
 
+const PASSWORD_CHARS =
+  "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$";
+
 function formatRegisteredAt(iso: string | null): string {
   if (!iso) {
     return "—";
@@ -73,10 +90,23 @@ function displayName(user: AdminUserRow): string {
   );
 }
 
+function generateRandomPassword(length = 10): string {
+  const array = new Uint32Array(length);
+  crypto.getRandomValues(array);
+  let result = "";
+  for (let i = 0; i < length; i += 1) {
+    result += PASSWORD_CHARS[array[i]! % PASSWORD_CHARS.length]!;
+  }
+  return result;
+}
+
 export function UsersTable({ users, currentUserId }: UsersTableProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [deleteTarget, setDeleteTarget] = useState<AdminUserRow | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] =
+    useState<AdminUserRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   function handleRoleChange(userId: string, role: ProfileRole) {
     startTransition(async () => {
@@ -108,6 +138,57 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
     });
   }
 
+  function openResetPasswordDialog(user: AdminUserRow) {
+    setResetPasswordUser(user);
+    setNewPassword("");
+  }
+
+  function closeResetPasswordDialog() {
+    setResetPasswordUser(null);
+    setNewPassword("");
+  }
+
+  function handleGeneratePassword() {
+    setNewPassword(generateRandomPassword(10));
+  }
+
+  async function handleCopyPassword() {
+    if (!newPassword.trim()) {
+      toast.error("Нечего копировать — сначала введите или сгенерируйте пароль.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(newPassword);
+      toast.success("Пароль скопирован");
+    } catch {
+      toast.error("Не удалось скопировать пароль");
+    }
+  }
+
+  function handleResetPasswordSave() {
+    if (!resetPasswordUser) {
+      return;
+    }
+    if (!newPassword.trim()) {
+      toast.error("Введите новый пароль");
+      return;
+    }
+
+    const targetId = resetPasswordUser.id;
+    const password = newPassword.trim();
+
+    startTransition(async () => {
+      const result = await resetUserPassword(targetId, password);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Пароль обновлён");
+      closeResetPasswordDialog();
+      router.refresh();
+    });
+  }
+
   return (
     <>
       <div className="px-4 lg:px-6">
@@ -116,7 +197,7 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
             Управление пользователями
           </h2>
           <p className="text-muted-foreground text-sm">
-            Изменение ролей и удаление аккаунтов
+            Изменение ролей, сброс паролей и удаление аккаунтов
           </p>
         </div>
         <div className="w-full overflow-x-auto rounded-lg border">
@@ -214,6 +295,12 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                                     Сделать Руководителем
                                   </DropdownMenuItem>
                                 )}
+                                <DropdownMenuItem
+                                  onClick={() => openResetPasswordDialog(user)}
+                                >
+                                  <Key className="mr-2 size-4" aria-hidden />
+                                  Сбросить пароль
+                                </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   className="text-destructive focus:text-destructive"
@@ -234,6 +321,79 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
           </Table>
         </div>
       </div>
+
+      <Dialog
+        open={resetPasswordUser !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeResetPasswordDialog();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {resetPasswordUser
+                ? `Сброс пароля для ${displayName(resetPasswordUser)}`
+                : "Сброс пароля"}
+            </DialogTitle>
+            {resetPasswordUser?.email ? (
+              <DialogDescription>{resetPasswordUser.email}</DialogDescription>
+            ) : null}
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="admin-new-password">Новый пароль</Label>
+              <Input
+                id="admin-new-password"
+                type="text"
+                autoComplete="off"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                disabled={isPending}
+                placeholder="Минимум 6 символов"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleGeneratePassword}
+                disabled={isPending}
+              >
+                Сгенерировать
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleCopyPassword()}
+                disabled={isPending || !newPassword.trim()}
+              >
+                Скопировать
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeResetPasswordDialog}
+              disabled={isPending}
+            >
+              Отмена
+            </Button>
+            <Button
+              type="button"
+              onClick={handleResetPasswordSave}
+              disabled={isPending || !newPassword.trim()}
+            >
+              {isPending ? "Сохранение…" : "Сохранить новый пароль"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={deleteTarget !== null}

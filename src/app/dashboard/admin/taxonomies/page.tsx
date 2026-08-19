@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { getTaxonomies } from "@/app/actions/taxonomy-actions";
+import { getTaxonomies, getTaxonomyGroups } from "@/app/actions/taxonomy-actions";
 import { TaxonomiesAdminClient } from "@/components/admin/taxonomies/taxonomies-admin-client";
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
@@ -18,7 +18,7 @@ export default async function AdminTaxonomiesPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -28,7 +28,7 @@ export default async function AdminTaxonomiesPage() {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   if (profile.role !== "admin") {
@@ -40,23 +40,35 @@ export default async function AdminTaxonomiesPage() {
     user.email?.split("@")[0] ||
     "Администратор";
 
-  const result = await getTaxonomies();
-  if (!result.success) {
-    throw new Error(result.error);
+  const [taxonomiesResult, groupsResult] = await Promise.all([
+    getTaxonomies(),
+    getTaxonomyGroups(),
+  ]);
+
+  if (!taxonomiesResult.success) {
+    throw new Error(taxonomiesResult.error);
+  }
+
+  if (!groupsResult.success) {
+    throw new Error(groupsResult.error);
   }
 
   return (
     <>
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Справочники</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Форматы, языки, аудитории, возрастные группы и уровни CEFR для
-            каталога курсов.
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Справочники</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Настройка фильтров и тегов для каталога курсов.
+            </p>
+          </div>
         </div>
-        <TaxonomiesAdminClient initialTaxonomies={result.data} />
+        <TaxonomiesAdminClient
+          initialTaxonomies={taxonomiesResult.data}
+          initialGroups={groupsResult.data}
+        />
       </div>
     </>
   );

@@ -58,16 +58,29 @@ function mapCourseRow(
     id: string;
     title: string;
     status: Database["public"]["Enums"]["course_status"];
-    level: string | null;
     price: string | number | null;
     slug: string;
-    language: string | null;
     teacher: { full_name: string | null } | { full_name: string | null }[] | null;
+    course_taxonomies?: Array<{
+      taxonomies: {
+        label: string;
+        taxonomy_groups: { slug: string } | null;
+      } | null;
+    }>;
   },
 ): DashboardTableRow {
-  const typeLabel =
-    row.language?.trim() ||
-    (row.level != null ? String(row.level) : "—");
+  let languageLabel: string | null = null;
+  let levelLabel: string | null = null;
+
+  for (const link of row.course_taxonomies ?? []) {
+    const slug = link.taxonomies?.taxonomy_groups?.slug;
+    const label = link.taxonomies?.label?.trim();
+    if (!slug || !label) continue;
+    if (slug === "language" && !languageLabel) languageLabel = label;
+    if (slug === "cefr_level" && !levelLabel) levelLabel = label;
+  }
+
+  const typeLabel = languageLabel || levelLabel || "—";
   const teacherRel = row.teacher;
   const teacherName = Array.isArray(teacherRel)
     ? teacherRel[0]?.full_name
@@ -750,7 +763,7 @@ async function fetchAuthCreatedAtByUserId(
   return map;
 }
 
-async function fetchAdminUsers(
+export async function fetchAdminUsers(
   supabase: DbClient,
 ): Promise<AdminUserRow[]> {
   const { data: profiles, error } = await supabase
@@ -858,7 +871,14 @@ export async function fetchDashboardData(
   const { data: courses, error } = await supabase
     .from("courses")
     .select(
-      "id, title, status, level, price, slug, language, teacher:profiles!courses_teacher_id_fkey ( full_name )",
+      `id, title, status, price, slug,
+      teacher:profiles!courses_teacher_id_fkey ( full_name ),
+      course_taxonomies (
+        taxonomies (
+          label,
+          taxonomy_groups ( slug )
+        )
+      )`,
     )
     .eq("status", "published")
     .order("title")

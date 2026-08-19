@@ -62,7 +62,7 @@ function TestLoadError({
           таблиц <code>tests</code>, <code>questions</code>, <code>options</code>.
         </p>
         <Link
-          href="/login"
+          href="/"
           className="text-primary mt-4 inline-block text-sm font-medium underline-offset-4 hover:underline"
         >
           Вход
@@ -113,7 +113,7 @@ export default async function TestViewPage({ params }: PageProps) {
           ← Все тесты
         </Link>
         <Link
-          href="/login"
+          href="/"
           className="text-muted-foreground hover:text-foreground w-fit text-sm underline-offset-4 hover:underline"
         >
           Вход
@@ -125,7 +125,7 @@ export default async function TestViewPage({ params }: PageProps) {
           <p className="text-destructive text-sm">{attempt.error}</p>
           {attempt.needAuth ? (
             <Link
-              href={`/login?next=${encodeURIComponent(`/test/${id}`)}`}
+              href={`/?next=${encodeURIComponent(`/test/${id}`)}`}
               className="text-primary mt-4 inline-block text-sm font-medium underline-offset-4 hover:underline"
             >
               Перейти ко входу

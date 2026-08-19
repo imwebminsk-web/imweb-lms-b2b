@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { getPlatformSettings } from "@/app/actions/settings-actions";
 import { LandingFooter as SiteFooter } from "@/components/landing/landing-blocks";
 import { SiteHeader } from "@/components/site/header";
 
@@ -8,7 +9,15 @@ export const metadata: Metadata = {
   description: "Соглашение на обработку персональных данных",
 };
 
-export default function PrivacyAgreementPage() {
+export default async function PrivacyAgreementPage() {
+  const settings = await getPlatformSettings();
+  const contacts = settings?.contacts_json ?? {
+    phones: [],
+    emails: [],
+    addresses: [],
+  };
+  const legalInfo = settings?.legal_info ?? "";
+
   return (
     <div className="h-[100dvh] w-full overflow-y-auto flex flex-col bg-background">
       <SiteHeader />
@@ -290,7 +299,7 @@ export default function PrivacyAgreementPage() {
         </ul>
       </main>
 
-      <SiteFooter />
+      <SiteFooter contacts={contacts} legalInfo={legalInfo} />
     </div>
   );
 }

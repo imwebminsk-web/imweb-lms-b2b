@@ -33,7 +33,7 @@ export default async function DashboardTestEditPage({ params }: PageProps) {
 
   if (!user) {
     redirect(
-      `/login?next=${encodeURIComponent(`/dashboard/tests/${id}/edit`)}`,
+      `/?next=${encodeURIComponent(`/dashboard/tests/${id}/edit`)}`,
     );
   }
 

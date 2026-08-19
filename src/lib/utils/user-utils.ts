@@ -1,3 +1,6 @@
+export const isAdminOrHead = (role?: string | null) =>
+  role === "admin" || role === "head_teacher";
+
 /** Имя для UI: profiles.full_name → часть email до @ → UUID. */
 export function resolveStudentDisplayName(
   fullName: string | null | undefined,

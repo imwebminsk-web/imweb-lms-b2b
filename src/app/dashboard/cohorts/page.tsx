@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
+import { isAdminOrHead } from "@/lib/utils/user-utils";
 import { getPendingReviewCounts } from "@/app/actions/grading-actions";
 import {
   CohortsList,
@@ -23,7 +24,7 @@ export default async function DashboardCohortsPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -33,7 +34,7 @@ export default async function DashboardCohortsPage() {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   if (
@@ -44,11 +45,14 @@ export default async function DashboardCohortsPage() {
     redirect("/dashboard");
   }
 
-  const { data: myCourses, error: coursesError } = await supabase
-    .from("courses")
-    .select("id, title")
-    .eq("teacher_id", user.id)
-    .order("title");
+  const privileged = isAdminOrHead(profile.role);
+
+  let coursesQuery = supabase.from("courses").select("id, title").order("title");
+  if (!privileged) {
+    coursesQuery = coursesQuery.eq("teacher_id", user.id);
+  }
+
+  const { data: myCourses, error: coursesError } = await coursesQuery;
 
   if (coursesError) {
     console.error("[DashboardCohortsPage] courses", coursesError.message);
@@ -62,12 +66,17 @@ export default async function DashboardCohortsPage() {
   const courseIds = courseOptions.map((c) => c.id);
 
   let cohortRows: CohortListRow[] = [];
-  if (courseIds.length > 0) {
-    const { data: cohortsData, error: cohortsError } = await supabase
+  if (privileged || courseIds.length > 0) {
+    let cohortsQuery = supabase
       .from("cohorts")
       .select("id, name, pin_code, is_active, created_at, courses(title)")
-      .in("course_id", courseIds)
       .order("created_at", { ascending: false });
+
+    if (!privileged) {
+      cohortsQuery = cohortsQuery.in("course_id", courseIds);
+    }
+
+    const { data: cohortsData, error: cohortsError } = await cohortsQuery;
 
     if (cohortsError) {
       console.error("[DashboardCohortsPage] cohorts", cohortsError.message);

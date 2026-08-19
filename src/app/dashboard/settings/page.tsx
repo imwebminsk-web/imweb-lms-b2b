@@ -21,7 +21,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -31,7 +31,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   const displayName =

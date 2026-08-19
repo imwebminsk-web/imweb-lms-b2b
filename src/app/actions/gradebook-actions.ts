@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
+import { isAdminOrHead, resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import { readBlockIsForKids, readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
 import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 import {
@@ -630,7 +630,7 @@ export async function getMatrixGradebookData(
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (profile.role !== "teacher" && !isAdminOrHead(profile.role)) {
     return { success: false, error: "Нет доступа" };
   }
 
@@ -649,7 +649,7 @@ export async function getMatrixGradebookData(
     return { success: false, error: "Курс не найден" };
   }
 
-  if (courseRel.teacher_id !== user.id) {
+  if (!isAdminOrHead(profile.role) && courseRel.teacher_id !== user.id) {
     return { success: false, error: "Нет доступа к журналу этой группы" };
   }
 

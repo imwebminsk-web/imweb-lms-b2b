@@ -26,7 +26,7 @@ export async function SiteHeader() {
           <ThemeToggle />
           {!isAuthed ? (
             <Link
-              href="/login"
+              href="/"
               className={buttonVariants({ size: "sm" })}
             >
               Войти

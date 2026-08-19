@@ -18,7 +18,7 @@ export default async function DashboardStudentsPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -28,7 +28,7 @@ export default async function DashboardStudentsPage() {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   if (

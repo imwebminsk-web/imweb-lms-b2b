@@ -46,7 +46,7 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
 
   if (!user) {
     redirect(
-      `/login?next=${encodeURIComponent(`/dashboard/tests/${id}/sandbox`)}`,
+      `/?next=${encodeURIComponent(`/dashboard/tests/${id}/sandbox`)}`,
     );
   }
 
@@ -128,7 +128,7 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
             </CardDescription>
             {attempt.needAuth ? (
               <Link
-                href={`/login?next=${encodeURIComponent(`/dashboard/tests/${id}/sandbox`)}`}
+                href={`/?next=${encodeURIComponent(`/dashboard/tests/${id}/sandbox`)}`}
                 className={cn(
                   buttonVariants({ variant: "default", size: "sm" }),
                   "mt-4 inline-flex w-fit",

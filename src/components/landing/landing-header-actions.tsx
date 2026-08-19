@@ -26,7 +26,7 @@ export function LandingHeaderActions({ isAuthed }: LandingHeaderActionsProps) {
     <div className="flex shrink-0 items-center gap-2">
       <ThemeToggle />
       <Link
-        href={isAuthed ? "/dashboard" : "/login"}
+        href={isAuthed ? "/dashboard" : "/"}
         className={cn(
           buttonVariants({ size: "sm", variant: "landing" }),
           "hidden rounded-xl lg:inline-flex",
@@ -67,7 +67,7 @@ export function LandingHeaderActions({ isAuthed }: LandingHeaderActionsProps) {
           </div>
           <div className="mt-auto flex flex-col gap-4">
             <Link
-              href={isAuthed ? "/dashboard" : "/login"}
+              href={isAuthed ? "/dashboard" : "/"}
               className={cn(
                 buttonVariants({ size: "lg", variant: "landing" }),
                 "w-full rounded-xl",

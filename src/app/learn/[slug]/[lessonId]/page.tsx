@@ -42,15 +42,21 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
 
   if (!user) {
     redirect(
-      `/login?next=${encodeURIComponent(`/learn/${slugParam}/${lessonId}`)}`,
+      `/?next=${encodeURIComponent(`/learn/${slugParam}/${lessonId}`)}`,
     );
   }
 
-  const course = await fetchPublishedCourseForLearn(decodedSlug, user.id);
-  if (!course) {
+  const courseResult = await fetchPublishedCourseForLearn(decodedSlug, user.id);
+  if (!courseResult.ok) {
+    if (courseResult.reason === "not_enrolled") {
+      redirect(
+        `/learn/not-enrolled?slug=${encodeURIComponent(decodedSlug)}`,
+      );
+    }
     notFound();
   }
 
+  const { course } = courseResult;
   const modules = course.modules;
   if (!isPublishedLessonInCourse(modules, lessonId)) {
     notFound();

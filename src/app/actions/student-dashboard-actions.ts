@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import { isAdminOrHead } from "@/lib/utils/user-utils";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 import {
@@ -652,7 +653,7 @@ export async function getStudentProgressForTeacher(
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (profile.role !== "teacher" && !isAdminOrHead(profile.role)) {
     return { success: false, error: "Нет доступа" };
   }
 
@@ -671,7 +672,7 @@ export async function getStudentProgressForTeacher(
     return { success: false, error: "Курс не найден" };
   }
 
-  if (courseRel.teacher_id !== user.id) {
+  if (!isAdminOrHead(profile.role) && courseRel.teacher_id !== user.id) {
     return { success: false, error: "Нет доступа к журналу этой группы" };
   }
 

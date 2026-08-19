@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 
-import { ContactFormBlock } from "@/components/landing/contact-form-block";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +20,7 @@ export function HelpDialog({ children, className }: HelpDialogProps) {
       <DialogTrigger className={className}>{children}</DialogTrigger>
       <DialogContent className="gap-0 p-0 md:max-w-[900px]">
         <DialogTitle className="sr-only">Оставьте заявку</DialogTitle>
-        <ContactFormBlock />
+        <div className="p-8 text-center text-muted-foreground">Форма временно недоступна</div>
       </DialogContent>
     </Dialog>
   );

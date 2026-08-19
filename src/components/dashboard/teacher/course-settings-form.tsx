@@ -30,7 +30,12 @@ import {
 } from "@/components/ui/select";
 import { Editor } from "@/components/ui/editor";
 import { Textarea } from "@/components/ui/textarea";
+import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
 import { compressImage } from "@/lib/utils/image-compression";
+import {
+  type CourseTaxonomySelections,
+  TAXONOMY_GROUP_SLUG,
+} from "@/lib/course-taxonomy-map";
 import type { Database } from "@/types/database.types";
 
 import { CourseImageUpload } from "./course-image-upload";
@@ -51,16 +56,12 @@ export type CourseSettingsFormCourse = Pick<
   | "category"
   | "detailed_description"
   | "promotional_images"
-  | "marketing_audience"
-  | "age_group"
   | "duration_value"
   | "duration_unit"
   | "start_date"
   | "has_certificate"
-  | "level"
-  | "delivery_format"
-  | "language"
->;
+> &
+  CourseTaxonomySelections;
 
 type CourseLevel = string;
 
@@ -76,7 +77,7 @@ export function CourseSettingsForm({
   taxonomies,
 }: {
   course: CourseSettingsFormCourse;
-  taxonomies: Database["public"]["Tables"]["taxonomies"]["Row"][];
+  taxonomies: TaxonomyWithGroup[];
 }) {
   const [status, setStatus] = useState(course.status);
   const [level, setLevel] = useState<string>(course.level ?? "");
@@ -103,11 +104,21 @@ export function CourseSettingsForm({
     initialState,
   );
 
-  const audienceTaxonomies = taxonomies.filter((t) => t.type === "audience");
-  const cefrLevelTaxonomies = taxonomies.filter((t) => t.type === "cefr_level");
-  const ageGroupTaxonomies = taxonomies.filter((t) => t.type === "age_group");
-  const formatTaxonomies = taxonomies.filter((t) => t.type === "format");
-  const languageTaxonomies = taxonomies.filter((t) => t.type === "language");
+  const audienceTaxonomies = taxonomies.filter(
+    (t) => t.group_slug === TAXONOMY_GROUP_SLUG.audience,
+  );
+  const cefrLevelTaxonomies = taxonomies.filter(
+    (t) => t.group_slug === TAXONOMY_GROUP_SLUG.cefrLevel,
+  );
+  const ageGroupTaxonomies = taxonomies.filter(
+    (t) => t.group_slug === TAXONOMY_GROUP_SLUG.ageGroup,
+  );
+  const formatTaxonomies = taxonomies.filter(
+    (t) => t.group_slug === TAXONOMY_GROUP_SLUG.format,
+  );
+  const languageTaxonomies = taxonomies.filter(
+    (t) => t.group_slug === TAXONOMY_GROUP_SLUG.language,
+  );
 
   const selectedAudienceTaxonomy = taxonomies.find((t) => t.id === marketingAudience);
   const isChildren = selectedAudienceTaxonomy?.value === "children";

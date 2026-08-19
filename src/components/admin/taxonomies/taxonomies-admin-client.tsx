@@ -5,10 +5,13 @@ import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 
 import {
   createTaxonomy,
+  createTaxonomyGroup,
   deleteTaxonomy,
+  deleteTaxonomyGroup,
   toggleTaxonomyActive,
   updateTaxonomy,
-  type TaxonomyRow,
+  type TaxonomyGroupRow,
+  type TaxonomyWithGroup,
 } from "@/app/actions/taxonomy-actions";
 import {
   AlertDialog,
@@ -43,77 +46,139 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
-const TAXONOMY_TYPES = [
-  "format",
-  "language",
-  "audience",
-  "age_group",
-  "cefr_level",
-] as const;
-
-type TaxonomyType = (typeof TAXONOMY_TYPES)[number];
-
-const TYPE_LABELS: Record<TaxonomyType, string> = {
-  format: "Формат",
-  language: "Язык",
-  audience: "Аудитория",
-  age_group: "Возраст",
-  cefr_level: "Уровень CEFR",
-};
-
 type FormState = {
-  type: TaxonomyType;
+  group_id: string;
   label: string;
   value: string;
   sort_order: string;
 };
 
-const emptyForm = (type: TaxonomyType): FormState => ({
-  type,
+const emptyForm = (groupId: string): FormState => ({
+  group_id: groupId,
   label: "",
   value: "",
   sort_order: "0",
 });
 
+type GroupFormState = {
+  name: string;
+  slug: string;
+};
+
+const emptyGroupForm = (): GroupFormState => ({
+  name: "",
+  slug: "",
+});
+
+/** Простая генерация slug из названия (латиница; кириллицу вводят вручную). */
+function slugFromName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 type TaxonomiesAdminClientProps = {
-  initialTaxonomies: TaxonomyRow[];
+  initialTaxonomies: TaxonomyWithGroup[];
+  initialGroups: TaxonomyGroupRow[];
 };
 
 export function TaxonomiesAdminClient({
   initialTaxonomies,
+  initialGroups,
 }: TaxonomiesAdminClientProps) {
+  const [groups, setGroups] = useState(initialGroups);
   const [taxonomies, setTaxonomies] = useState(initialTaxonomies);
-  const [activeTab, setActiveTab] = useState<TaxonomyType>("format");
+  const [activeTab, setActiveTab] = useState(initialGroups[0]?.slug ?? "");
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<TaxonomyRow | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<TaxonomyRow | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm("format"));
+  const [groupFormOpen, setGroupFormOpen] = useState(false);
+  const [groupForm, setGroupForm] = useState<GroupFormState>(emptyGroupForm);
+  const [groupSlugManual, setGroupSlugManual] = useState(false);
+  const [editing, setEditing] = useState<TaxonomyWithGroup | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TaxonomyWithGroup | null>(
+    null,
+  );
+  const [form, setForm] = useState<FormState>(
+    emptyForm(initialGroups[0]?.id ?? ""),
+  );
   const [error, setError] = useState<string | null>(null);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const [groupSuccess, setGroupSuccess] = useState<string | null>(null);
+  const [isDeletingGroup, setIsDeletingGroup] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const grouped = useMemo(() => {
-    const map = new Map<TaxonomyType, TaxonomyRow[]>();
-    for (const type of TAXONOMY_TYPES) {
-      map.set(type, []);
+    const map = new Map<string, TaxonomyWithGroup[]>();
+    for (const group of groups) {
+      map.set(group.slug, []);
     }
     for (const row of taxonomies) {
-      const bucket = map.get(row.type as TaxonomyType);
+      const bucket = map.get(row.group_slug);
       if (bucket) bucket.push(row);
     }
     return map;
-  }, [taxonomies]);
+  }, [groups, taxonomies]);
 
-  function openCreate(type: TaxonomyType) {
+  const activeGroup =
+    groups.find((group) => group.slug === activeTab) ?? groups[0];
+
+  function openCreateGroup() {
+    setGroupForm(emptyGroupForm());
+    setGroupSlugManual(false);
+    setGroupError(null);
+    setGroupFormOpen(true);
+  }
+
+  function handleGroupNameChange(name: string) {
+    setGroupForm((prev) => ({
+      name,
+      slug: groupSlugManual ? prev.slug : slugFromName(name),
+    }));
+  }
+
+  function handleGroupSlugChange(slug: string) {
+    setGroupSlugManual(true);
+    setGroupForm((prev) => ({
+      ...prev,
+      slug: slug.toLowerCase(),
+    }));
+  }
+
+  function handleCreateGroup() {
+    startTransition(async () => {
+      setGroupError(null);
+      setGroupSuccess(null);
+      const result = await createTaxonomyGroup(groupForm);
+      if (!result.success) {
+        setGroupError(result.error);
+        return;
+      }
+
+      setGroups((prev) =>
+        [...prev, result.data].sort((a, b) => a.slug.localeCompare(b.slug)),
+      );
+      setActiveTab(result.data.slug);
+      setGroupFormOpen(false);
+      setGroupForm(emptyGroupForm());
+      setGroupSlugManual(false);
+    });
+  }
+
+  function openCreate(group: TaxonomyGroupRow) {
     setEditing(null);
-    setForm(emptyForm(type));
+    setForm(emptyForm(group.id));
     setError(null);
     setFormOpen(true);
   }
 
-  function openEdit(row: TaxonomyRow) {
+  function openEdit(row: TaxonomyWithGroup) {
     setEditing(row);
     setForm({
-      type: row.type as TaxonomyType,
+      group_id: row.group_id,
       label: row.label,
       value: row.value,
       sort_order: String(row.sort_order),
@@ -126,7 +191,7 @@ export function TaxonomiesAdminClient({
     startTransition(async () => {
       setError(null);
       const payload = {
-        type: form.type,
+        group_id: form.group_id,
         label: form.label,
         value: form.value,
         sort_order: Number(form.sort_order),
@@ -154,7 +219,7 @@ export function TaxonomiesAdminClient({
     });
   }
 
-  function handleToggle(row: TaxonomyRow) {
+  function handleToggle(row: TaxonomyWithGroup) {
     startTransition(async () => {
       setError(null);
       const result = await toggleTaxonomyActive(row.id, row.is_active);
@@ -185,51 +250,160 @@ export function TaxonomiesAdminClient({
     });
   }
 
+  async function handleDeleteGroup(groupId: string) {
+    const group = groups.find((item) => item.id === groupId);
+    if (!group) return;
+
+    if (
+      !window.confirm(
+        "Удалить эту категорию и все ее теги?",
+      )
+    ) {
+      return;
+    }
+
+    setIsDeletingGroup(groupId);
+    setGroupError(null);
+    setGroupSuccess(null);
+
+    const result = await deleteTaxonomyGroup(groupId);
+
+    setIsDeletingGroup(null);
+
+    if (!result.success) {
+      setGroupError(result.error);
+      return;
+    }
+
+    const remainingGroups = groups.filter((item) => item.id !== groupId);
+    setGroups(remainingGroups);
+    setTaxonomies((prev) => prev.filter((row) => row.group_id !== groupId));
+
+    if (activeTab === group.slug) {
+      setActiveTab(remainingGroups[0]?.slug ?? "");
+    }
+
+    setGroupSuccess(`Категория «${group.name}» и все её теги удалены.`);
+  }
+
+  if (groups.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            className="rounded-xl"
+            onClick={openCreateGroup}
+            disabled={pending}
+          >
+            <PlusIcon />
+            Создать категорию
+          </Button>
+        </div>
+        {groupError ? (
+          <p className="text-destructive rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+            {groupError}
+          </p>
+        ) : null}
+        <p className="text-muted-foreground text-sm">
+          Категорий пока нет. Создайте первую группу фильтров для каталога.
+        </p>
+
+        <Dialog open={groupFormOpen} onOpenChange={setGroupFormOpen}>
+          <GroupCreateDialogContent
+            groupForm={groupForm}
+            groupError={groupError}
+            pending={pending}
+            onNameChange={handleGroupNameChange}
+            onSlugChange={handleGroupSlugChange}
+            onCancel={() => setGroupFormOpen(false)}
+            onSubmit={handleCreateGroup}
+          />
+        </Dialog>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex justify-end">
+        <Button
+          type="button"
+          className="rounded-xl"
+          onClick={openCreateGroup}
+          disabled={pending}
+        >
+          <PlusIcon />
+          Создать категорию
+        </Button>
+      </div>
+
+      {groupError ? (
+        <p className="text-destructive rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+          {groupError}
+        </p>
+      ) : null}
+
+      {groupSuccess ? (
+        <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+          {groupSuccess}
+        </p>
+      ) : null}
+
       {error ? (
         <p className="text-destructive rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
           {error}
         </p>
       ) : null}
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as TaxonomyType)}
-      >
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="h-auto flex-wrap rounded-xl">
-          {TAXONOMY_TYPES.map((type) => (
+          {groups.map((group) => (
             <TabsTrigger
-              key={type}
-              value={type}
+              key={group.id}
+              value={group.slug}
               className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
-              {TYPE_LABELS[type]}
+              {group.name}
               <Badge variant="secondary" className="ml-2">
-                {grouped.get(type)?.length ?? 0}
+                {grouped.get(group.slug)?.length ?? 0}
               </Badge>
             </TabsTrigger>
           ))}
         </TabsList>
 
-        {TAXONOMY_TYPES.map((type) => (
-          <TabsContent key={type} value={type} className="mt-6">
+        {groups.map((group) => (
+          <TabsContent key={group.id} value={group.slug} className="mt-6">
             <div className="mb-4 flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold">{TYPE_LABELS[type]}</h2>
+                <h2 className="text-lg font-semibold">{group.name}</h2>
                 <p className="text-muted-foreground text-sm">
                   Значения справочника для фильтров каталога и форм курсов.
                 </p>
               </div>
-              <Button
-                type="button"
-                className="rounded-xl"
-                onClick={() => openCreate(type)}
-                disabled={pending}
-              >
-                <PlusIcon />
-                Добавить
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="rounded-xl"
+                  onClick={() => handleDeleteGroup(group.id)}
+                  disabled={pending || isDeletingGroup === group.id}
+                >
+                  <Trash2Icon />
+                  {isDeletingGroup === group.id
+                    ? "Удаление..."
+                    : "Удалить категорию"}
+                </Button>
+                <Button
+                  type="button"
+                  className="rounded-xl"
+                  onClick={() => openCreate(group)}
+                  disabled={pending || isDeletingGroup !== null}
+                >
+                  <PlusIcon />
+                  Добавить
+                </Button>
+              </div>
             </div>
 
             <div className="border-border overflow-hidden rounded-xl border bg-card shadow-sm">
@@ -244,7 +418,7 @@ export function TaxonomiesAdminClient({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(grouped.get(type) ?? []).length === 0 ? (
+                  {(grouped.get(group.slug) ?? []).length === 0 ? (
                     <TableRow>
                       <TableCell
                         colSpan={5}
@@ -254,7 +428,7 @@ export function TaxonomiesAdminClient({
                       </TableCell>
                     </TableRow>
                   ) : (
-                    (grouped.get(type) ?? []).map((row) => (
+                    (grouped.get(group.slug) ?? []).map((row) => (
                       <TableRow
                         key={row.id}
                         className={cn(!row.is_active && "opacity-60")}
@@ -312,11 +486,24 @@ export function TaxonomiesAdminClient({
         ))}
       </Tabs>
 
+      <Dialog open={groupFormOpen} onOpenChange={setGroupFormOpen}>
+        <GroupCreateDialogContent
+          groupForm={groupForm}
+          groupError={groupError}
+          pending={pending}
+          onNameChange={handleGroupNameChange}
+          onSlugChange={handleGroupSlugChange}
+          onCancel={() => setGroupFormOpen(false)}
+          onSubmit={handleCreateGroup}
+        />
+      </Dialog>
+
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
         <DialogContent className="rounded-xl sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Редактировать запись" : "Новая запись"}
+              {activeGroup ? ` — ${activeGroup.name}` : null}
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -414,5 +601,81 @@ export function TaxonomiesAdminClient({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+type GroupCreateDialogContentProps = {
+  groupForm: GroupFormState;
+  groupError: string | null;
+  pending: boolean;
+  onNameChange: (name: string) => void;
+  onSlugChange: (slug: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+};
+
+function GroupCreateDialogContent({
+  groupForm,
+  groupError,
+  pending,
+  onNameChange,
+  onSlugChange,
+  onCancel,
+  onSubmit,
+}: GroupCreateDialogContentProps) {
+  return (
+    <DialogContent className="rounded-xl sm:max-w-md">
+      <DialogHeader>
+        <DialogTitle>Новая категория</DialogTitle>
+      </DialogHeader>
+      <div className="grid gap-4 py-2">
+        {groupError ? (
+          <p className="text-destructive text-sm">{groupError}</p>
+        ) : null}
+        <div className="grid gap-2">
+          <Label htmlFor="group-name">Название группы</Label>
+          <Input
+            id="group-name"
+            className="rounded-xl"
+            value={groupForm.name}
+            onChange={(e) => onNameChange(e.target.value)}
+            placeholder="Например, Отдел"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="group-slug">Slug</Label>
+          <Input
+            id="group-slug"
+            className="rounded-xl"
+            value={groupForm.slug}
+            onChange={(e) => onSlugChange(e.target.value)}
+            placeholder="department"
+          />
+          <p className="text-muted-foreground text-xs">
+            Латиница, цифры и дефис. Можно ввести вручную или сгенерировать из
+            названия.
+          </p>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          className="rounded-xl"
+          onClick={onCancel}
+          disabled={pending}
+        >
+          Отмена
+        </Button>
+        <Button
+          type="button"
+          className="rounded-xl"
+          onClick={onSubmit}
+          disabled={pending}
+        >
+          Создать
+        </Button>
+      </DialogFooter>
+    </DialogContent>
   );
 }

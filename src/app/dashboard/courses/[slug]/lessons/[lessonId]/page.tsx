@@ -42,7 +42,7 @@ export default async function LessonEditorPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -52,7 +52,7 @@ export default async function LessonEditorPage({ params }: PageProps) {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   if (
@@ -120,6 +120,7 @@ export default async function LessonEditorPage({ params }: PageProps) {
   const { data: testsRows, error: testsError } = await supabase
     .from("tests")
     .select("id, title, folder_name")
+    .eq("scope", "library")
     .order("title", { ascending: true });
 
   if (testsError) {

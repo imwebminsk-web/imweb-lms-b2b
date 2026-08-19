@@ -14,29 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      course_taxonomies: {
+        Row: {
+          course_id: string
+          taxonomy_id: string
+        }
+        Insert: {
+          course_id: string
+          taxonomy_id: string
+        }
+        Update: {
+          course_id?: string
+          taxonomy_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "course_taxonomies_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "course_taxonomies_taxonomy_id_fkey"
+            columns: ["taxonomy_id"]
+            isOneToOne: false
+            referencedRelation: "taxonomies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       courses: {
         Row: {
-          age_group: string | null
           category: string | null
           created_at: string
           description: string | null
           detailed_description: string | null
-          delivery_format: string | null
           duration_unit: string | null
           duration_value: number | null
           has_certificate: boolean
           id: string
           image_url: string | null
-          level: string | null
-          marketing_audience: string | null
-          language: string | null
           price: string
           promotional_images: string[] | null
           slug: string
           start_date: string | null
           start_date_type: Database["public"]["Enums"]["start_date_type"]
           status: Database["public"]["Enums"]["course_status"]
-          target_audience: Database["public"]["Enums"]["target_audience"]
           teacher_id: string
           title: string
           video_url: string | null
@@ -44,27 +68,21 @@ export type Database = {
           youtube_url: string | null
         }
         Insert: {
-          age_group?: string | null
           category?: string | null
           created_at?: string
           description?: string | null
           detailed_description?: string | null
-          delivery_format?: string | null
           duration_unit?: string | null
           duration_value?: number | null
           has_certificate?: boolean
           id?: string
           image_url?: string | null
-          level?: string | null
-          marketing_audience?: string | null
-          language?: string | null
           price?: string
           promotional_images?: string[]
           slug: string
           start_date?: string | null
           start_date_type?: Database["public"]["Enums"]["start_date_type"]
           status?: Database["public"]["Enums"]["course_status"]
-          target_audience?: Database["public"]["Enums"]["target_audience"]
           teacher_id: string
           title: string
           video_url?: string | null
@@ -72,27 +90,21 @@ export type Database = {
           youtube_url?: string | null
         }
         Update: {
-          age_group?: string | null
           category?: string | null
           created_at?: string
           description?: string | null
           detailed_description?: string | null
-          delivery_format?: string | null
           duration_unit?: string | null
           duration_value?: number | null
           has_certificate?: boolean
           id?: string
           image_url?: string | null
-          level?: string | null
-          marketing_audience?: string | null
-          language?: string | null
           price?: string
           promotional_images?: string[]
           slug?: string
           start_date?: string | null
           start_date_type?: Database["public"]["Enums"]["start_date_type"]
           status?: Database["public"]["Enums"]["course_status"]
-          target_audience?: Database["public"]["Enums"]["target_audience"]
           teacher_id?: string
           title?: string
           video_url?: string | null
@@ -303,6 +315,68 @@ export type Database = {
           },
         ]
       }
+      job_title_courses: {
+        Row: {
+          course_id: string
+          created_at: string
+          job_title_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          job_title_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          job_title_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_title_courses_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_title_courses_job_title_id_fkey"
+            columns: ["job_title_id"]
+            isOneToOne: false
+            referencedRelation: "job_titles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_titles: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_titles_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lessons: {
         Row: {
           content: Json
@@ -452,6 +526,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      organization_members: {
+        Row: {
+          created_at: string
+          organization_id: string
+          role: Database["public"]["Enums"]["organization_member_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          role: Database["public"]["Enums"]["organization_member_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          role?: Database["public"]["Enums"]["organization_member_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          slug?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -781,35 +912,176 @@ export type Database = {
         }
         Relationships: []
       }
-      taxonomies: {
+      team_courses: {
+        Row: {
+          course_id: string
+          created_at: string
+          team_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          team_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          team_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_courses_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_courses_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_members: {
+        Row: {
+          created_at: string
+          job_title_id: string | null
+          team_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          job_title_id?: string | null
+          team_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          job_title_id?: string | null
+          team_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_members_job_title_id_fkey"
+            columns: ["job_title_id"]
+            isOneToOne: false
+            referencedRelation: "job_titles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
         Row: {
           created_at: string
           id: string
-          is_active: boolean
-          label: string
-          sort_order: number
-          type: string
-          value: string
+          name: string
+          organization_id: string
+          parent_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
-          is_active?: boolean
-          label: string
-          sort_order?: number
-          type: string
-          value: string
+          name: string
+          organization_id: string
+          parent_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
+          name?: string
+          organization_id?: string
+          parent_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teams_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      taxonomy_groups: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          slug: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          slug?: string
+        }
+        Relationships: []
+      }
+      taxonomies: {
+        Row: {
+          created_at: string
+          group_id: string
+          id: string
+          is_active: boolean
+          label: string
+          sort_order: number
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          group_id: string
+          id?: string
+          is_active?: boolean
+          label: string
+          sort_order?: number
+          value: string
+        }
+        Update: {
+          created_at?: string
+          group_id?: string
+          id?: string
           is_active?: boolean
           label?: string
           sort_order?: number
-          type?: string
           value?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "taxonomies_group_id_fkey"
+            columns: ["group_id"]
+            isOneToOne: false
+            referencedRelation: "taxonomy_groups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tests: {
         Row: {
@@ -820,8 +1092,10 @@ export type Database = {
           id: string
           is_for_kids: boolean
           is_published: boolean | null
+          lesson_block_id: string | null
           max_score: number
           save_to_journal: boolean
+          scope: Database["public"]["Enums"]["test_scope"]
           test_type: string
           time_limit: number
           title: string
@@ -837,8 +1111,10 @@ export type Database = {
           id?: string
           is_for_kids?: boolean
           is_published?: boolean | null
+          lesson_block_id?: string | null
           max_score?: number
           save_to_journal?: boolean
+          scope?: Database["public"]["Enums"]["test_scope"]
           test_type?: string
           time_limit?: number
           title: string
@@ -854,8 +1130,10 @@ export type Database = {
           id?: string
           is_for_kids?: boolean
           is_published?: boolean | null
+          lesson_block_id?: string | null
           max_score?: number
           save_to_journal?: boolean
+          scope?: Database["public"]["Enums"]["test_scope"]
           test_type?: string
           time_limit?: number
           title?: string
@@ -863,7 +1141,15 @@ export type Database = {
           title_teacher?: string | null
           user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tests_lesson_block_id_fkey"
+            columns: ["lesson_block_id"]
+            isOneToOne: false
+            referencedRelation: "lesson_blocks"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -957,9 +1243,10 @@ export type Database = {
         | "assignment"
         | "quiz"
       lesson_type: "video" | "text" | "test" | "quiz"
+      organization_member_role: "owner" | "hr_manager" | "employee"
       profile_role: "admin" | "teacher" | "student" | "head_teacher"
       start_date_type: "fixed" | "on_demand"
-      target_audience: "kids" | "adults"
+      test_scope: "library" | "inline"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1110,9 +1397,10 @@ export const Constants = {
         "quiz",
       ],
       lesson_type: ["video", "text", "test", "quiz"],
+      organization_member_role: ["owner", "hr_manager", "employee"],
       profile_role: ["admin", "teacher", "student", "head_teacher"],
       start_date_type: ["fixed", "on_demand"],
-      target_audience: ["kids", "adults"],
+      test_scope: ["library", "inline"],
     },
   },
 } as const

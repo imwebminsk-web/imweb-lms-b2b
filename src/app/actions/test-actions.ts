@@ -643,7 +643,10 @@ export async function getUniqueTestFolders(): Promise<
   const isAdminOrHead =
     profile?.role === "admin" || profile?.role === "head_teacher";
 
-  let query = supabase.from("tests").select("folder_name");
+  let query = supabase
+    .from("tests")
+    .select("folder_name")
+    .eq("scope", "library");
 
   if (!isAdminOrHead) {
     query = query.eq("user_id", user.id);
@@ -693,6 +696,7 @@ export async function getTests(): Promise<
   let testsQuery = supabase
     .from("tests")
     .select("id, title, description, folder_name")
+    .eq("scope", "library")
     .order("created_at", { ascending: false });
 
   if (!user || role === "student") {
@@ -1455,6 +1459,72 @@ function resolveOptionAndAnswerData(
   }
 
   return { ok: false, error: "Не указан вариант ответа" };
+}
+
+/**
+ * Создаёт inline-тест, привязанный к конкретному блоку урока.
+ */
+export async function createInlineTest(
+  lessonBlockId: string,
+  title: string,
+): Promise<{ success: true; testId: string } | { success: false; error: string }> {
+  const blockId = lessonBlockId.trim();
+  const testTitle = title.trim();
+
+  if (!blockId) {
+    return { success: false, error: "Не указан ID блока урока" };
+  }
+  if (!testTitle) {
+    return { success: false, error: "Не указано название теста" };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (
+    !profile ||
+    (profile.role !== "teacher" &&
+      profile.role !== "head_teacher" &&
+      profile.role !== "admin")
+  ) {
+    return {
+      success: false,
+      error: "Создавать тесты могут только преподаватели или администраторы.",
+    };
+  }
+
+  const { data: testRow, error: testErr } = await supabase
+    .from("tests")
+    .insert({
+      title: testTitle,
+      user_id: user.id,
+      scope: "inline",
+      lesson_block_id: blockId,
+      is_published: true, // Inline тесты обычно публикуются вместе с уроком
+    })
+    .select("id")
+    .single();
+
+  if (testErr || !testRow) {
+    return {
+      success: false,
+      error: testErr?.message ?? "Не удалось создать inline-тест",
+    };
+  }
+
+  return { success: true, testId: testRow.id };
 }
 
 export type AttemptResult = {

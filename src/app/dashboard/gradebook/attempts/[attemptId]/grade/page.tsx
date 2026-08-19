@@ -30,7 +30,7 @@ export default async function AttemptGradePage({ params }: PageProps) {
 
   if (!user) {
     redirect(
-      `/login?next=${encodeURIComponent(`/dashboard/gradebook/attempts/${attemptId}/grade`)}`,
+      `/?next=${encodeURIComponent(`/dashboard/gradebook/attempts/${attemptId}/grade`)}`,
     );
   }
 

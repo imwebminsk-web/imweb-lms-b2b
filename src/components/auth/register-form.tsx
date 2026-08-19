@@ -23,8 +23,16 @@ export function RegisterForm() {
   const [state, formAction, pending] = useActionState(signUp, empty);
 
   return (
-    <Card className="w-full max-w-sm shadow-sm">
-      <CardHeader>
+    <Card className="w-full max-w-sm border-0 bg-transparent p-0 shadow-none ring-0">
+      <div className="mb-2 flex flex-col gap-1 px-0">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          Добро пожаловать
+        </h1>
+        <p className="text-sm text-slate-500">
+          Рады видеть вас. Пожалуйста, авторизуйтесь.
+        </p>
+      </div>
+      <CardHeader className="px-0">
         <CardTitle>Регистрация</CardTitle>
         <CardDescription>
           Укажите почту и пароль. После регистрации вы сразу попадёте в личный
@@ -32,7 +40,7 @@ export function RegisterForm() {
         </CardDescription>
       </CardHeader>
       <form action={formAction}>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-4 px-0">
           <div className="space-y-2">
             <Label htmlFor="email">Электронная почта</Label>
             <Input
@@ -60,14 +68,14 @@ export function RegisterForm() {
             </p>
           ) : null}
         </CardContent>
-        <CardFooter className="flex flex-col gap-3">
+        <CardFooter className="flex flex-col gap-3 border-0 bg-transparent p-0">
           <Button type="submit" disabled={pending} className="w-full">
             {pending ? "Создаём аккаунт…" : "Зарегистрироваться"}
           </Button>
           <p className="text-muted-foreground text-center text-sm">
             Уже есть аккаунт?{" "}
             <Link
-              href="/login"
+              href="/"
               className="text-primary font-medium underline-offset-4 hover:underline"
             >
               Войти

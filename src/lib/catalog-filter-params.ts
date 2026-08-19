@@ -1,5 +1,9 @@
-import type { CatalogTaxonomy, CatalogTaxonomyType } from "@/lib/catalog-taxonomies";
-import { groupCatalogTaxonomies } from "@/lib/catalog-taxonomies";
+import type { CatalogTaxonomy } from "@/lib/catalog-taxonomies";
+import {
+  groupCatalogTaxonomies,
+  taxonomiesForGroup,
+} from "@/lib/catalog-taxonomies";
+import { TAXONOMY_GROUP_SLUG } from "@/lib/course-taxonomy-map";
 
 function firstString(
   sp: Record<string, string | string[] | undefined>,
@@ -22,11 +26,13 @@ export type CatalogFiltersApplied = {
 
 function parseTaxonomyValue(
   raw: string | undefined,
-  type: CatalogTaxonomyType,
+  groupSlug: string,
   grouped: ReturnType<typeof groupCatalogTaxonomies>,
 ): string | null {
   if (!raw) return null;
-  const allowed = grouped[type].some((row) => row.value === raw);
+  const allowed = taxonomiesForGroup(grouped, groupSlug).some(
+    (row) => row.value === raw,
+  );
   return allowed ? raw : null;
 }
 
@@ -38,32 +44,32 @@ export function parseCatalogFilters(
 
   const audience = parseTaxonomyValue(
     firstString(sp, "audience"),
-    "audience",
+    TAXONOMY_GROUP_SLUG.audience,
     grouped,
   );
 
   const format = parseTaxonomyValue(
     firstString(sp, "format"),
-    "format",
+    TAXONOMY_GROUP_SLUG.format,
     grouped,
   );
 
   const language = parseTaxonomyValue(
     firstString(sp, "language"),
-    "language",
+    TAXONOMY_GROUP_SLUG.language,
     grouped,
   );
 
   const rawAge = firstString(sp, "age");
   const age =
     audience === "children"
-      ? parseTaxonomyValue(rawAge, "age_group", grouped)
+      ? parseTaxonomyValue(rawAge, TAXONOMY_GROUP_SLUG.ageGroup, grouped)
       : null;
 
   const rawLevel = firstString(sp, "level");
   const level =
     audience === "adults"
-      ? parseTaxonomyValue(rawLevel, "cefr_level", grouped)
+      ? parseTaxonomyValue(rawLevel, TAXONOMY_GROUP_SLUG.cefrLevel, grouped)
       : null;
 
   return { audience, format, language, age, level };

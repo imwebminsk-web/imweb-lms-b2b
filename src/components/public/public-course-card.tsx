@@ -8,18 +8,7 @@ import type { Database } from "@/types/database.types";
 
 export type PublicCourseCardModel = Pick<
   Database["public"]["Tables"]["courses"]["Row"],
-  | "id"
-  | "title"
-  | "slug"
-  | "description"
-  | "image_url"
-  | "price"
-  | "marketing_audience"
-  | "level"
-  | "age_group"
-  | "target_audience"
-  | "delivery_format"
-  | "language"
+  "id" | "title" | "slug" | "description" | "image_url" | "price"
 >;
 
 type PublicCourseCardProps = {
@@ -79,28 +68,29 @@ export function PublicCourseCard({ course }: PublicCourseCardProps) {
         </h3>
 
         {meta ? (
-          <p className="text-[#001352] dark:text-slate-300 text-xs font-medium">{meta}</p>
+          <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+            {meta}
+          </p>
         ) : null}
 
-        <p className="text-[#001352] dark:text-slate-300 line-clamp-3 text-sm leading-relaxed">
+        <p className="text-muted-foreground line-clamp-3 flex-1 text-sm leading-relaxed">
           {description}
         </p>
 
-        <p className="text-sm text-[#001352] dark:text-slate-300">
-          <span className="text-[#001352] dark:text-slate-300">Цена: </span>
-          <span className="text-[#001352] dark:text-slate-300 font-medium tabular-nums">
+        <div className="mt-auto flex items-center justify-between gap-3 pt-2">
+          <span className="text-[#001352] dark:text-white text-base font-semibold">
             {formatCoursePrice(course.price)}
           </span>
-        </p>
+          <Button
+            asChild
+            variant="landing"
+            size="sm"
+            className="rounded-full px-4"
+          >
+            <Link href={href}>Подробнее</Link>
+          </Button>
+        </div>
       </div>
-
-      <Button
-        variant="landing"
-        className="mt-auto w-full rounded-xl"
-        asChild
-      >
-        <Link href={href}>Подробнее</Link>
-      </Button>
     </article>
   );
 }

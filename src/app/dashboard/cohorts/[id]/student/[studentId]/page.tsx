@@ -35,7 +35,7 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    redirect("/");
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -45,7 +45,7 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
     .maybeSingle();
 
   if (profileError || !profile) {
-    redirect("/login");
+    redirect("/");
   }
 
   if (

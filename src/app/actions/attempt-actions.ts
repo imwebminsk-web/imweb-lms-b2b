@@ -39,7 +39,7 @@ export async function resetTeacherAttemptAndRedirect(
 
   if (!user) {
     redirect(
-      `/login?next=${encodeURIComponent(`/dashboard/tests/${tid}/sandbox`)}`,
+      `/?next=${encodeURIComponent(`/dashboard/tests/${tid}/sandbox`)}`,
     );
   }
 

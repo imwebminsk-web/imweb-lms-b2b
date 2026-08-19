@@ -3,13 +3,15 @@ import {
   Facebook,
   Globe,
   Instagram,
+  Mail,
   MapPin,
   Phone,
   Twitter,
   Youtube,
 } from "lucide-react";
 
-import { ReviewsCarousel } from "@/components/landing/reviews-carousel";
+import type { PlatformContacts } from "@/app/actions/settings-actions";
+
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -201,23 +203,18 @@ export function LandingSalesCta() {
   );
 }
 
-export function LandingReviews() {
-  return (
-    <section id="reviews" className="border-t py-16 sm:py-20">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <h2 className="text-[#001352] dark:text-white text-center text-3xl font-bold tracking-tight sm:text-4xl">
-          Отзывы учеников
-        </h2>
-        <p className="text-[#001352] dark:text-white mt-2 mb-8 text-base sm:text-lg">
-          Вот реальные отзывы из разных источников на Учебный центр NEW EDUCATION:
-        </p>
-        <ReviewsCarousel />
-      </div>
-    </section>
-  );
-}
+export function LandingFooter({
+  contacts,
+  legalInfo,
+}: {
+  contacts: PlatformContacts;
+  legalInfo: string;
+}) {
+  const phone = contacts.phones[0] ?? "";
+  const email = contacts.emails[0] ?? "";
+  const address = contacts.addresses[0] ?? "";
+  const phoneDigits = phone.replace(/\D/g, "");
 
-export function LandingFooter() {
   return (
     <footer className="border-t bg-slate-100 py-12 text-sm text-[#001352] dark:bg-slate-900 dark:text-slate-300">
       <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
@@ -247,90 +244,77 @@ export function LandingFooter() {
                 Курсы
               </Link>
             </li>
-            <li>
-              <Link
-                href="#teachers"
-                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                Преподаватели
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="#reviews"
-                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                Отзывы
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="#faq"
-                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                FAQ
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/platform"
-                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                О платформе
-              </Link>
-            </li>
           </ul>
         </div>
         <div>
           <p className="font-semibold text-[#001352] dark:text-white">Контакты</p>
           <ul className="mt-3 space-y-3 text-[#001352] dark:text-slate-300">
-            <li className="flex items-start gap-2">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-[#001352] dark:text-slate-300" aria-hidden />
-              <span>г. Минск, ул. Кальварийская, 25, каб. 320</span>
-            </li>
-            <li className="flex items-center gap-2">
-              <Phone className="size-4 shrink-0 text-[#001352] dark:text-slate-300" aria-hidden />
-              <a
-                href="tel:+375291187722"
-                className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                +375 29 118-77-22
-              </a>
-            </li>
-            <li>
-              <a
-                href="https://wa.me/375291187722"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="WhatsApp"
-                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                <WhatsAppIcon />
-                <span>WhatsApp</span>
-              </a>
-            </li>
-            <li>
-              <a
-                href="viber://chat?number=%2B375291187722"
-                aria-label="Viber"
-                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                <ViberIcon />
-                <span>Viber</span>
-              </a>
-            </li>
-            <li>
-              <a
-                href="https://t.me/+375291187722"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Telegram"
-                className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
-              >
-                <TelegramIcon />
-                <span>Telegram</span>
-              </a>
-            </li>
+            {address ? (
+              <li className="flex items-start gap-2">
+                <MapPin className="mt-0.5 size-4 shrink-0 text-[#001352] dark:text-slate-300" aria-hidden />
+                <span>{address}</span>
+              </li>
+            ) : null}
+            {phone ? (
+              <li className="flex items-center gap-2">
+                <Phone className="size-4 shrink-0 text-[#001352] dark:text-slate-300" aria-hidden />
+                <a
+                  href={`tel:${phone}`}
+                  className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+                >
+                  {phone}
+                </a>
+              </li>
+            ) : null}
+            {email ? (
+              <li className="flex items-center gap-2">
+                <Mail className="size-4 shrink-0 text-[#001352] dark:text-slate-300" aria-hidden />
+                <a
+                  href={`mailto:${email}`}
+                  className="text-[#001352] hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+                >
+                  {email}
+                </a>
+              </li>
+            ) : null}
+            {phoneDigits ? (
+              <>
+                <li>
+                  <a
+                    href={`https://wa.me/${phoneDigits}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="WhatsApp"
+                    className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+                  >
+                    <WhatsAppIcon />
+                    <span>WhatsApp</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={`viber://chat?number=%2B${phoneDigits}`}
+                    aria-label="Viber"
+                    className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+                  >
+                    <ViberIcon />
+                    <span>Viber</span>
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href={`https://t.me/+${phoneDigits}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Telegram"
+                    className="flex items-center gap-2 text-[#001352] transition-colors hover:text-[#001352]/80 dark:text-slate-300 dark:hover:text-white"
+                  >
+                    <TelegramIcon />
+                    <span>Telegram</span>
+                  </a>
+                </li>
+              </>
+            ) : null}
           </ul>
         </div>
         <div>
@@ -399,9 +383,11 @@ export function LandingFooter() {
           </div>
         </div>
       </div>
-      <p className="mt-10 text-center text-[#001352] dark:text-slate-400">
-        © 2013-2026 Учебный центр «Новое образование»
-      </p>
+      {legalInfo ? (
+        <p className="mt-10 text-center text-[#001352] dark:text-slate-400 whitespace-pre-line">
+          {legalInfo}
+        </p>
+      ) : null}
     </footer>
   );
 }

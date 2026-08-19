@@ -37,7 +37,11 @@ function TelegramIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-export async function LandingHeader() {
+type LandingHeaderProps = {
+  platformName: string;
+};
+
+export async function LandingHeader({ platformName }: LandingHeaderProps) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -47,8 +51,14 @@ export async function LandingHeader() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-card shadow-sm">
-      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">        <Link href="/" className="flex shrink-0 items-center">
+      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+        <Link href="/" className="flex shrink-0 items-center gap-3">
           <Logo priority className="h-[4.5rem]" />
+          {platformName ? (
+            <span className="hidden text-lg font-semibold text-[#001352] dark:text-white sm:inline">
+              {platformName}
+            </span>
+          ) : null}
         </Link>
 
         <NavigationMenu className="hidden max-w-none flex-1 justify-center lg:flex">
