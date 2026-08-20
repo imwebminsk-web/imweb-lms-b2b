@@ -81,6 +81,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
       vimeo_url,
       category,
       has_certificate,
+      is_global,
       course_taxonomies (
         taxonomy_id,
         taxonomies (
@@ -189,6 +190,35 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     group_name: row.taxonomy_groups?.name ?? "",
   }));
 
+  const { data: teamsData } = await supabase.from("teams").select("id, name").order("name");
+  const { data: jobTitlesData } = await supabase.from("job_titles").select("id, name").order("name");
+  const { data: tagsData } = await supabase.from("tags").select("id, name").order("name");
+
+  const { data: teamCourses } = await supabase
+    .from("team_courses")
+    .select("team_id")
+    .eq("course_id", course.id);
+
+  const { data: jobTitleCourses } = await supabase
+    .from("job_title_courses")
+    .select("job_title_id")
+    .eq("course_id", course.id);
+
+  const { data: courseTags } = await supabase
+    .from("course_tags")
+    .select("tag_id")
+    .eq("course_id", course.id);
+
+  const b2bOptions = {
+    teams: teamsData ?? [],
+    jobTitles: jobTitlesData ?? [],
+    tags: tagsData ?? [],
+    selectedTeams: (teamCourses ?? []).map((tc) => tc.team_id),
+    selectedJobTitles: (jobTitleCourses ?? []).map((jtc) => jtc.job_title_id),
+    selectedTags: (courseTags ?? []).map((ct) => ct.tag_id),
+    isGlobal: courseRow.is_global ?? false,
+  };
+
   const isPublished = course.status === "published";
 
   return (
@@ -223,7 +253,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         )}
       </header>
 
-      <CourseEditorTabs course={course} modules={modules} taxonomies={taxonomies} />
+      <CourseEditorTabs course={course} modules={modules} taxonomies={taxonomies} b2bOptions={b2bOptions} />
     </div>
   );
 }

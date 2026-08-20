@@ -12,7 +12,6 @@ import {
   type GradebookBestAttemptDetails,
 } from "@/app/actions/gradebook-actions";
 import { QuizResultView } from "@/components/quiz/QuizResultView";
-import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -213,14 +212,7 @@ export function TestResultSheet({
             <>
               {details.gradingVisuals ? (
                 <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
-                  {details.isForKids ? (
-                    <GradingDisplay
-                      score={details.score}
-                      isForKids
-                      totalPossiblePoints={details.totalPossiblePoints}
-                      compact
-                    />
-                  ) : details.points !== null ? (
+                  {details.points !== null ? (
                     <Badge variant="outline">
                       Баллы: {details.points}
                     </Badge>
@@ -229,7 +221,6 @@ export function TestResultSheet({
               ) : null}
 
               {isTeacher &&
-              !details.isForKids &&
               !details.resultSummary.requiresManualReview ? (
                 <section className="border-border space-y-3 rounded-xl border p-4">
                   <h3 className="text-sm font-semibold">

@@ -17,7 +17,7 @@ export type StudentTestType = "training" | "final";
 
 export type InitStudentQuizSuccess = {
   success: true;
-  test: { title: string; description: string | null; isForKids: boolean; timeLimitMinutes: number };
+  test: { title: string; description: string | null; timeLimitMinutes: number };
   questions: SafeTestQuestion[];
   attemptId: string;
   initialSubmittedIds: string[];
@@ -182,7 +182,6 @@ export async function initStudentQuiz(
     test: {
       title: data.title,
       description: data.description,
-      isForKids: data.is_for_kids ?? false,
       timeLimitMinutes: data.time_limit ?? 0,
     },
     questions: data.questions,

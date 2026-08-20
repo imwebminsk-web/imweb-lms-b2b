@@ -591,15 +591,7 @@ export function QuizResultView({
     return rows.map((r) => r.option_id).filter((id) => id.trim() !== "");
   }
 
-  const isForKids = result.isForKids;
   const requiresManualReview = result.requiresManualReview;
-  const kidsGradingVisuals = isForKids
-    ? getGradingVisuals(result.score, true, result.totalPossiblePoints)
-    : null;
-
-  function kidsReviewDynamicKey(color: GradingColor): TranslationKey {
-    return `quizResult.kidsReviewDynamic.${color}`;
-  }
 
   const questionsSection = (
     <section
@@ -886,25 +878,23 @@ export function QuizResultView({
       ) : null}
 
       <div className="flex flex-col items-center gap-6 text-center">
-        {!isForKids ? (
-          <div className="flex w-full max-w-2xl flex-col gap-2">
-            <div className="flex w-full items-center gap-2 text-sm">
-              <span className="font-medium">
-                {requiresManualReview
-                  ? t("quizResult.submittedForReview")
-                  : t("quizResult.performance")}
-              </span>
-              {!requiresManualReview ? (
-                <span className="text-muted-foreground ml-auto tabular-nums">
-                  {result.percentCorrect}%
-                </span>
-              ) : null}
-            </div>
+        <div className="flex w-full max-w-2xl flex-col gap-2">
+          <div className="flex w-full items-center gap-2 text-sm">
+            <span className="font-medium">
+              {requiresManualReview
+                ? t("quizResult.submittedForReview")
+                : t("quizResult.performance")}
+            </span>
             {!requiresManualReview ? (
-              <Progress value={result.percentCorrect} className="w-full" />
+              <span className="text-muted-foreground ml-auto tabular-nums">
+                {result.percentCorrect}%
+              </span>
             ) : null}
           </div>
-        ) : null}
+          {!requiresManualReview ? (
+            <Progress value={result.percentCorrect} className="w-full" />
+          ) : null}
+        </div>
         <div className="space-y-2">
           <h2 className="text-2xl font-semibold tracking-tight">
             {t("quizResult.result")}
@@ -914,49 +904,25 @@ export function QuizResultView({
               {t("quizResult.manualReviewHint")}
             </p>
           ) : null}
-          {isForKids ? (
-            <div className="flex flex-col items-center gap-3 py-2">
-              {requiresManualReview ? (
-                <p className="text-muted-foreground text-sm">
-                  {t("quizResult.kidsWaitReview")}
-                </p>
-              ) : (
-                <>
-                  <GradingDisplay
-                    score={result.score}
-                    isForKids
-                    totalPossiblePoints={result.totalPossiblePoints}
-                    animate={celebrateKidsEmoji}
-                  />
-                  <p className="text-muted-foreground text-sm">
-                    {kidsGradingVisuals?.color
-                      ? t(kidsReviewDynamicKey(kidsGradingVisuals.color))
-                      : null}
-                  </p>
-                </>
-              )}
-            </div>
-          ) : (
-            <>
-              {!requiresManualReview ? (
-                <p className="text-muted-foreground text-lg">
-                  {t("quizResult.earnedPoints")}:{" "}
-                  <span className="text-foreground font-semibold tabular-nums">
-                    {result.earnedPoints}
-                  </span>{" "}
-                  {t("quiz.of")}{" "}
-                  <span className="text-foreground font-semibold tabular-nums">
-                    {result.totalPossiblePoints}
-                  </span>
-                </p>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  {t("quizResult.preliminaryScore")}: {result.earnedPoints} /{" "}
-                  {result.totalPossiblePoints} {t("quizResult.preliminarySuffix")}
-                </p>
-              )}
-            </>
-          )}
+          <>
+            {!requiresManualReview ? (
+              <p className="text-muted-foreground text-lg">
+                {t("quizResult.earnedPoints")}:{" "}
+                <span className="text-foreground font-semibold tabular-nums">
+                  {result.earnedPoints}
+                </span>{" "}
+                {t("quiz.of")}{" "}
+                <span className="text-foreground font-semibold tabular-nums">
+                  {result.totalPossiblePoints}
+                </span>
+              </p>
+            ) : (
+              <p className="text-muted-foreground text-sm">
+                {t("quizResult.preliminaryScore")}: {result.earnedPoints} /{" "}
+                {result.totalPossiblePoints} {t("quizResult.preliminarySuffix")}
+              </p>
+            )}
+          </>
         </div>
       </div>
 

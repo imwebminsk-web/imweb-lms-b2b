@@ -52,7 +52,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
     timeLimit: "0",
     autoCheck: true,
     saveToJournal: true,
-    isForKids: false,
     testType: "final",
     maxScore: "100",
     isPublished: true,
@@ -80,7 +79,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
           timeLimit: String(data.timeLimit || 0),
           autoCheck: data.autoCheck ?? true,
           saveToJournal: data.saveToJournal ?? true,
-          isForKids: data.isForKids ?? false,
           testType: data.testType || "final",
           maxScore: String(initialMaxScore),
           isPublished: canPublish ? (data.isPublished ?? true) : false,
@@ -128,7 +126,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
       save_to_journal: settings.saveToJournal,
       max_score: parsePositiveInt(settings.maxScore, 100),
       time_limit: parsePositiveInt(settings.timeLimit, 0),
-      is_for_kids: settings.isForKids,
       questions: questions.map((q) => {
         const points = parsePositiveInt(String(q.points ?? 1), 1);
         const taskMedia = taskMediaFromQuestion(q);
@@ -348,17 +345,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
                 id="inline-journal"
                 checked={settings.saveToJournal}
                 onCheckedChange={(c) => setSettings({ ...settings, saveToJournal: c })}
-              />
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="inline-kids">Детский режим</Label>
-                <p className="text-muted-foreground text-xs">Оценки смайликами вместо баллов.</p>
-              </div>
-              <Switch
-                id="inline-kids"
-                checked={settings.isForKids}
-                onCheckedChange={(c) => setSettings({ ...settings, isForKids: c })}
               />
             </div>
           </AccordionContent>

@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import { toast } from "sonner";
+import { Accordion as AccordionPrimitive } from "radix-ui";
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CheckIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   FileQuestionIcon,
   FileTextIcon,
   HelpCircleIcon,
   PencilIcon,
   Trash2Icon,
   VideoIcon,
+  XIcon,
 } from "lucide-react";
 
 import {
@@ -21,14 +26,24 @@ import {
   deleteModule,
   reorderLesson,
   reorderModule,
+  updateModule,
   type CurriculumActionState,
 } from "@/app/actions/curriculum-actions";
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
-  AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -181,38 +196,64 @@ export function CurriculumTab({
   const lessonBasePath = `/dashboard/courses/${encodeURIComponent(courseSlug)}/lessons`;
   const defaultOpen = modules.map((m) => m.id);
 
-  async function handleDeleteModule(moduleId: string) {
-    if (
-      !window.confirm(
-        "Удалить модуль и все уроки внутри? Это действие необратимо.",
-      )
-    ) {
-      return;
-    }
-    const res = await deleteModule(moduleId);
-    if (res.error) {
-      window.alert(res.error);
-      return;
-    }
-    router.refresh();
+  const [deleteModuleId, setDeleteModuleId] = useState<string | null>(null);
+  const [deleteLessonId, setDeleteLessonId] = useState<string | null>(null);
+  const [isDeletePending, startDeleteTransition] = useTransition();
+
+  const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
+  const [editModuleTitle, setEditModuleTitle] = useState("");
+  const [isEditPending, startEditTransition] = useTransition();
+
+  function handleDeleteModuleConfirm() {
+    if (!deleteModuleId) return;
+    startDeleteTransition(async () => {
+      const res = await deleteModule(deleteModuleId);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Модуль удалён");
+      setDeleteModuleId(null);
+      router.refresh();
+    });
   }
 
-  async function handleDeleteLesson(lessonId: string) {
-    if (!window.confirm("Удалить этот урок?")) {
+  function handleDeleteLessonConfirm() {
+    if (!deleteLessonId) return;
+    startDeleteTransition(async () => {
+      const res = await deleteLesson(deleteLessonId);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Урок удалён");
+      setDeleteLessonId(null);
+      router.refresh();
+    });
+  }
+
+  function handleSaveModuleTitle(moduleId: string) {
+    if (!editModuleTitle.trim()) {
+      toast.error("Название модуля не может быть пустым");
       return;
     }
-    const res = await deleteLesson(lessonId);
-    if (res.error) {
-      window.alert(res.error);
-      return;
-    }
-    router.refresh();
+    startEditTransition(async () => {
+      const res = await updateModule(moduleId, editModuleTitle);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Название модуля сохранено");
+      setEditingModuleId(null);
+      setEditModuleTitle("");
+      router.refresh();
+    });
   }
 
   async function handleReorderModule(moduleId: string, direction: "up" | "down") {
     const res = await reorderModule(courseId, moduleId, direction);
     if (res.error) {
-      window.alert(res.error);
+      toast.error(res.error);
       return;
     }
     router.refresh();
@@ -225,7 +266,7 @@ export function CurriculumTab({
   ) {
     const res = await reorderLesson(moduleId, lessonId, direction);
     if (res.error) {
-      window.alert(res.error);
+      toast.error(res.error);
       return;
     }
     router.refresh();
@@ -252,95 +293,118 @@ export function CurriculumTab({
           className="border-border rounded-lg border px-2"
         >
           {modules.map((module, moduleIndex) => (
-            <AccordionItem key={module.id} value={module.id}>
-              <AccordionTrigger className="px-2 hover:no-underline">
-                <span className="flex min-w-0 flex-1 items-center gap-2 pr-2">
-                  <span className="truncate font-medium">{module.title}</span>
-                  <Badge
-                    variant="secondary"
-                    className="shrink-0 text-xs font-normal tabular-nums"
-                    title="Количество уроков в модуле"
-                  >
-                    {module.lessons.length}
-                  </Badge>
-                </span>
-                <span
-                  className="flex shrink-0 items-center gap-0.5"
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  <span
-                    role="button"
-                    tabIndex={moduleIndex === 0 ? -1 : 0}
-                    title="Модуль выше"
-                    aria-label="Модуль выше"
-                    aria-disabled={moduleIndex === 0}
-                    className={cn(
-                      buttonVariants({ variant: "outline", size: "icon-xs" }),
-                      moduleIndex === 0 &&
-                        "pointer-events-none opacity-40",
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleReorderModule(module.id, "up");
-                    }}
+            <AccordionItem key={module.id} value={module.id} className="group">
+              {editingModuleId === module.id ? (
+                <div className="flex items-center gap-2 p-4">
+                  <Input
+                    value={editModuleTitle}
+                    onChange={(e) => setEditModuleTitle(e.target.value)}
+                    className="h-8 min-w-0 flex-1"
+                    disabled={isEditPending}
+                    autoFocus
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
+                      if (e.key === "Enter") {
                         e.preventDefault();
-                        e.stopPropagation();
-                        void handleReorderModule(module.id, "up");
+                        handleSaveModuleTitle(module.id);
+                      } else if (e.key === "Escape") {
+                        setEditingModuleId(null);
                       }
                     }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                    disabled={isEditPending}
+                    onClick={() => handleSaveModuleTitle(module.id)}
                   >
-                    <ChevronUpIcon className="size-3.5" aria-hidden />
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={moduleIndex === modules.length - 1 ? -1 : 0}
-                    title="Модуль ниже"
-                    aria-label="Модуль ниже"
-                    aria-disabled={moduleIndex === modules.length - 1}
-                    className={cn(
-                      buttonVariants({ variant: "outline", size: "icon-xs" }),
-                      moduleIndex === modules.length - 1 &&
-                        "pointer-events-none opacity-40",
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleReorderModule(module.id, "down");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void handleReorderModule(module.id, "down");
-                      }
-                    }}
+                    <CheckIcon className="size-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="text-muted-foreground hover:text-foreground"
+                    disabled={isEditPending}
+                    onClick={() => setEditingModuleId(null)}
                   >
-                    <ChevronDownIcon className="size-3.5" aria-hidden />
-                  </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md p-1.5 transition-colors"
-                    title="Удалить модуль"
-                    aria-label="Удалить модуль"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDeleteModule(module.id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void handleDeleteModule(module.id);
-                      }
-                    }}
-                  >
-                    <Trash2Icon className="size-4" />
-                  </span>
-                </span>
-              </AccordionTrigger>
+                    <XIcon className="size-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex w-full flex-wrap items-center gap-2 pr-4">
+                  <AccordionPrimitive.Trigger className="min-w-0 flex-1 text-left text-sm font-medium hover:underline truncate py-2">
+                    {module.title}
+                  </AccordionPrimitive.Trigger>
+                  <div className="ml-auto flex items-center gap-2">
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-xs"
+                        className="shrink-0"
+                        title="Модуль выше"
+                        aria-label="Модуль выше"
+                        disabled={moduleIndex === 0}
+                        onClick={() => void handleReorderModule(module.id, "up")}
+                      >
+                        <ArrowUpIcon className="size-3.5" aria-hidden />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon-xs"
+                        className="shrink-0"
+                        title="Модуль ниже"
+                        aria-label="Модуль ниже"
+                        disabled={moduleIndex === modules.length - 1}
+                        onClick={() =>
+                          void handleReorderModule(module.id, "down")
+                        }
+                      >
+                        <ArrowDownIcon className="size-3.5" aria-hidden />
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      title="Редактировать название"
+                      aria-label="Редактировать название"
+                      onClick={() => {
+                        setEditModuleTitle(module.title);
+                        setEditingModuleId(module.id);
+                      }}
+                    >
+                      <PencilIcon className="size-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      title="Удалить модуль"
+                      aria-label="Удалить модуль"
+                      onClick={() => setDeleteModuleId(module.id)}
+                    >
+                      <Trash2Icon className="size-3.5" />
+                    </Button>
+                    <AccordionPrimitive.Trigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="shrink-0"
+                        aria-label="Развернуть или свернуть модуль"
+                      >
+                        <ChevronDownIcon className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                      </Button>
+                    </AccordionPrimitive.Trigger>
+                  </div>
+                </div>
+              )}
               <AccordionContent className="px-2 pb-3">
                 {module.lessons.length === 0 ? (
                   <p className="text-muted-foreground mb-2 text-sm">
@@ -389,7 +453,7 @@ export function CurriculumTab({
                               )
                             }
                           >
-                            <ChevronUpIcon className="size-3.5" aria-hidden />
+                            <ArrowUpIcon className="size-3.5" aria-hidden />
                           </Button>
                           <Button
                             type="button"
@@ -409,7 +473,7 @@ export function CurriculumTab({
                               )
                             }
                           >
-                            <ChevronDownIcon className="size-3.5" aria-hidden />
+                            <ArrowDownIcon className="size-3.5" aria-hidden />
                           </Button>
                         </div>
                         <Link
@@ -431,7 +495,7 @@ export function CurriculumTab({
                           className="text-muted-foreground hover:text-destructive shrink-0"
                           title="Удалить урок"
                           aria-label="Удалить урок"
-                          onClick={() => void handleDeleteLesson(lesson.id)}
+                          onClick={() => setDeleteLessonId(lesson.id)}
                         >
                           <Trash2Icon className="size-3.5" />
                         </Button>
@@ -447,6 +511,58 @@ export function CurriculumTab({
       )}
 
       <AddModuleForm courseId={courseId} />
+
+      <AlertDialog
+        open={deleteModuleId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteModuleId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить модуль?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы уверены? Это действие удалит модуль и все уроки внутри него. Это нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletePending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteModuleConfirm}
+              disabled={isDeletePending}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {isDeletePending ? "Удаление…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteLessonId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteLessonId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить урок?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы уверены? Это действие удалит урок и весь его контент. Это нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletePending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteLessonConfirm}
+              disabled={isDeletePending}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {isDeletePending ? "Удаление…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

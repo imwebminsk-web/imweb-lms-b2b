@@ -18,10 +18,20 @@ export function CourseEditorTabs({
   course,
   modules,
   taxonomies,
+  b2bOptions,
 }: {
   course: CourseSettingsFormCourse;
   modules: CurriculumModuleRow[];
   taxonomies: TaxonomyRow[];
+  b2bOptions?: {
+    teams: { id: string; name: string }[];
+    jobTitles: { id: string; name: string }[];
+    tags: { id: string; name: string }[];
+    selectedTeams: string[];
+    selectedJobTitles: string[];
+    selectedTags: string[];
+    isGlobal: boolean;
+  };
 }) {
   const settingsFormKey = [
     course.id,
@@ -32,20 +42,16 @@ export function CourseEditorTabs({
     course.description,
     course.image_url,
     course.video_url,
-    course.category,
     course.detailed_description,
     (course.promotional_images ?? []).join("|"),
     course.youtube_url,
     course.vimeo_url,
-    course.marketing_audience,
     course.age_group,
     course.duration_value,
     course.duration_unit,
     course.start_date,
     String(course.has_certificate),
-    course.level,
     course.delivery_format ?? "",
-    course.language ?? "",
   ].join("|");
 
   return (
@@ -55,7 +61,7 @@ export function CourseEditorTabs({
         <TabsTrigger value="curriculum">Программа</TabsTrigger>
       </TabsList>
       <TabsContent value="settings" className="mt-4 flex-none">
-        <CourseSettingsForm course={course} taxonomies={taxonomies} key={settingsFormKey} />
+        <CourseSettingsForm course={course} taxonomies={taxonomies} b2bOptions={b2bOptions} key={settingsFormKey} />
       </TabsContent>
       <TabsContent value="curriculum" className="mt-4 flex-none">
         <CurriculumTab

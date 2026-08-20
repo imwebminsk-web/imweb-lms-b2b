@@ -8,10 +8,8 @@ import type { Json } from "@/types/database.types";
 export type GradingColor = "green" | "blue" | "yellow" | "orange" | "red";
 
 export type GradingVisuals = {
-  isForKids: boolean;
   /** Нормализованный балл 0–100. */
   scorePercent: number;
-  emoji: string | null;
   color: GradingColor | null;
   /** Показывать числовой балл в UI. */
   showNumeric: boolean;
@@ -106,7 +104,6 @@ export function sumQuestionPoints(
 
 export function getGradingVisuals(
   score: number | null | undefined,
-  isForKids: boolean,
   totalPossiblePoints = 100,
 ): GradingVisuals {
   const scorePercent = normalizeAttemptScoreToPercent(
@@ -114,42 +111,10 @@ export function getGradingVisuals(
     totalPossiblePoints,
   );
 
-  if (!isForKids) {
-    return {
-      isForKids: false,
-      scorePercent,
-      emoji: null,
-      color: null,
-      showNumeric: true,
-    };
-  }
-
-  let emoji: string;
-  let color: GradingColor;
-
-  if (scorePercent >= 81) {
-    emoji = "😁";
-    color = "green";
-  } else if (scorePercent >= 65) {
-    emoji = "🙂";
-    color = "blue";
-  } else if (scorePercent >= 51) {
-    emoji = "😐";
-    color = "yellow";
-  } else if (scorePercent >= 26) {
-    emoji = "🙁";
-    color = "orange";
-  } else {
-    emoji = "😢";
-    color = "red";
-  }
-
   return {
-    isForKids: true,
     scorePercent,
-    emoji,
-    color,
-    showNumeric: false,
+    color: null,
+    showNumeric: true,
   };
 }
 

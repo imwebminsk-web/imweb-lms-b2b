@@ -146,7 +146,6 @@ export default async function DashboardTestSandboxPage({ params }: PageProps) {
           testTitle={data.title}
           testDescription={data.description}
           questions={data.questions}
-          isForKids={data.is_for_kids}
           timeLimitMinutes={data.time_limit ?? 0}
           initialSubmittedIds={initialSubmittedIds}
         />

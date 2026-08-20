@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { isAdminOrHead, resolveStudentDisplayName } from "@/lib/utils/user-utils";
-import { readBlockIsForKids, readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
+import { readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
 import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 import {
   clampScorePercent,
@@ -54,7 +54,6 @@ export type GradebookBestAttemptDetails = {
   totalPossiblePoints: number;
   /** Балл по попытке на шкале 0–100. */
   points: number | null;
-  isForKids: boolean;
   gradingVisuals: GradingVisuals | null;
   /** Вопросы без `is_correct` на клиенте — как в прохождении теста. */
   questions: SafeTestQuestion[];
@@ -106,7 +105,7 @@ export async function getBestTestAttemptDetails(
 
   const { data: testRow, error: testError } = await supabase
     .from("tests")
-    .select("id, user_id, title, description, is_for_kids")
+    .select("id, user_id, title, description")
     .eq("id", tid.data)
     .maybeSingle();
 
@@ -146,8 +145,6 @@ export async function getBestTestAttemptDetails(
   const questionsOrdered = questionsRaw ?? [];
   const totalQuestions = questionsOrdered.length;
   const totalPossiblePoints = Math.max(sumQuestionPoints(questionsOrdered), 1);
-  const isForKids = testRow.is_for_kids ?? false;
-
   const { data: pendingAttempt, error: pendingError } = await supabase
     .from("student_attempts")
     .select("id, score, completed_at, status")
@@ -331,7 +328,7 @@ export async function getBestTestAttemptDetails(
       : clampScorePercent(scoreVal);
   const points = attempt ? scorePercent : null;
   const gradingVisuals = attempt
-    ? getGradingVisuals(scorePercent, isForKids, 100)
+    ? getGradingVisuals(scorePercent, 100)
     : null;
 
   const answeredQuestionIds = new Set(answerRows.map((r) => r.question_id));
@@ -351,7 +348,6 @@ export async function getBestTestAttemptDetails(
         totalPossiblePoints,
         answeredCount,
         percentCorrect: scorePercent,
-        isForKids,
         requiresManualReview: attempt.status === "pending_review",
       }
     : null;
@@ -391,7 +387,6 @@ export async function getBestTestAttemptDetails(
       totalQuestions,
       totalPossiblePoints,
       points,
-      isForKids,
       gradingVisuals,
       questions,
       resultSummary,
@@ -515,7 +510,6 @@ export type MatrixGradebookColumn = {
   /** Название теста для преподавателя (подсказка в матрице). */
   testTitleTeacher?: string | null;
   testType?: "training" | "final";
-  isForKids?: boolean;
 };
 
 export type MatrixGradebookStudent = {
@@ -530,7 +524,6 @@ export type MatrixGradebookCell = {
   columnId: string;
   status: StudentProgressStatus;
   points: number | null;
-  isForKids: boolean;
   gradingVisuals: GradingVisuals | null;
   testId: string | null;
   blockId: string | null;
@@ -557,7 +550,6 @@ type GradebookTestMeta = {
   test_type: string;
   save_to_journal: boolean;
   is_published: boolean | null;
-  is_for_kids: boolean;
 };
 
 function resolveGradebookTestType(
@@ -848,7 +840,6 @@ export async function getMatrixGradebookData(
           lessonTitle,
           lessonId: lesson.id,
           blockId: block.id,
-          isForKids: readBlockIsForKids(block.content),
         });
       }
     }
@@ -860,7 +851,7 @@ export async function getMatrixGradebookData(
     const { data: testMetaRows, error: testMetaErr } = await supabase
       .from("tests")
       .select(
-        "id, title, title_teacher, test_type, save_to_journal, is_published, is_for_kids",
+        "id, title, title_teacher, test_type, save_to_journal, is_published",
       )
       .in("id", collectedTestIds);
     if (testMetaErr) {
@@ -874,7 +865,6 @@ export async function getMatrixGradebookData(
         test_type: row.test_type ?? "final",
         save_to_journal: row.save_to_journal,
         is_published: row.is_published,
-        is_for_kids: row.is_for_kids ?? false,
       });
     }
   }
@@ -906,7 +896,6 @@ export async function getMatrixGradebookData(
         columnId: col.id,
         status: "not_started",
         points: null,
-        isForKids: col.isForKids ?? false,
         gradingVisuals: null,
         testId: col.testId ?? null,
         blockId: col.blockId ?? null,
@@ -921,14 +910,6 @@ export async function getMatrixGradebookData(
       success: true,
       data: { students, columns: filteredColumns, cells },
     };
-  }
-
-  const isForKidsByTest = new Map<string, boolean>();
-  for (const testId of testIds) {
-    const meta = testMetaById.get(testId);
-    if (meta) {
-      isForKidsByTest.set(testId, meta.is_for_kids);
-    }
   }
 
   if (testIds.length > 0) {
@@ -955,9 +936,8 @@ export async function getMatrixGradebookData(
       const matchingCols = filteredColumns.filter(
         (c) => c.type === "test" && c.testId === a.test_id,
       );
-      const kids = isForKidsByTest.get(a.test_id) ?? false;
       const pts = clampScorePercent(a.score);
-      const visuals = getGradingVisuals(pts, kids, 100);
+      const visuals = getGradingVisuals(pts, 100);
 
       for (const col of matchingCols) {
         const cellKey = matrixCellKey(a.student_id, col.id);
@@ -985,18 +965,7 @@ export async function getMatrixGradebookData(
       cell.status = "completed";
       cell.points = best.points;
       cell.attemptId = best.attemptId;
-      cell.isForKids = best.gradingVisuals.isForKids;
       cell.gradingVisuals = best.gradingVisuals;
-    }
-
-    for (const col of filteredColumns) {
-      if (col.type !== "test" || !col.testId) continue;
-      const kids = isForKidsByTest.get(col.testId) ?? false;
-      if (!kids) continue;
-      for (const student of students) {
-        const cell = cells[matrixCellKey(student.id, col.id)];
-        if (cell) cell.isForKids = true;
-      }
     }
 
     for (const cellKey of inProgressKeys) {
@@ -1065,7 +1034,6 @@ export async function getMatrixGradebookData(
         if (sub.status === "approved" && sub.grade != null) {
           cell.points = normalizeStoredAssignmentPoints(sub.grade);
         }
-        cell.isForKids = col.isForKids ?? false;
       }
     }
   }

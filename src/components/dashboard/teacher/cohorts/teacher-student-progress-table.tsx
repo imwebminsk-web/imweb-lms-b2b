@@ -102,7 +102,6 @@ export function TeacherStudentProgressTable({
                 const pointsCell = (
                   <JournalPointsDisplay
                     points={item.points}
-                    isForKids={item.isForKids}
                     compact
                   />
                 );

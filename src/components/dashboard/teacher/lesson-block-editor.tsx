@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -31,7 +32,17 @@ import type {
 } from "@/lib/lesson-blocks/lesson-block-types";
 import { LessonBlockImageUpload } from "@/components/dashboard/teacher/lesson-block-image-upload";
 import { InlineTestEditor } from "@/components/dashboard/teacher/inline-test-editor";
-import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -111,7 +122,7 @@ function readInstructions(content: Json): string {
   return typeof c.instructions === "string" ? c.instructions : "";
 }
 
-function readAssignmentBool(content: Json, key: "save_to_journal" | "is_for_kids"): boolean {
+function readAssignmentBool(content: Json, key: "save_to_journal"): boolean {
   if (!content || typeof content !== "object" || Array.isArray(content)) {
     return false;
   }
@@ -124,14 +135,12 @@ function buildAssignmentContent(
   patch: Partial<{
     instructions: string;
     save_to_journal: boolean;
-    is_for_kids: boolean;
   }>,
 ): Json {
   return {
     instructions: patch.instructions ?? readInstructions(content),
     save_to_journal:
       patch.save_to_journal ?? readAssignmentBool(content, "save_to_journal"),
-    is_for_kids: patch.is_for_kids ?? readAssignmentBool(content, "is_for_kids"),
   };
 }
 
@@ -277,6 +286,8 @@ export function LessonBlockEditor({
   const [metaKey, setMetaKey] = useState(0);
   const [isPublished, setIsPublished] = useState(lesson.is_published);
   const [adding, setAdding] = useState<LessonBlockType | null>(null);
+  const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
+  const [isDeletePending, startDeleteTransition] = useTransition();
 
   useEffect(() => {
     if (metaState.success) {
@@ -329,14 +340,18 @@ export function LessonBlockEditor({
     router.refresh();
   }
 
-  async function handleDeleteBlock(blockId: string) {
-    if (!window.confirm("Удалить этот блок?")) return;
-    const res = await deleteBlock(blockId);
-    if (res.error) {
-      window.alert(res.error);
-      return;
-    }
-    router.refresh();
+  function handleDeleteBlockConfirm() {
+    if (!deleteBlockId) return;
+    startDeleteTransition(async () => {
+      const res = await deleteBlock(deleteBlockId);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Блок удалён");
+      setDeleteBlockId(null);
+      router.refresh();
+    });
   }
 
   async function handleReorderBlock(
@@ -509,7 +524,7 @@ export function LessonBlockEditor({
                     className="text-destructive"
                     title="Удалить блок"
                     aria-label="Удалить блок"
-                    onClick={() => void handleDeleteBlock(block.id)}
+                    onClick={() => setDeleteBlockId(block.id)}
                   >
                     <Trash2Icon className="size-3.5" />
                   </Button>
@@ -597,30 +612,6 @@ export function LessonBlockEditor({
                         }}
                       />
                     </div>
-                    <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
-                      <div className="space-y-0.5">
-                        <Label htmlFor={`for-kids-${block.id}`}>
-                          Детский режим (оценки смайликами)
-                        </Label>
-                        <p className="text-muted-foreground text-xs">
-                          Вместо числовых баллов ученик увидит смайлики.
-                        </p>
-                      </div>
-                      <Switch
-                        id={`for-kids-${block.id}`}
-                        checked={readAssignmentBool(block.content, "is_for_kids")}
-                        onCheckedChange={async (checked) => {
-                          const res = await updateBlock(
-                            block.id,
-                            buildAssignmentContent(block.content, {
-                              is_for_kids: checked,
-                            }),
-                          );
-                          if (res.error) window.alert(res.error);
-                          else router.refresh();
-                        }}
-                      />
-                    </div>
                   </div>
                 ) : null}
                 {block.type === "quiz" ? (() => {
@@ -699,6 +690,33 @@ export function LessonBlockEditor({
           ))
         )}
       </div>
+
+      <AlertDialog
+        open={deleteBlockId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteBlockId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить блок?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы уверены? Это действие навсегда удалит этот блок. Отменить
+              невозможно.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletePending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteBlockConfirm}
+              disabled={isDeletePending}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {isDeletePending ? "Удаление…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

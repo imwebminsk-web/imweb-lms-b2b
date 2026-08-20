@@ -260,7 +260,6 @@ export function CourseHubClient({
                       const pointsCell = (
                         <JournalPointsDisplay
                           points={item.points}
-                          isForKids={item.isForKids}
                           compact
                         />
                       );

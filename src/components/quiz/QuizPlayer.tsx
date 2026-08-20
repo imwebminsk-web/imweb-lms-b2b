@@ -152,7 +152,6 @@ export type QuizPlayerProps = {
   testTitle: string;
   testDescription: string | null;
   questions: SafeTestQuestion[];
-  isForKids?: boolean;
   /** Лимит времени в минутах; 0 — без ограничения. */
   timeLimitMinutes?: number;
   /** Песочница преподавателя: отключает античит, попытка в БД с is_training_mode. */
@@ -170,7 +169,6 @@ export function QuizPlayer({
   testTitle,
   testDescription,
   questions,
-  isForKids = false,
   timeLimitMinutes = 0,
   isSandbox = false,
   focusedMode = false,

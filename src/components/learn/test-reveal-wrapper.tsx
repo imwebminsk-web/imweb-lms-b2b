@@ -93,7 +93,6 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
         testTitle={quizData.test.title}
         testDescription={quizData.test.description}
         questions={quizData.questions}
-        isForKids={quizData.test.isForKids}
         timeLimitMinutes={quizData.test.timeLimitMinutes}
         initialSubmittedIds={quizData.initialSubmittedIds}
         focusedMode

@@ -163,6 +163,64 @@ export async function createModule(
   return { success: true };
 }
 
+export async function updateModule(
+  moduleId: string,
+  title: string,
+): Promise<CurriculumActionState> {
+  const id = moduleId.trim();
+  const newTitle = title.trim();
+
+  if (!id) {
+    return { error: "Не указан модуль." };
+  }
+  if (!newTitle) {
+    return { error: "Введите название модуля." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: "Нужна авторизация." };
+  }
+
+  const { data: module, error: moduleErr } = await supabase
+    .from("modules")
+    .select("id, course_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (moduleErr || !module) {
+    return { error: "Модуль не найден." };
+  }
+
+  const { data: course, error: courseErr } = await supabase
+    .from("courses")
+    .select("id, teacher_id, slug")
+    .eq("id", module.course_id)
+    .maybeSingle();
+
+  if (courseErr || !course || course.teacher_id !== user.id) {
+    return { error: "Нет прав на изменение этого модуля." };
+  }
+
+  const { error: updateError } = await supabase
+    .from("modules")
+    .update({ title: newTitle })
+    .eq("id", id);
+
+  if (updateError) {
+    console.error("[updateModule]", updateError.message);
+    return { error: updateError.message || "Не удалось сохранить модуль." };
+  }
+
+  revalidatePath(`/dashboard/courses/${course.slug}`);
+  revalidatePath("/dashboard/courses");
+  return { success: true };
+}
+
 export async function createLesson(
   _prev: CurriculumActionState,
   formData: FormData,

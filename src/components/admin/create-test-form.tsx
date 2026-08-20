@@ -138,7 +138,6 @@ export function CreateTestForm({
   const [timeLimit, setTimeLimit] = useState(
     String(initialData?.timeLimit ?? 0),
   );
-  const [isForKids, setIsForKids] = useState(initialData?.isForKids ?? false);
   const [isPublished, setIsPublished] = useState(
     initialData?.isPublished ?? true,
   );
@@ -646,7 +645,6 @@ export function CreateTestForm({
       save_to_journal: saveToJournal,
       max_score: resolvedMaxScore,
       time_limit: parsePositiveInt(timeLimit, 0),
-      is_for_kids: isForKids,
       questions: questions.map((q) => {
         const points = parsePositiveInt(String(q.points ?? 1), 1);
         const taskMedia = taskMediaFromQuestion(q);

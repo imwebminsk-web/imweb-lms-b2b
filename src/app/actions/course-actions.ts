@@ -8,10 +8,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
   ageGroupFormSchema,
-  courseLanguageFormSchema,
-  courseLevelFormSchema,
   deliveryFormatFormSchema,
-  marketingAudienceFormSchema,
 } from "@/lib/validations/course-settings-schema";
 import type { Database } from "@/types/database.types";
 import {
@@ -150,17 +147,9 @@ export async function createCourse(
   formData: FormData,
 ): Promise<CreateCourseState> {
   const title = String(formData.get("title") ?? "").trim();
-  const descriptionRaw = String(formData.get("description") ?? "").trim();
-  const priceRaw = String(formData.get("price") ?? "").trim();
-  const rawSlug = String(formData.get("slug") ?? "").trim();
 
   if (!title) {
     return { error: "Укажите название курса." };
-  }
-
-  const priceNum = Number(priceRaw);
-  if (!Number.isFinite(priceNum) || priceNum < 0) {
-    return { error: "Укажите корректную цену (число ≥ 0)." };
   }
 
   const supabase = await createClient();
@@ -192,10 +181,7 @@ export async function createCourse(
     };
   }
 
-  const base =
-    rawSlug.length > 0
-      ? sanitizeSlug(rawSlug) || baseSlugFromTitle(title)
-      : baseSlugFromTitle(title);
+  const base = baseSlugFromTitle(title);
   let slug = base;
   let suffix = 0;
   const maxAttempts = 50;
@@ -219,13 +205,9 @@ export async function createCourse(
     return { error: "Не удалось подобрать уникальный адрес (slug) для курса." };
   }
 
-  const description = descriptionRaw.length > 0 ? descriptionRaw : null;
-  const price = priceNum.toFixed(2);
-
   const { error: insertError } = await supabase.from("courses").insert({
     title,
-    description,
-    price,
+    price: "0.00",
     slug,
     teacher_id: user.id,
     status: "draft",
@@ -290,7 +272,6 @@ export async function updateCourse(
   const id = String(formData.get("id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const rawSlug = String(formData.get("slug") ?? "").trim();
-  const categoryRaw = String(formData.get("category") ?? "").trim();
   const descriptionRaw = String(formData.get("description") ?? "").trim();
   const detailedDescriptionRaw = String(
     formData.get("detailed_description") ?? "",
@@ -299,10 +280,6 @@ export async function updateCourse(
   const vimeoRaw = String(formData.get("vimeo_url") ?? "").trim();
   const priceRaw = String(formData.get("price") ?? "").trim();
   const statusRaw = String(formData.get("status") ?? "").trim();
-  const levelRaw = String(formData.get("level") ?? "").trim();
-  const marketingAudienceRaw = String(
-    formData.get("marketing_audience") ?? "",
-  ).trim();
   const ageGroupRaw = String(formData.get("age_group") ?? "").trim();
   const durationValueRaw = String(formData.get("duration_value") ?? "").trim();
   const durationUnitRaw = String(formData.get("duration_unit") ?? "").trim();
@@ -314,7 +291,33 @@ export async function updateCourse(
   const deliveryFormatRaw = String(
     formData.get("delivery_format") ?? "",
   ).trim();
-  const languageRaw = String(formData.get("language") ?? "").trim();
+
+  let teams: string[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("teams") ?? "[]").trim());
+    if (Array.isArray(parsed)) teams = parsed.filter(t => typeof t === "string");
+  } catch {
+    // ignore
+  }
+
+  let jobTitles: string[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("jobTitles") ?? "[]").trim());
+    if (Array.isArray(parsed)) jobTitles = parsed.filter(t => typeof t === "string");
+  } catch {
+    // ignore
+  }
+
+  let tags: string[] = [];
+  try {
+    const parsed = JSON.parse(String(formData.get("tags") ?? "[]").trim());
+    if (Array.isArray(parsed)) tags = parsed.filter(t => typeof t === "string");
+  } catch {
+    // ignore
+  }
+
+  const isGlobalRaw = String(formData.get("isGlobal") ?? "false").trim();
+  const is_global = isGlobalRaw === "true";
 
   if (!id) {
     return { error: "Не указан курс." };
@@ -338,20 +341,6 @@ export async function updateCourse(
     return { error: "Некорректный статус курса." };
   }
 
-  const audienceParsed = marketingAudienceFormSchema.safeParse(
-    marketingAudienceRaw,
-  );
-  if (!audienceParsed.success) {
-    return { error: "Некорректная целевая аудитория." };
-  }
-  const marketing_audience =
-    audienceParsed.data.length > 0 ? audienceParsed.data : null;
-
-  const levelParsed = courseLevelFormSchema.safeParse(levelRaw);
-  if (!levelParsed.success) {
-    return { error: "Некорректный уровень CEFR." };
-  }
-
   const ageParsed = ageGroupFormSchema.safeParse(ageGroupRaw);
   if (!ageParsed.success) {
     return { error: "Некорректная возрастная группа." };
@@ -362,49 +351,11 @@ export async function updateCourse(
     return { error: "Некорректный формат проведения." };
   }
 
-  const languageParsed = courseLanguageFormSchema.safeParse(languageRaw);
-  if (!languageParsed.success) {
-    return { error: "Некорректный язык курса." };
-  }
-
   const delivery_format =
     deliveryParsed.data.length > 0 ? deliveryParsed.data : null;
-  const language = languageParsed.data.length > 0 ? languageParsed.data : null;
+  const age_group = ageParsed.data.length > 0 ? ageParsed.data : null;
 
   const supabase = await createClient();
-
-  let audienceKind: "kids" | "adults" | null = null;
-  if (marketing_audience) {
-    const { data: tax } = await supabase
-      .from("taxonomies")
-      .select("value")
-      .eq("id", marketing_audience)
-      .maybeSingle();
-
-    if (tax?.value === "children") {
-      audienceKind = "kids";
-    } else if (tax?.value === "adults") {
-      audienceKind = "adults";
-    }
-  }
-
-  let level: string | null = null;
-  if (audienceKind === "adults") {
-    if (levelParsed.data === "") {
-      return { error: "Выберите уровень CEFR для аудитории «Взрослые»." };
-    }
-    level = levelParsed.data;
-  }
-
-  let age_group: string | null = null;
-  if (audienceKind === "kids") {
-    if (ageParsed.data === "") {
-      return {
-        error: "Выберите возрастную группу для аудитории «Дети».",
-      };
-    }
-    age_group = ageParsed.data;
-  }
 
   if (durationUnitRaw.length > 0 && !DURATION_UNIT.has(durationUnitRaw)) {
     return { error: "Некорректная единица длительности." };
@@ -476,7 +427,6 @@ export async function updateCourse(
   }
 
   const description = descriptionRaw.length > 0 ? descriptionRaw : null;
-  const category = categoryRaw.length > 0 ? categoryRaw : null;
   const detailed_description =
     detailedDescriptionRaw.length > 0 ? detailedDescriptionRaw : null;
   const youtube_url = youtubeRaw.length > 0 ? youtubeRaw : null;
@@ -513,7 +463,6 @@ export async function updateCourse(
     .update({
       title,
       slug: newSlug,
-      category,
       description,
       detailed_description,
       youtube_url,
@@ -525,6 +474,7 @@ export async function updateCourse(
       duration_unit,
       start_date,
       has_certificate,
+      is_global,
     })
     .eq("id", id);
 
@@ -542,17 +492,64 @@ export async function updateCourse(
   }
 
   const taxonomySyncError = await syncCourseTaxonomies(supabase, id, {
-    marketing_audience,
+    marketing_audience: null,
     delivery_format,
-    language,
+    language: null,
     age_group,
-    level,
+    level: null,
   });
 
   if (taxonomySyncError) {
     return {
       error: taxonomySyncError || "Не удалось сохранить таксономии курса.",
     };
+  }
+
+  // Sync B2B Matrix
+  try {
+    if (is_global) {
+      // If global, clear all specific assignments
+      await supabase.from("team_courses").delete().eq("course_id", id);
+      await supabase.from("job_title_courses").delete().eq("course_id", id);
+      await supabase.from("course_tags").delete().eq("course_id", id);
+    } else {
+      // Sync Teams
+      await supabase.from("team_courses").delete().eq("course_id", id);
+      if (teams.length > 0) {
+        const { error: teamInsertError } = await supabase.from("team_courses").insert(
+          teams.map((team_id) => ({ course_id: id, team_id }))
+        );
+        if (teamInsertError) {
+          console.error("[updateCourse] team_courses insert error:", teamInsertError.message);
+        }
+      }
+
+      // Sync Job Titles
+      await supabase.from("job_title_courses").delete().eq("course_id", id);
+      if (jobTitles.length > 0) {
+        const { error: jobInsertError } = await supabase.from("job_title_courses").insert(
+          jobTitles.map((job_title_id) => ({ course_id: id, job_title_id }))
+        );
+        if (jobInsertError) {
+          console.error("[updateCourse] job_title_courses insert error:", jobInsertError.message);
+        }
+      }
+
+      // Sync Tags
+      await supabase.from("course_tags").delete().eq("course_id", id);
+      if (tags.length > 0) {
+        const { error: tagsInsertError } = await supabase.from("course_tags").insert(
+          tags.map((tag_id) => ({ course_id: id, tag_id }))
+        );
+        if (tagsInsertError) {
+          console.error("[updateCourse] course_tags insert error:", tagsInsertError.message);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[updateCourse] B2B matrix sync error:", err);
+    // We don't return an error here to prevent blocking the main course update, 
+    // but in a production app we might want to handle it more strictly.
   }
 
   revalidatePath("/dashboard/courses");

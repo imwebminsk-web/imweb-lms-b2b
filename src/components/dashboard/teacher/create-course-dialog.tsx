@@ -17,7 +17,6 @@ import {
 import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 
 const initialCreateCourseState: CreateCourseState = {};
 
@@ -65,43 +64,6 @@ function CreateCourseDialogInner({
               required
               maxLength={200}
               placeholder="Например, Английский для начинающих"
-              disabled={isPending}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="slug">URL курса (slug) — опционально</Label>
-            <Input
-              id="slug"
-              name="slug"
-              maxLength={120}
-              placeholder="english-for-beginners"
-              disabled={isPending}
-            />
-            <p className="text-muted-foreground text-xs">
-              Оставьте пустым для автогенерации из названия. Только латинские
-              буквы, цифры и дефис.
-            </p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="course-description">Описание</Label>
-            <Textarea
-              id="course-description"
-              name="description"
-              rows={4}
-              placeholder="Кратко о содержании курса"
-              disabled={isPending}
-            />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="course-price">Цена</Label>
-            <Input
-              id="course-price"
-              name="price"
-              type="number"
-              min={0}
-              step="0.01"
-              defaultValue={0}
-              required
               disabled={isPending}
             />
           </div>

@@ -6,7 +6,6 @@ import { isAdminOrHead } from "@/lib/utils/user-utils";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
 import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 import {
-  readBlockIsForKids,
   readBlockSaveToJournal,
 } from "@/lib/gradebook/journal-utils";
 import { clampScorePercent } from "@/lib/utils/grading";
@@ -31,8 +30,6 @@ export type StudentProgressItem = {
   status: StudentProgressStatus;
   /** Балл 0–100: тест — по лучшей завершённой попытке; задание — после принятия. */
   points: number | null;
-  /** Детский режим: в журнале показывается смайлик вместо числа. */
-  isForKids: boolean;
   courseId: string;
   courseSlug: string;
   /** Название курса из enrollments / join к lessons — для UI без разбора строки title. */
@@ -290,7 +287,7 @@ async function fetchStudentProgressItemsForUserId(
       ? supabase
           .from("tests")
           .select(
-            "id, test_type, title_teacher, title, save_to_journal, is_published, is_for_kids",
+            "id, test_type, title_teacher, title, save_to_journal, is_published",
           )
           .in("id", testIds)
       : Promise.resolve({ data: [], error: null });
@@ -312,7 +309,6 @@ async function fetchStudentProgressItemsForUserId(
     {
       save_to_journal: boolean;
       is_published: boolean | null;
-      is_for_kids: boolean;
     }
   >();
   for (const row of testMetaRows ?? []) {
@@ -320,7 +316,6 @@ async function fetchStudentProgressItemsForUserId(
     testMetaById.set(row.id, {
       save_to_journal: row.save_to_journal ?? false,
       is_published: row.is_published,
-      is_for_kids: row.is_for_kids ?? false,
     });
   }
 
@@ -465,7 +460,6 @@ async function fetchStudentProgressItemsForUserId(
           title,
           status,
           points,
-          isForKids: meta.is_for_kids,
           courseId: lesson.courseId,
           courseSlug: lesson.courseSlug,
           courseTitle: lesson.courseTitle,
@@ -507,7 +501,6 @@ async function fetchStudentProgressItemsForUserId(
         title,
         status,
         points,
-        isForKids: meta.is_for_kids,
         courseId: lesson.courseId,
         courseSlug: lesson.courseSlug,
         courseTitle: lesson.courseTitle,
@@ -542,7 +535,6 @@ async function fetchStudentProgressItemsForUserId(
         title,
         status,
         points,
-        isForKids: readBlockIsForKids(block.content),
         courseId: lesson.courseId,
         courseSlug: lesson.courseSlug,
         courseTitle: lesson.courseTitle,

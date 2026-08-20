@@ -136,7 +136,6 @@ export type CreateTestFormInitialData = {
   saveToJournal?: boolean;
   maxScore?: number;
   timeLimit?: number;
-  isForKids?: boolean;
   isPublished?: boolean;
   questions: QuestionField[];
 };

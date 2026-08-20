@@ -1538,7 +1538,6 @@ export type AttemptResult = {
   totalPossiblePoints: number;
   answeredCount: number;
   percentCorrect: number;
-  isForKids: boolean;
   /** Попытка содержит развёрнутые ответы и ждёт проверки преподавателем. */
   requiresManualReview: boolean;
 };
@@ -2478,7 +2477,6 @@ function buildAttemptResult(params: {
   earnedPoints: number;
   totalPossiblePoints: number;
   answeredCount: number;
-  isForKids: boolean;
   requiresManualReview?: boolean;
 }): AttemptResult {
   const percent = Math.max(0, Math.min(100, Math.round(params.percentScore)));
@@ -2490,7 +2488,6 @@ function buildAttemptResult(params: {
     totalPossiblePoints: params.totalPossiblePoints,
     answeredCount: params.answeredCount,
     percentCorrect: percent,
-    isForKids: params.isForKids,
     requiresManualReview: params.requiresManualReview ?? false,
   };
 }
@@ -2541,8 +2538,6 @@ export async function completeAttempt(
   if (testError || !testRow) {
     return { success: false, error: testError?.message ?? "Тест не найден" };
   }
-
-  const isForKids = testRow.is_for_kids ?? false;
 
   const { data: questionRows, error: questionsFetchError } = await supabase
     .from("questions")
@@ -2602,7 +2597,6 @@ export async function completeAttempt(
         ),
         totalPossiblePoints,
         answeredCount: answered ?? 0,
-        isForKids,
       }),
     };
   }
@@ -2626,7 +2620,6 @@ export async function completeAttempt(
     earnedPoints: 0,
     totalPossiblePoints,
     answeredCount: rows.length === 0 ? 0 : answeredCount,
-    isForKids,
   });
 
   if (rows.length === 0) {
@@ -2723,7 +2716,6 @@ export async function completeAttempt(
       earnedPoints,
       totalPossiblePoints,
       answeredCount,
-      isForKids,
       requiresManualReview,
     }),
   };
@@ -3418,7 +3410,6 @@ export async function getTestDraftForEdit(
     saveToJournal: data.save_to_journal ?? true,
     maxScore: data.max_score ?? 100,
     timeLimit: data.time_limit ?? 0,
-    isForKids: data.is_for_kids ?? false,
     isPublished: data.is_published ?? true,
     questions,
   };

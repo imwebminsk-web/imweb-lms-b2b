@@ -26,7 +26,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { GradingDisplay } from "@/components/quiz/GradingDisplay";
 import {
   Avatar,
   AvatarFallback,
@@ -77,8 +76,6 @@ function MatrixCell({
 }) {
   const status = cell?.status ?? "not_started";
   const points = cell?.points ?? null;
-  const isForKids = cell?.isForKids ?? false;
-  const gradingVisuals = cell?.gradingVisuals ?? null;
 
   const isPendingReview =
     column.type === "test" && status === "pending" && Boolean(cell?.attemptId);
@@ -153,24 +150,6 @@ function MatrixCell({
   }
 
   if (points != null) {
-    if (isForKids) {
-      return (
-        <button
-          type="button"
-          onClick={handleClick}
-          className="inline-flex size-full min-h-12 items-center justify-center rounded-sm hover:bg-muted/60"
-          aria-label={`Результат: ${points} баллов`}
-        >
-          <GradingDisplay
-            score={points}
-            isForKids
-            totalPossiblePoints={100}
-            compact
-          />
-        </button>
-      );
-    }
-
     const pass = points >= 50;
     return (
       <button
