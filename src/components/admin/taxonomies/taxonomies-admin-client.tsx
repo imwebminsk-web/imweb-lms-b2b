@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { slugify } from "@/lib/utils/slug";
 
 type FormState = {
   group_id: string;
@@ -69,18 +70,6 @@ const emptyGroupForm = (): GroupFormState => ({
   name: "",
   slug: "",
 });
-
-/** Простая генерация slug из названия (латиница; кириллицу вводят вручную). */
-function slugFromName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
 
 type TaxonomiesAdminClientProps = {
   initialTaxonomies: TaxonomyWithGroup[];
@@ -136,7 +125,7 @@ export function TaxonomiesAdminClient({
   function handleGroupNameChange(name: string) {
     setGroupForm((prev) => ({
       name,
-      slug: groupSlugManual ? prev.slug : slugFromName(name),
+      slug: groupSlugManual ? prev.slug : slugify(name),
     }));
   }
 
@@ -187,13 +176,25 @@ export function TaxonomiesAdminClient({
     setFormOpen(true);
   }
 
+  function handleLabelChange(label: string) {
+    setForm((prev) => ({
+      ...prev,
+      label,
+      value: slugify(label),
+    }));
+  }
+
   function handleSubmit() {
     startTransition(async () => {
       setError(null);
+      const value =
+        editing && form.label.trim() === editing.label
+          ? editing.value
+          : slugify(form.label);
       const payload = {
         group_id: form.group_id,
         label: form.label,
-        value: form.value,
+        value,
         sort_order: Number(form.sort_order),
       };
 
@@ -378,7 +379,7 @@ export function TaxonomiesAdminClient({
               <div>
                 <h2 className="text-lg font-semibold">{group.name}</h2>
                 <p className="text-muted-foreground text-sm">
-                  Значения справочника для фильтров каталога и форм курсов.
+                  Значения для фильтров каталога и форм курсов.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -411,7 +412,6 @@ export function TaxonomiesAdminClient({
                 <TableHeader>
                   <TableRow>
                     <TableHead>Подпись</TableHead>
-                    <TableHead>Значение</TableHead>
                     <TableHead className="w-24 text-center">Порядок</TableHead>
                     <TableHead className="w-28 text-center">Активно</TableHead>
                     <TableHead className="w-36 text-right">Действия</TableHead>
@@ -421,7 +421,7 @@ export function TaxonomiesAdminClient({
                   {(grouped.get(group.slug) ?? []).length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={4}
                         className="text-muted-foreground py-10 text-center"
                       >
                         Записей пока нет. Добавьте первое значение.
@@ -434,11 +434,6 @@ export function TaxonomiesAdminClient({
                         className={cn(!row.is_active && "opacity-60")}
                       >
                         <TableCell className="font-medium">{row.label}</TableCell>
-                        <TableCell>
-                          <code className="bg-muted rounded-md px-2 py-1 text-xs">
-                            {row.value}
-                          </code>
-                        </TableCell>
                         <TableCell className="text-center tabular-nums">
                           {row.sort_order}
                         </TableCell>
@@ -513,29 +508,9 @@ export function TaxonomiesAdminClient({
                 id="taxonomy-label"
                 className="rounded-xl"
                 value={form.label}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, label: e.target.value }))
-                }
+                onChange={(e) => handleLabelChange(e.target.value)}
                 placeholder="Например, Онлайн"
               />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="taxonomy-value">Значение (value)</Label>
-              <Input
-                id="taxonomy-value"
-                className="rounded-xl"
-                value={form.value}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    value: e.target.value.toLowerCase(),
-                  }))
-                }
-                placeholder="online"
-              />
-              <p className="text-muted-foreground text-xs">
-                Латиница, цифры и дефис: `english`, `b1-plus`, `5-6`
-              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="taxonomy-sort">Порядок сортировки</Label>
@@ -582,7 +557,7 @@ export function TaxonomiesAdminClient({
             <AlertDialogTitle>Удалить запись?</AlertDialogTitle>
             <AlertDialogDescription>
               {deleteTarget
-                ? `«${deleteTarget.label}» (${deleteTarget.value}) будет удалена без возможности восстановления.`
+                ? `«${deleteTarget.label}» будет удалена без возможности восстановления.`
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>

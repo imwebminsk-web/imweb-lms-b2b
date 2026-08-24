@@ -15,6 +15,7 @@ import {
 import { mergeManualItemGradesIntoAnswerData } from "@/lib/manual-grading-utils";
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchStudentEmailsByUserIds } from "@/lib/supabase/fetch-student-emails-admin";
 import { createClient } from "@/lib/supabase/server";
 import { clampScorePercent, sumQuestionPoints } from "@/lib/utils/grading";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
@@ -101,7 +102,11 @@ export async function getAttemptGradingDetails(
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     return { success: false, error: "Недостаточно прав для проверки" };
   }
 
@@ -137,19 +142,22 @@ export async function getAttemptGradingDetails(
     };
   }
 
-  const { data: studentProfile, error: studentError } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", attempt.student_id)
-    .maybeSingle();
+  const [studentProfileResult, emailsByUserId] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", attempt.student_id)
+      .maybeSingle(),
+    fetchStudentEmailsByUserIds([attempt.student_id]),
+  ]);
 
-  if (studentError) {
-    return { success: false, error: studentError.message };
+  if (studentProfileResult.error) {
+    return { success: false, error: studentProfileResult.error.message };
   }
 
   const studentName = resolveStudentDisplayName(
-    studentProfile?.full_name,
-    null,
+    studentProfileResult.data?.full_name,
+    emailsByUserId.get(attempt.student_id) ?? null,
     attempt.student_id,
   );
 
@@ -208,7 +216,11 @@ export async function submitManualGrades(
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     return { success: false, error: "Недостаточно прав для проверки" };
   }
 
@@ -239,7 +251,11 @@ export async function submitManualGrades(
     return { success: false, error: "Тест не найден" };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    testRow.user_id !== user.id
+  ) {
     return {
       success: false,
       error: "Этот тест принадлежит другому преподавателю",

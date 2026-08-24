@@ -1,5 +1,6 @@
 import { cache } from "react";
 
+import { ensureCourseEnrollment } from "@/lib/learn/verify-course-enrollment";
 import { createClient } from "@/lib/supabase/server";
 
 import type { LearnModuleNav } from "./curriculum-order";
@@ -48,26 +49,12 @@ export const fetchPublishedCourseForLearn = cache(
       return { ok: false, reason: "not_found" };
     }
 
-    const { data: enrollment, error: enrollmentError } = await supabase
-      .from("enrollments")
-      .select("cohort_id")
-      .eq("user_id", studentId)
-      .eq("course_id", courseMeta.id)
-      .maybeSingle();
-
-    if (enrollmentError) {
-      console.error(
-        "[fetchPublishedCourseForLearn] enrollments",
-        enrollmentError.message,
-      );
+    const enrollment = await ensureCourseEnrollment(studentId, courseMeta.id);
+    if (!enrollment.ok) {
       return { ok: false, reason: "not_enrolled" };
     }
 
-    if (!enrollment) {
-      return { ok: false, reason: "not_enrolled" };
-    }
-
-    const cohortId = enrollment.cohort_id ?? null;
+    const cohortId = enrollment.cohortId;
 
     const { data, error } = await supabase
       .from("courses")
@@ -127,7 +114,14 @@ export const fetchPublishedCourseForLearn = cache(
       );
       return {
         ok: true,
-        course,
+        course: {
+          ...course,
+          modules:
+            course.modules?.map((m) => ({
+              ...m,
+              lessons: [],
+            })) ?? [],
+        },
         cohortId,
         teacherId: courseMeta.teacher_id,
       };

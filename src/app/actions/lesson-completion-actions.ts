@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { assertEnrolledForLesson } from "@/lib/learn/verify-course-enrollment";
 import { createClient } from "@/lib/supabase/server";
 
 const lessonIdSchema = z.string().uuid("Некорректный ID урока");
@@ -68,6 +69,11 @@ export async function toggleLessonCompletion(
 
   if (!user) {
     return { ok: false, error: "Требуется вход в систему" };
+  }
+
+  const enrollment = await assertEnrolledForLesson(user.id, parsedLesson.data);
+  if (!enrollment.ok) {
+    return { ok: false, error: enrollment.error };
   }
 
   const { data: existing, error: selectError } = await supabase

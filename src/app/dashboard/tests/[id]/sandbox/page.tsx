@@ -18,6 +18,8 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 type PageProps = {
   params: Promise<{ id: string }>;
 };
@@ -38,35 +40,7 @@ export async function generateMetadata({
 
 export default async function DashboardTestSandboxPage({ params }: PageProps) {
   const { id } = await params;
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect(
-      `/?next=${encodeURIComponent(`/dashboard/tests/${id}/sandbox`)}`,
-    );
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/dashboard");
-  }
-
-  if (
-    profile.role !== "admin" &&
-    profile.role !== "teacher" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
+  await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   const [testRes, attempt] = await Promise.all([
     getTestWithQuestions(id),

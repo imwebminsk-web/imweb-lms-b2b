@@ -1,10 +1,18 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
-import { CreateCourseDialog } from "@/components/dashboard/teacher/create-course-dialog";
-import { TeacherCourseCard } from "@/components/dashboard/teacher/TeacherCourseCard";
+import {
+  getArchivedCourses,
+  getB2BCourses,
+  getB2CCourses,
+} from "@/app/actions/courses";
+import { ArchivedCoursesTable } from "@/components/dashboard/courses/archived-courses-table";
+import { B2BCoursesTable } from "@/components/dashboard/courses/b2b-courses-table";
+import { B2CCoursesTable } from "@/components/dashboard/courses/b2c-courses-table";
+import { CreateCourseButton } from "@/components/dashboard/courses/create-course-button";
 import { SiteHeader } from "@/components/site-header";
-import { createClient } from "@/lib/supabase/server";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { verifyAccess } from "@/lib/auth/rbac";
+import { isCorporateMode, isSchoolMode } from "@/lib/config/app-mode";
 
 export const metadata: Metadata = {
   title: "Мои курсы",
@@ -12,49 +20,37 @@ export const metadata: Metadata = {
 };
 
 export default async function DashboardCoursesPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
-
-  const { data: courses, error } = await supabase
-    .from("courses")
-    .select("id, title, description, status, price, slug, image_url")
-    .eq("teacher_id", user.id)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error("[DashboardCoursesPage]", error.message);
-  }
-
-  const list = courses ?? [];
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   const displayName =
     profile.full_name?.trim() ||
     user.email?.split("@")[0] ||
     "Пользователь";
+
+  const currentUser = { id: user.id, role: profile.role };
+  const isAdmin = profile.role === "admin";
+  const showCorporateTab = isCorporateMode;
+  const showOpenTab = isSchoolMode;
+  const defaultTab = showCorporateTab ? "b2b" : showOpenTab ? "b2c" : "archive";
+
+  const [{ data: b2bData }, { data: b2cData }, archivedResult] = await Promise.all([
+    showCorporateTab
+      ? getB2BCourses(user.id)
+      : Promise.resolve({ data: null, error: null }),
+    showOpenTab
+      ? getB2CCourses(user.id)
+      : Promise.resolve({ data: null, error: null }),
+    isAdmin
+      ? getArchivedCourses()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  const archivedData = archivedResult.data;
+
+  const subtitle = showCorporateTab && showOpenTab
+    ? "Управляйте корпоративными и открытыми курсами в одном месте."
+    : showCorporateTab
+      ? "Управляйте корпоративными курсами в одном месте."
+      : "Управляйте открытыми курсами в одном месте.";
 
   return (
     <>
@@ -65,29 +61,45 @@ export default async function DashboardCoursesPage() {
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Мои курсы</h1>
               <p className="text-muted-foreground mt-1 text-sm">
-                Создавайте курсы и переходите к редактированию по кнопке на карточке.
+                {subtitle}
               </p>
             </div>
             <div className="w-full shrink-0 sm:w-auto">
-              <CreateCourseDialog />
+              <CreateCourseButton />
             </div>
           </div>
 
-          {list.length === 0 ? (
-            <div className="border-muted-foreground/20 bg-muted/30 text-muted-foreground flex flex-col items-center justify-center rounded-xl border border-dashed px-6 py-16 text-center">
-              <p className="max-w-md text-base">
-                У вас пока нет курсов. Создайте свой первый — кнопка{" "}
-                <span className="text-foreground font-medium">«Создать курс»</span>{" "}
-                справа вверху.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {list.map((course) => (
-                <TeacherCourseCard key={course.id} course={course} />
-              ))}
-            </div>
-          )}
+          <Tabs defaultValue={defaultTab}>
+            <TabsList>
+              {showCorporateTab ? (
+                <TabsTrigger value="b2b">Корпоративные (B2B)</TabsTrigger>
+              ) : null}
+              {showOpenTab ? (
+                <TabsTrigger value="b2c">Открытые</TabsTrigger>
+              ) : null}
+              {isAdmin ? (
+                <TabsTrigger value="archive">Архив</TabsTrigger>
+              ) : null}
+            </TabsList>
+            {showCorporateTab ? (
+              <TabsContent value="b2b" className="mt-4">
+                <B2BCoursesTable data={b2bData || []} currentUser={currentUser} />
+              </TabsContent>
+            ) : null}
+            {showOpenTab ? (
+              <TabsContent value="b2c" className="mt-4">
+                <B2CCoursesTable data={b2cData || []} currentUser={currentUser} />
+              </TabsContent>
+            ) : null}
+            {isAdmin ? (
+              <TabsContent value="archive" className="mt-4">
+                <ArchivedCoursesTable
+                  data={archivedData || []}
+                  currentUser={currentUser}
+                />
+              </TabsContent>
+            ) : null}
+          </Tabs>
         </main>
       </div>
     </>

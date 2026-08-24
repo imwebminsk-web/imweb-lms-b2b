@@ -5,16 +5,16 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+import {
+  assertCourseMutationAccess,
+  COURSE_MUTATION_SELECT,
+  getCourseOwnerRole,
+} from "@/lib/auth/course-access";
 import { createClient } from "@/lib/supabase/server";
-import {
-  ageGroupFormSchema,
-  deliveryFormatFormSchema,
-} from "@/lib/validations/course-settings-schema";
+import { taxonomyIdsFormSchema } from "@/lib/validations/course-settings-schema";
 import type { Database } from "@/types/database.types";
-import {
-  collectCourseTaxonomyIds,
-  type CourseTaxonomySelections,
-} from "@/lib/course-taxonomy-map";
+import { slugify } from "@/lib/utils/slug";
 
 export type CreateCourseState = {
   success?: boolean;
@@ -26,107 +26,9 @@ export type UpdateCourseState = {
   error?: string;
 };
 
-/**
- * Простая транслитерация русских букв в латиницу (для читаемых ASCII-slug).
- * Ъ/Ь опускаются; ё → yo; ж/х/ц/ч/ш/щ → digraph.
- */
-function transliterate(text: string): string {
-  const map: Record<string, string> = {
-    А: "a",
-    а: "a",
-    Б: "b",
-    б: "b",
-    В: "v",
-    в: "v",
-    Г: "g",
-    г: "g",
-    Д: "d",
-    д: "d",
-    Е: "e",
-    е: "e",
-    Ё: "yo",
-    ё: "yo",
-    Ж: "zh",
-    ж: "zh",
-    З: "z",
-    з: "z",
-    И: "i",
-    и: "i",
-    Й: "y",
-    й: "y",
-    К: "k",
-    к: "k",
-    Л: "l",
-    л: "l",
-    М: "m",
-    м: "m",
-    Н: "n",
-    н: "n",
-    О: "o",
-    о: "o",
-    П: "p",
-    п: "p",
-    Р: "r",
-    р: "r",
-    С: "s",
-    с: "s",
-    Т: "t",
-    т: "t",
-    У: "u",
-    у: "u",
-    Ф: "f",
-    ф: "f",
-    Х: "h",
-    х: "h",
-    Ц: "ts",
-    ц: "ts",
-    Ч: "ch",
-    ч: "ch",
-    Ш: "sh",
-    ш: "sh",
-    Щ: "shch",
-    щ: "shch",
-    Ъ: "",
-    ъ: "",
-    Ы: "y",
-    ы: "y",
-    Ь: "",
-    ь: "",
-    Э: "e",
-    э: "e",
-    Ю: "yu",
-    ю: "yu",
-    Я: "ya",
-    я: "ya",
-    І: "i",
-    і: "i",
-    Ї: "yi",
-    ї: "yi",
-    Є: "ye",
-    є: "ye",
-    Ґ: "g",
-    ґ: "g",
-  };
-
-  let out = "";
-  for (const ch of text) {
-    out += map[ch] ?? ch;
-  }
-  return out;
-}
-
-/** Slug: транслит → нижний регистр, пробелы → дефисы, только буквы/цифры (латиница после транслита). */
+/** Slug курса: транслит названия → латиница, дефисы, fallback «course». */
 function baseSlugFromTitle(title: string): string {
-  const transliterated = transliterate(title.trim());
-  const normalized = transliterated
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "");
-  const replaced = normalized
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return replaced || "course";
+  return slugify(title, "course");
 }
 
 /** Нормализация slug из ручного ввода: lowercase, только a-z, 0-9 и дефисы. */
@@ -142,44 +44,25 @@ function sanitizeSlug(raw: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+const DEFAULT_COURSE_TITLE = "Новый курс";
+
+/**
+ * Создаёт черновик курса с названием по умолчанию и сразу
+ * перенаправляет в редактор `/dashboard/courses/[slug]`.
+ *
+ * Сигнатура с `_prev` и `formData` нужна для `useActionState` у кнопки:
+ * React передаёт предыдущее состояние и данные формы. Название мы
+ * больше не берём из формы — модалка убрана.
+ */
 export async function createCourse(
   _prev: CreateCourseState,
-  formData: FormData,
+  _formData: FormData,
 ): Promise<CreateCourseState> {
-  const title = String(formData.get("title") ?? "").trim();
+  const { user } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
-  if (!title) {
-    return { error: "Укажите название курса." };
-  }
+  const title = DEFAULT_COURSE_TITLE;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    return { error: "Профиль не найден." };
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    return {
-      error: "Создавать курсы могут только преподаватели, руководители и администраторы.",
-    };
-  }
 
   const base = baseSlugFromTitle(title);
   let slug = base;
@@ -222,7 +105,9 @@ export async function createCourse(
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/courses");
-  return { success: true };
+  // redirect() специально вызывается вне try/catch: внутри Next.js
+  // это throw, и его нельзя «проглатывать», иначе переход не сработает.
+  redirect(`/dashboard/courses/${slug}`);
 }
 
 type CourseStatus = Database["public"]["Enums"]["course_status"];
@@ -232,10 +117,8 @@ const DURATION_UNIT = new Set(["hours", "weeks", "months"]);
 async function syncCourseTaxonomies(
   supabase: Awaited<ReturnType<typeof createClient>>,
   courseId: string,
-  selections: CourseTaxonomySelections,
+  taxonomyIds: string[],
 ): Promise<string | null> {
-  const taxonomyIds = collectCourseTaxonomyIds(selections);
-
   const { error: deleteError } = await supabase
     .from("course_taxonomies")
     .delete()
@@ -269,6 +152,8 @@ export async function updateCourse(
   _prev: UpdateCourseState,
   formData: FormData,
 ): Promise<UpdateCourseState> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
   const id = String(formData.get("id") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
   const rawSlug = String(formData.get("slug") ?? "").trim();
@@ -280,16 +165,12 @@ export async function updateCourse(
   const vimeoRaw = String(formData.get("vimeo_url") ?? "").trim();
   const priceRaw = String(formData.get("price") ?? "").trim();
   const statusRaw = String(formData.get("status") ?? "").trim();
-  const ageGroupRaw = String(formData.get("age_group") ?? "").trim();
   const durationValueRaw = String(formData.get("duration_value") ?? "").trim();
   const durationUnitRaw = String(formData.get("duration_unit") ?? "").trim();
   const startDateRaw = String(formData.get("start_date") ?? "").trim();
   const hasCertificateRaw = String(formData.get("has_certificate") ?? "").trim();
   const promotionalImagesRaw = String(
     formData.get("promotional_images") ?? "",
-  ).trim();
-  const deliveryFormatRaw = String(
-    formData.get("delivery_format") ?? "",
   ).trim();
 
   let teams: string[] = [];
@@ -341,19 +222,19 @@ export async function updateCourse(
     return { error: "Некорректный статус курса." };
   }
 
-  const ageParsed = ageGroupFormSchema.safeParse(ageGroupRaw);
-  if (!ageParsed.success) {
-    return { error: "Некорректная возрастная группа." };
+  let taxonomyIds: string[] = [];
+  try {
+    const parsed = JSON.parse(
+      String(formData.get("taxonomy_ids") ?? "[]").trim(),
+    );
+    const result = taxonomyIdsFormSchema.safeParse(parsed);
+    if (!result.success) {
+      return { error: "Некорректные фильтры каталога." };
+    }
+    taxonomyIds = [...new Set(result.data)];
+  } catch {
+    return { error: "Некорректные фильтры каталога." };
   }
-
-  const deliveryParsed = deliveryFormatFormSchema.safeParse(deliveryFormatRaw);
-  if (!deliveryParsed.success) {
-    return { error: "Некорректный формат проведения." };
-  }
-
-  const delivery_format =
-    deliveryParsed.data.length > 0 ? deliveryParsed.data : null;
-  const age_group = ageParsed.data.length > 0 ? ageParsed.data : null;
 
   const supabase = await createClient();
 
@@ -381,17 +262,10 @@ export async function updateCourse(
 
   const status = statusRaw as CourseStatus;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
-
   const { data: existing, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug")
+    // @ts-expect-error owner alias is not in generated Database types yet
+    .select(COURSE_MUTATION_SELECT)
     .eq("id", id)
     .maybeSingle();
 
@@ -399,17 +273,15 @@ export async function updateCourse(
     return { error: "Курс не найден." };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const isAdminOrHead =
-    profile?.role === "admin" || profile?.role === "head_teacher";
-
-  if (!isAdminOrHead && existing.teacher_id !== user.id) {
-    return { error: "Нет прав на изменение этого курса." };
+  const accessError = await assertCourseMutationAccess(supabase, {
+    userId: user.id,
+    role: profile.role,
+    courseId: existing.id,
+    teacherId: existing.teacher_id,
+    courseOwnerRole: getCourseOwnerRole(existing),
+  });
+  if (accessError) {
+    return { error: accessError };
   }
 
   const slugChanged = newSlug !== existing.slug;
@@ -478,10 +350,6 @@ export async function updateCourse(
     })
     .eq("id", id);
 
-  if (!isAdminOrHead) {
-    query = query.eq("teacher_id", user.id);
-  }
-
   const { error: updateError } = await query;
 
   if (updateError) {
@@ -491,13 +359,21 @@ export async function updateCourse(
     };
   }
 
-  const taxonomySyncError = await syncCourseTaxonomies(supabase, id, {
-    marketing_audience: null,
-    delivery_format,
-    language: null,
-    age_group,
-    level: null,
-  });
+  if (taxonomyIds.length > 0) {
+    const { data: existingTaxonomies, error: taxonomyLookupError } =
+      await supabase.from("taxonomies").select("id").in("id", taxonomyIds);
+
+    if (taxonomyLookupError) {
+      console.error("[updateCourse:taxonomies]", taxonomyLookupError.message);
+      return { error: "Не удалось проверить фильтры каталога." };
+    }
+
+    if ((existingTaxonomies ?? []).length !== taxonomyIds.length) {
+      return { error: "Некорректные фильтры каталога." };
+    }
+  }
+
+  const taxonomySyncError = await syncCourseTaxonomies(supabase, id, taxonomyIds);
 
   if (taxonomySyncError) {
     return {
@@ -567,7 +443,7 @@ export async function updateCourse(
   return { success: true };
 }
 
-/** Серверный потолок после клиентского сжатия (~100 КБ); допускаем запас. */
+/** Серверный потолок после клиентского сжатия (цель 1 МБ); допускаем запас. */
 const GALLERY_UPLOAD_MAX_BYTES = 2 * 1024 * 1024;
 
 function galleryExtFromMime(mime: string): string {
@@ -587,6 +463,8 @@ export async function uploadCourseGalleryImage(
   courseId: string,
   formData: FormData,
 ): Promise<UploadCourseGalleryImageResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
   const cid = courseId.trim();
   const file = formData.get("file");
   if (!(file instanceof File)) {
@@ -612,17 +490,11 @@ export async function uploadCourseGalleryImage(
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
 
   const { data: row, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id")
+    // @ts-expect-error owner alias is not in generated Database types yet
+    .select(COURSE_MUTATION_SELECT)
     .eq("id", cid)
     .maybeSingle();
 
@@ -630,17 +502,15 @@ export async function uploadCourseGalleryImage(
     return { error: "Курс не найден." };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const isAdminOrHead =
-    profile?.role === "admin" || profile?.role === "head_teacher";
-
-  if (!isAdminOrHead && row.teacher_id !== user.id) {
-    return { error: "Нет прав на загрузку." };
+  const accessError = await assertCourseMutationAccess(supabase, {
+    userId: user.id,
+    role: profile.role,
+    courseId: row.id,
+    teacherId: row.teacher_id,
+    courseOwnerRole: getCourseOwnerRole(row),
+  });
+  if (accessError) {
+    return { error: accessError };
   }
 
   const ext = galleryExtFromMime(file.type);
@@ -676,6 +546,8 @@ export async function updateCourseImage(
   courseId: string,
   imageUrl: string,
 ): Promise<UpdateCourseImageState> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
   const id = courseId.trim();
   const url = imageUrl.trim();
 
@@ -684,17 +556,11 @@ export async function updateCourseImage(
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
 
   const { data: course, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug")
+    // @ts-expect-error owner alias is not in generated Database types yet
+    .select(COURSE_MUTATION_SELECT)
     .eq("id", id)
     .maybeSingle();
 
@@ -702,29 +568,21 @@ export async function updateCourseImage(
     return { error: "Курс не найден." };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const isAdminOrHead =
-    profile?.role === "admin" || profile?.role === "head_teacher";
-
-  if (!isAdminOrHead && course.teacher_id !== user.id) {
-    return { error: "Нет прав." };
+  const accessError = await assertCourseMutationAccess(supabase, {
+    userId: user.id,
+    role: profile.role,
+    courseId: course.id,
+    teacherId: course.teacher_id,
+    courseOwnerRole: getCourseOwnerRole(course),
+  });
+  if (accessError) {
+    return { error: accessError };
   }
 
-  let query = supabase
+  const { error: updateError } = await supabase
     .from("courses")
     .update({ image_url: url.length > 0 ? url : null })
     .eq("id", id);
-
-  if (!isAdminOrHead) {
-    query = query.eq("teacher_id", user.id);
-  }
-
-  const { error: updateError } = await query;
 
   if (updateError) {
     console.error("[updateCourseImage]", updateError.message);
@@ -732,7 +590,6 @@ export async function updateCourseImage(
   }
 
   revalidatePath("/dashboard/courses");
-  revalidatePath(`/dashboard/courses/${course.slug}`);
   revalidatePath("/dashboard");
   return { success: true };
 }
@@ -747,6 +604,8 @@ export async function updateCourseVideo(
   courseId: string,
   videoUrl: string,
 ): Promise<UpdateCourseVideoState> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
   const id = courseId.trim();
   const url = videoUrl.trim();
 
@@ -755,17 +614,11 @@ export async function updateCourseVideo(
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
 
   const { data: course, error: fetchError } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug")
+    // @ts-expect-error owner alias is not in generated Database types yet
+    .select(COURSE_MUTATION_SELECT)
     .eq("id", id)
     .maybeSingle();
 
@@ -773,29 +626,21 @@ export async function updateCourseVideo(
     return { error: "Курс не найден." };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const isAdminOrHead =
-    profile?.role === "admin" || profile?.role === "head_teacher";
-
-  if (!isAdminOrHead && course.teacher_id !== user.id) {
-    return { error: "Нет прав." };
+  const accessError = await assertCourseMutationAccess(supabase, {
+    userId: user.id,
+    role: profile.role,
+    courseId: course.id,
+    teacherId: course.teacher_id,
+    courseOwnerRole: getCourseOwnerRole(course),
+  });
+  if (accessError) {
+    return { error: accessError };
   }
 
-  let query = supabase
+  const { error: updateError } = await supabase
     .from("courses")
     .update({ video_url: url.length > 0 ? url : null })
     .eq("id", id);
-
-  if (!isAdminOrHead) {
-    query = query.eq("teacher_id", user.id);
-  }
-
-  const { error: updateError } = await query;
 
   if (updateError) {
     console.error("[updateCourseVideo]", updateError.message);
@@ -803,7 +648,6 @@ export async function updateCourseVideo(
   }
 
   revalidatePath("/dashboard/courses");
-  revalidatePath(`/dashboard/courses/${course.slug}`);
   revalidatePath("/dashboard");
   return { success: true };
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
+
+import imageCompression from "browser-image-compression";
 
 import { updateCourseImage } from "@/app/actions/course-actions";
 import { Button } from "@/components/ui/button";
@@ -33,10 +34,11 @@ export function CourseImageUpload({
   courseId: string;
   initialImageUrl: string | null;
 }) {
-  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Превью обложки тоже локальное — без перезагрузки родительской формы.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialImageUrl);
 
   const pickFile = () => inputRef.current?.click();
 
@@ -58,6 +60,12 @@ export function CourseImageUpload({
 
     setBusy(true);
     try {
+      const compressed = await imageCompression(file, {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1920,
+        useWebWorker: true,
+      });
+
       const supabase = createClient();
       const {
         data: { user },
@@ -68,19 +76,20 @@ export function CourseImageUpload({
         return;
       }
 
-      const ext = extFromMime(file.type);
+      const mime = compressed.type || "image/jpeg";
+      const ext = extFromMime(mime);
       const path = `${user.id}/${courseId}/${crypto.randomUUID()}.${ext}`;
 
       const { error: upErr } = await supabase.storage
         .from(BUCKET)
-        .upload(path, file, {
+        .upload(path, compressed, {
           cacheControl: "3600",
           upsert: false,
-          contentType: file.type,
+          contentType: mime,
         });
 
       if (upErr) {
-        setError(upErr.message || "Ошибка загрузки в Storage.");
+        setError(upErr.message || "Не удалось загрузить изображение.");
         return;
       }
 
@@ -94,7 +103,9 @@ export function CourseImageUpload({
         return;
       }
 
-      router.refresh();
+      setPreviewUrl(publicUrl);
+    } catch {
+      setError("Не удалось сжать изображение. Попробуйте другой файл.");
     } finally {
       setBusy(false);
     }
@@ -110,7 +121,7 @@ export function CourseImageUpload({
         setError(res.error);
         return;
       }
-      router.refresh();
+      setPreviewUrl(null);
     } finally {
       setBusy(false);
     }
@@ -121,8 +132,7 @@ export function CourseImageUpload({
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium">Обложка курса</p>
         <p className="text-muted-foreground text-xs">
-          Загрузка в bucket «{BUCKET}» (публичный URL сохраняется в{" "}
-          <code className="bg-muted rounded px-1">image_url</code>).
+          Максимальный размер: 5 МБ. Форматы: JPG, PNG, WebP.
         </p>
       </div>
 
@@ -131,10 +141,10 @@ export function CourseImageUpload({
           "border-border bg-card relative flex aspect-video w-full max-w-md items-center justify-center overflow-hidden rounded-lg border",
         )}
       >
-        {initialImageUrl ? (
+        {previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={initialImageUrl}
+            src={previewUrl}
             alt=""
             className="size-full object-cover"
           />
@@ -170,7 +180,7 @@ export function CourseImageUpload({
           )}
           <span className="ml-2">Выбрать файл</span>
         </Button>
-        {initialImageUrl ? (
+        {previewUrl ? (
           <Button
             type="button"
             variant="outline"

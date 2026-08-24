@@ -6,38 +6,15 @@ import { CreateTestForm } from "@/components/admin/create-test-form";
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 export const metadata: Metadata = {
   title: "Создать тест",
   description: "Новый тест с вопросами",
 };
 
 export default async function DashboardCreateTestPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   const displayName =
     profile.full_name?.trim() ||

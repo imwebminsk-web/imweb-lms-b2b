@@ -6,6 +6,10 @@ import {
 } from "@/app/actions/student-dashboard-actions";
 import { getB2BDashboardCourses } from "@/app/actions/b2b-user-actions";
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
+import {
+  getPendingReviews,
+  getStaffListForFilter,
+} from "@/app/actions/teacher-dashboard-actions";
 import { ActivityFeedWidget } from "@/components/dashboard/teacher/activity-feed-widget";
 import { PendingReviewsWidget } from "@/components/dashboard/teacher/pending-reviews-widget";
 import { StudentDashboardHome } from "@/components/dashboard/student/student-dashboard-home";
@@ -24,25 +28,13 @@ import { createClient } from "@/lib/supabase/server";
 
 import { fetchDashboardData } from "./fetch-dashboard-data";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
+const PENDING_REVIEWS_PAGE_SIZE = 10;
+
 export default async function Page() {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher", "student"]);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
 
   const displayName =
     profile.full_name?.trim() ||
@@ -156,6 +148,28 @@ export default async function Page() {
   }
 
   const payload = await fetchDashboardData(user.id, profile.role);
+  const showStaffFilter =
+    profile.role === "admin" || profile.role === "head_teacher";
+
+  const [pendingRes, staffRes] = await Promise.all([
+    getPendingReviews("mine", 0, PENDING_REVIEWS_PAGE_SIZE),
+    showStaffFilter
+      ? getStaffListForFilter()
+      : Promise.resolve({ success: true as const, staff: [] }),
+  ]);
+
+  const pendingReviews = pendingRes.success ? pendingRes.items : [];
+  const pendingHasMore = pendingRes.success ? pendingRes.hasMore : false;
+  const staffOptions = staffRes.success ? staffRes.staff : [];
+
+  const pendingWidget = (
+    <PendingReviewsWidget
+      initialReviews={pendingReviews}
+      initialHasMore={pendingHasMore}
+      staffOptions={staffOptions}
+      showStaffFilter={showStaffFilter}
+    />
+  );
 
   if (profile.role === "admin") {
     return (
@@ -165,6 +179,7 @@ export default async function Page() {
           <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
             <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
               <SectionCards adminMetrics={payload.adminMetrics} cards={[]} />
+              {pendingWidget}
               <Card>
                 <CardHeader>
                   <CardTitle>Дашборд</CardTitle>
@@ -190,13 +205,9 @@ export default async function Page() {
               cards={payload.sectionCards}
               teacherMetrics={payload.teacherMetrics}
             />
+            {pendingWidget}
             {profile.role === "teacher" ? (
-              <>
-                <PendingReviewsWidget
-                  reviews={payload.pendingReviews ?? []}
-                />
-                <ActivityFeedWidget events={payload.activityEvents ?? []} />
-              </>
+              <ActivityFeedWidget events={payload.activityEvents ?? []} />
             ) : null}
           </div>
         </div>

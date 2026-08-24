@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 type PageProps = {
   params: Promise<{ attemptId: string }>;
 };
@@ -22,31 +24,7 @@ export const metadata: Metadata = {
 
 export default async function AttemptGradePage({ params }: PageProps) {
   const { attemptId } = await params;
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect(
-      `/?next=${encodeURIComponent(`/dashboard/gradebook/attempts/${attemptId}/grade`)}`,
-    );
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/dashboard");
-  }
-
-  if (profile.role !== "admin" && profile.role !== "teacher") {
-    redirect("/dashboard");
-  }
+  await verifyAccess(["admin", "teacher", "head_teacher"]);
 
   const result = await getAttemptGradingDetails(attemptId);
 

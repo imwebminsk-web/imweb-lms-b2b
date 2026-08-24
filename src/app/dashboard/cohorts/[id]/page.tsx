@@ -3,8 +3,11 @@ import { notFound, redirect } from "next/navigation";
 
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { getPendingReviewCounts } from "@/app/actions/grading-actions";
-import { getCohortStudents } from "@/app/actions/cohort-actions";
-import { isAdminOrHead } from "@/lib/utils/user-utils";
+import {
+  assertCanManageCohort,
+  getCohortStudents,
+  getStaffDb,
+} from "@/app/actions/cohort-actions";
 import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
 import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { TeacherCohortTabs } from "@/components/dashboard/cohorts/teacher-cohort-tabs";
@@ -16,7 +19,8 @@ import { MatrixGradebook } from "@/components/dashboard/teacher/cohorts/matrix-g
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
-import { createClient } from "@/lib/supabase/server";
+
+import { verifyAccess } from "@/lib/auth/rbac";
 
 type CohortPageProps = {
   params: Promise<{ id: string }>;
@@ -48,32 +52,20 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
     notFound();
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
-  if (!user) {
-    redirect("/");
+  const access = await assertCanManageCohort(cohortId);
+  if (!access.ok) {
+    if (
+      access.error === "Группа не найдена." ||
+      access.error === "Курс группы не найден."
+    ) {
+      notFound();
+    }
+    redirect("/dashboard/cohorts");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
+  const supabase = await getStaffDb();
 
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
@@ -90,10 +82,6 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
   const courseRel = Array.isArray(cohort.courses) ? cohort.courses[0] : cohort.courses;
   if (!courseRel) {
     notFound();
-  }
-
-  if (!isAdminOrHead(profile.role) && courseRel.teacher_id !== user.id) {
-    redirect("/dashboard/cohorts");
   }
 
   const [studentsRes, matrixRes, unreadRes, pendingRes] = await Promise.all([

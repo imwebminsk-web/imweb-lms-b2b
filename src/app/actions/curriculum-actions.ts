@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+import {
+  assertCourseDeleteAccess,
+  COURSE_MUTATION_SELECT,
+  getCourseOwnerRole,
+} from "@/lib/auth/course-access";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { createLessonSchema } from "@/lib/validations/curriculum-schema";
 import type { Database, Json } from "@/types/database.types";
@@ -752,82 +759,178 @@ export async function deleteLesson(
 export async function deleteCourse(
   courseId: string,
 ): Promise<DeleteCurriculumState> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
   const cid = courseId.trim();
   if (!cid) {
     return { error: "Не указан курс." };
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
 
   const { data: course, error: courseErr } = await supabase
     .from("courses")
-    .select("id, teacher_id, slug, image_url, video_url")
+    // @ts-expect-error owner alias is not in generated Database types yet
+    .select(COURSE_MUTATION_SELECT)
     .eq("id", cid)
     .maybeSingle();
 
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав." };
+  if (courseErr || !course) {
+    return { error: "Курс не найден." };
   }
 
-  const { data: moduleRows, error: modErr } = await supabase
-    .from("modules")
-    .select("id")
-    .eq("course_id", cid);
-
-  if (modErr) {
-    console.error("[deleteCourse] list modules", modErr.message);
-    return { error: modErr.message || "Не удалось подготовить удаление." };
+  const accessError = await assertCourseDeleteAccess(supabase, {
+    userId: user.id,
+    role: profile.role,
+    courseId: course.id,
+    teacherId: course.teacher_id,
+    courseOwnerRole: getCourseOwnerRole(course),
+  });
+  if (accessError) {
+    return { error: accessError };
   }
 
-  const moduleIds = (moduleRows ?? []).map((m) => m.id);
-  if (moduleIds.length > 0) {
-    const { data: lessonIdRows, error: lidErr } = await supabase
-      .from("lessons")
-      .select("id")
-      .in("module_id", moduleIds);
-
-    if (lidErr) {
-      console.error("[deleteCourse] list lesson ids", lidErr.message);
-      return { error: lidErr.message || "Не удалось подготовить удаление." };
-    }
-
-    const allLessonIds = (lessonIdRows ?? []).map((l) => l.id);
-    await removeImageBlocksForLessons(supabase, allLessonIds);
-
-    const { data: lesRows, error: lesErr } = await supabase
-      .from("lessons")
-      .select("type, content")
-      .in("module_id", moduleIds);
-
-    if (lesErr) {
-      console.error("[deleteCourse] list lessons", lesErr.message);
-      return { error: lesErr.message || "Не удалось подготовить удаление." };
-    }
-
-    for (const row of lesRows ?? []) {
-      await removeSelfHostedLessonVideoFromStorage(
-        supabase,
-        row.type as LessonType,
-        row.content as Json,
-      );
-    }
-  }
-
-  await removeStorageObjectIfInBucket(supabase, BUCKET_COVERS, course.image_url);
-  await removeStorageObjectIfInBucket(supabase, BUCKET_VIDEOS, course.video_url);
-
-  const { error: delErr } = await supabase.from("courses").delete().eq("id", cid);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: delErr } = await (supabase as any)
+    .from("courses")
+    .update({ is_archived: true })
+    .eq("id", cid);
 
   if (delErr) {
     console.error("[deleteCourse]", delErr.message);
-    return { error: delErr.message || "Не удалось удалить курс." };
+    return { error: delErr.message || "Не удалось архивировать курс." };
+  }
+
+  revalidatePath("/dashboard/courses");
+  revalidatePath(`/dashboard/courses/${course.slug}`);
+  return { success: true };
+}
+
+export async function restoreCourse(
+  courseId: string,
+  newTeacherId: string,
+): Promise<DeleteCurriculumState> {
+  await verifyAccess(["admin"]);
+
+  const cid = courseId.trim();
+  const teacherId = newTeacherId.trim();
+
+  if (!cid) {
+    return { error: "Не указан курс." };
+  }
+
+  if (!teacherId) {
+    return { error: "Не указан новый владелец курса." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: course, error: courseErr } = await supabase
+    .from("courses")
+    .select("id, slug")
+    .eq("id", cid)
+    .maybeSingle();
+
+  if (courseErr || !course) {
+    return { error: "Курс не найден." };
+  }
+
+  const { data: teacher, error: teacherErr } = await supabase
+    .from("profiles")
+    .select("id, role")
+    .eq("id", teacherId)
+    .maybeSingle();
+
+  if (teacherErr || !teacher) {
+    return { error: "Пользователь не найден." };
+  }
+
+  if (teacher.role !== "teacher" && teacher.role !== "head_teacher") {
+    return { error: "Владельцем может быть только преподаватель или завуч." };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: updateErr } = await (supabase as any)
+    .from("courses")
+    .update({ is_archived: false, teacher_id: teacherId })
+    .eq("id", cid);
+
+  if (updateErr) {
+    console.error("[restoreCourse]", updateErr.message);
+    return { error: updateErr.message || "Не удалось восстановить курс." };
+  }
+
+  revalidatePath("/dashboard/courses");
+  revalidatePath(`/dashboard/courses/${course.slug}`);
+  return { success: true };
+}
+
+export async function reassignCourseOwner(
+  courseId: string,
+  newTeacherId: string,
+): Promise<DeleteCurriculumState> {
+  await verifyAccess(["admin"]);
+
+  const cid = courseId.trim();
+  const teacherId = newTeacherId.trim();
+
+  if (!cid) {
+    return { error: "Не указан курс." };
+  }
+
+  if (!teacherId) {
+    return { error: "Не указан новый владелец курса." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: course, error: courseErr } = await supabase
+    .from("courses")
+    .select("id, slug, teacher_id")
+    .eq("id", cid)
+    .maybeSingle();
+
+  if (courseErr || !course) {
+    return { error: "Курс не найден." };
+  }
+
+  if (course.teacher_id === teacherId) {
+    return { error: "Этот пользователь уже владелец курса." };
+  }
+
+  // is_active ещё нет в generated Database types.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: teacher, error: teacherErr } = await (supabase as any)
+    .from("profiles")
+    .select("id, role, is_active")
+    .eq("id", teacherId)
+    .maybeSingle();
+
+  if (teacherErr || !teacher) {
+    return { error: "Пользователь не найден." };
+  }
+
+  if (teacher.role !== "teacher" && teacher.role !== "head_teacher") {
+    return { error: "Владельцем может быть только преподаватель или завуч." };
+  }
+
+  if (teacher.is_active === false) {
+    return { error: "Нельзя назначить деактивированного сотрудника." };
+  }
+
+  // RLS на courses не даёт admin менять teacher_id (политика courses_update_own).
+  // После verifyAccess(['admin']) пишем через service role.
+  const writer = createAdminClient() ?? supabase;
+  const { data: updated, error: updateErr } = await writer
+    .from("courses")
+    .update({ teacher_id: teacherId })
+    .eq("id", cid)
+    .select("id")
+    .maybeSingle();
+
+  if (updateErr || !updated) {
+    console.error("[reassignCourseOwner]", updateErr?.message);
+    return { error: updateErr?.message || "Не удалось сменить владельца." };
   }
 
   revalidatePath("/dashboard/courses");

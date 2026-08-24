@@ -8,7 +8,10 @@ import { Editor } from "@/components/ui/editor";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { compressImage } from "@/lib/utils/image-compression";
+import {
+  COURSE_IMAGE_MAX_BYTES,
+  compressImage,
+} from "@/lib/utils/image-compression";
 import { uploadCourseGalleryImage } from "@/app/actions/course-actions";
 import { CourseVideoUpload } from "../course-video-upload";
 import type { CourseSettingsFormCourse } from "../course-settings-form";
@@ -59,9 +62,9 @@ export function CourseLanding({
         }
         try {
           const compressed = await compressImage(raw);
-          if (compressed.size > 100 * 1024) {
+          if (compressed.size > COURSE_IMAGE_MAX_BYTES) {
             toast.error(
-              `${raw.name}: после сжатия файл всё ещё больше 100 КБ.`,
+              `${raw.name}: после сжатия файл всё ещё больше 1 МБ.`,
             );
             continue;
           }
@@ -157,9 +160,7 @@ export function CourseLanding({
           <h4 className="text-base font-semibold">Галерея лендинга</h4>
         </div>
         <p className="text-muted-foreground text-xs">
-          До 24 изображений. Перед загрузкой файлы сжимаются в браузере
-          (цель до 100 КБ каждый), затем попадают в Storage. Сохраните
-          форму курса, чтобы записать список URL в базу.
+          До 24 изображений. Не забудьте нажать «Сохранить» внизу страницы после загрузки.
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input

@@ -6,38 +6,15 @@ import { StudentsTable } from "@/components/dashboard/teacher/students/students-
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 export const metadata: Metadata = {
   title: "Ученики",
   description: "Все ученики ваших курсов и групп",
 };
 
 export default async function DashboardStudentsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   const studentsRes = await getGlobalTeacherStudents(user.id);
   if (!studentsRes.success) {

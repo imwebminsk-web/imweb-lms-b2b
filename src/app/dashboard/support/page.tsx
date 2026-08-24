@@ -10,30 +10,15 @@ import { TeacherSupportClient } from "@/components/dashboard/support/teacher-sup
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 export const metadata: Metadata = {
   title: "Поддержка",
   description: "Обращения в службу поддержки",
 };
 
 export default async function SupportPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher", "student"]);
 
   const displayName =
     profile.full_name?.trim() ||

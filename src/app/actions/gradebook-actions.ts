@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { isAdminOrHead, resolveStudentDisplayName } from "@/lib/utils/user-utils";
+import { assertCanManageCohort, getStaffDb } from "@/app/actions/cohort-actions";
+import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import { readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
 import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
 import {
@@ -113,16 +114,17 @@ export async function getBestTestAttemptDetails(
     return { success: false, error: "Тест не найден" };
   }
 
-  /** Ученик смотрит только свои попытки; преподаватель — чужие в своём тесте; админ — любые. */
+  /** Ученик — свои попытки; преподаватель — свой тест; админ и завуч — любые. */
   const skipTestOwnershipCheck =
     profile.role === "admin" ||
+    profile.role === "head_teacher" ||
     (user.id === sid.data && profile.role === "student");
 
   if (!skipTestOwnershipCheck) {
-    if (profile.role !== "teacher" && profile.role !== "admin") {
+    if (profile.role !== "teacher") {
       return { success: false, error: "Недостаточно прав" };
     }
-    if (profile.role !== "admin" && testRow.user_id !== user.id) {
+    if (testRow.user_id !== user.id) {
       return {
         success: false,
         error: "Этот тест принадлежит другому преподавателю",
@@ -442,7 +444,11 @@ export async function overrideTestAttemptGrade(
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     return { success: false, error: "Недостаточно прав" };
   }
 
@@ -470,7 +476,11 @@ export async function overrideTestAttemptGrade(
     return { success: false, error: "Тест не найден" };
   }
 
-  if (profile.role !== "admin" && testRow.user_id !== user.id) {
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    testRow.user_id !== user.id
+  ) {
     return { success: false, error: "Этот тест принадлежит другому преподавателю" };
   }
 
@@ -543,192 +553,25 @@ function matrixCellKey(studentId: string, columnId: string): string {
   return `${studentId}:${columnId}`;
 }
 
-type GradebookTestMeta = {
-  id: string;
-  title: string;
-  title_teacher: string | null;
-  test_type: string;
-  save_to_journal: boolean;
-  is_published: boolean | null;
-};
-
-function resolveGradebookTestType(
-  testType: string | null | undefined,
-): "training" | "final" {
-  return testType === "training" ? "training" : "final";
-}
-
-function filterAndLabelTestColumns(
-  columns: MatrixGradebookColumn[],
-  testMetaById: Map<string, GradebookTestMeta>,
-): MatrixGradebookColumn[] {
-  return columns
-    .filter((col) => {
-      if (col.type !== "test" || !col.testId) return true;
-      const meta = testMetaById.get(col.testId);
-      if (!meta) return false;
-      if (meta.is_published !== true) return false;
-      if (!meta.save_to_journal) return false;
-      return true;
-    })
-    .map((col) => {
-      if (col.type !== "test" || !col.testId) return col;
-      const meta = testMetaById.get(col.testId);
-      const title = meta?.title?.trim() || "Тест";
-      const teacherTitle =
-        meta?.title_teacher?.trim() || meta?.title?.trim() || "Тест";
-      return {
-        ...col,
-        title,
-        testTitleTeacher: teacherTitle,
-        testType: resolveGradebookTestType(meta?.test_type),
-      };
-    });
-}
+type GradebookDb = Awaited<ReturnType<typeof createClient>>;
 
 /**
- * Сводная матрица успеваемости группы: ученики × тесты/задания курса.
+ * Колонки и ячейки журнала по курсу: тесты (lessons.test_id + quiz-блоки)
+ * и задания с save_to_journal. Строки передаёт вызывающий код.
  */
-export async function getMatrixGradebookData(
-  cohortId: string,
+async function fillCourseGradebookMatrix(
+  supabase: GradebookDb,
+  args: {
+    courseId: string;
+    students: MatrixGradebookStudent[];
+    assignedLessonIds?: Set<string>;
+  },
 ): Promise<
-  | { success: true; data: MatrixGradebookData }
-  | { success: false; error: string }
+  { success: true; data: MatrixGradebookData } | { success: false; error: string }
 > {
-  const parsedCohort = cohortIdSchema.safeParse(cohortId.trim());
-  if (!parsedCohort.success) {
-    return {
-      success: false,
-      error: parsedCohort.error.issues[0]?.message ?? "Некорректный ID группы",
-    };
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { success: false, error: "Требуется вход в систему" };
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    return { success: false, error: "Профиль не найден" };
-  }
-
-  if (profile.role !== "teacher" && !isAdminOrHead(profile.role)) {
-    return { success: false, error: "Нет доступа" };
-  }
-
-  const { data: cohort, error: cohortError } = await supabase
-    .from("cohorts")
-    .select("id, course_id, courses(id, teacher_id)")
-    .eq("id", parsedCohort.data)
-    .maybeSingle();
-
-  if (cohortError || !cohort) {
-    return { success: false, error: "Группа не найдена" };
-  }
-
-  const courseRel = Array.isArray(cohort.courses) ? cohort.courses[0] : cohort.courses;
-  if (!courseRel?.id) {
-    return { success: false, error: "Курс не найден" };
-  }
-
-  if (!isAdminOrHead(profile.role) && courseRel.teacher_id !== user.id) {
-    return { success: false, error: "Нет доступа к журналу этой группы" };
-  }
-
-  const courseId = cohort.course_id;
-
-  const [
-    { data: enrollmentsData, error: enrollmentsError },
-    { data: assignmentRowsRaw, error: assignmentsError },
-  ] = await Promise.all([
-    supabase
-      .from("enrollments")
-      .select("user_id")
-      .eq("cohort_id", parsedCohort.data)
-      .order("enrolled_at", { ascending: false }),
-    supabase
-      .from("cohort_assignments")
-      .select("lesson_id")
-      .eq("cohort_id", parsedCohort.data),
-  ]);
-
-  if (enrollmentsError) {
-    return { success: false, error: enrollmentsError.message };
-  }
-  if (assignmentsError) {
-    return { success: false, error: assignmentsError.message };
-  }
-
-  const studentIds = (enrollmentsData ?? []).map((e) => e.user_id);
-  const assignedLessonIds = new Set(
-    (assignmentRowsRaw ?? [])
-      .map((r) => r.lesson_id)
-      .filter((v): v is string => Boolean(v)),
-  );
-
-  type EmailRow = { user_id: string; email: string | null; full_name: string | null };
-  const emailByUserId = new Map<string, EmailRow>();
-
-  try {
-    const emailsByUserId = await fetchStudentEmailsByUserIds(studentIds);
-    for (const [userId, email] of emailsByUserId) {
-      emailByUserId.set(userId, {
-        user_id: userId,
-        email,
-        full_name: null,
-      });
-    }
-  } catch (emailsError) {
-    console.error(
-      "[getMatrixGradebookData] emails",
-      emailsError instanceof Error ? emailsError.message : emailsError,
-    );
-  }
-
-  const profileByUserId = new Map<
-    string,
-    { full_name: string | null; avatar_url: string | null }
-  >();
-  if (studentIds.length > 0) {
-    const { data: profileRows } = await supabase
-      .from("profiles")
-      .select("id, full_name, avatar_url")
-      .in("id", studentIds);
-    for (const p of profileRows ?? []) {
-      profileByUserId.set(p.id, {
-        full_name: p.full_name,
-        avatar_url: p.avatar_url,
-      });
-    }
-  }
-
-  const students: MatrixGradebookStudent[] = studentIds.map((sid) => {
-    const emailRow = emailByUserId.get(sid);
-    const email = emailRow?.email?.trim() || "—";
-    const profileRow = profileByUserId.get(sid);
-    const fullName =
-      profileRow?.full_name ?? emailRow?.full_name ?? null;
-    return {
-      id: sid,
-      name: resolveStudentDisplayName(
-        fullName,
-        email === "—" ? null : email,
-        sid,
-      ),
-      email,
-      avatarUrl: profileRow?.avatar_url ?? null,
-    };
-  });
+  const { courseId, students } = args;
+  const assignedLessonIds = args.assignedLessonIds ?? new Set<string>();
+  const studentIds = students.map((student) => student.id);
 
   const { data: lessonRowsRaw, error: lessonsError } = await supabase
     .from("lessons")
@@ -1039,4 +882,217 @@ export async function getMatrixGradebookData(
   }
 
   return { success: true, data: { students, columns: filteredColumns, cells } };
+}
+
+export async function getStaffCourseGradebookMatrix(
+  courseId: string,
+  students: MatrixGradebookStudent[],
+): Promise<
+  { success: true; data: MatrixGradebookData } | { success: false; error: string }
+> {
+  const parsed = uuidSchema.safeParse(courseId);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Некорректный ID курса",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profile?.role !== "admin" && profile?.role !== "head_teacher") {
+    return { success: false, error: "Нет доступа." };
+  }
+
+  return fillCourseGradebookMatrix(supabase, {
+    courseId: parsed.data,
+    students,
+  });
+}
+
+type GradebookTestMeta = {
+  id: string;
+  title: string;
+  title_teacher: string | null;
+  test_type: string;
+  save_to_journal: boolean;
+  is_published: boolean | null;
+};
+
+function resolveGradebookTestType(
+  testType: string | null | undefined,
+): "training" | "final" {
+  return testType === "training" ? "training" : "final";
+}
+
+function filterAndLabelTestColumns(
+  columns: MatrixGradebookColumn[],
+  testMetaById: Map<string, GradebookTestMeta>,
+): MatrixGradebookColumn[] {
+  return columns
+    .filter((col) => {
+      if (col.type !== "test" || !col.testId) return true;
+      const meta = testMetaById.get(col.testId);
+      if (!meta) return false;
+      if (meta.is_published !== true) return false;
+      if (!meta.save_to_journal) return false;
+      return true;
+    })
+    .map((col) => {
+      if (col.type !== "test" || !col.testId) return col;
+      const meta = testMetaById.get(col.testId);
+      const title = meta?.title?.trim() || "Тест";
+      const teacherTitle =
+        meta?.title_teacher?.trim() || meta?.title?.trim() || "Тест";
+      return {
+        ...col,
+        title,
+        testTitleTeacher: teacherTitle,
+        testType: resolveGradebookTestType(meta?.test_type),
+      };
+    });
+}
+
+/**
+ * Сводная матрица успеваемости группы: ученики × тесты/задания курса.
+ */
+export async function getMatrixGradebookData(
+  cohortId: string,
+): Promise<
+  | { success: true; data: MatrixGradebookData }
+  | { success: false; error: string }
+> {
+  const parsedCohort = cohortIdSchema.safeParse(cohortId.trim());
+  if (!parsedCohort.success) {
+    return {
+      success: false,
+      error: parsedCohort.error.issues[0]?.message ?? "Некорректный ID группы",
+    };
+  }
+
+  const access = await assertCanManageCohort(parsedCohort.data);
+  if (!access.ok) {
+    return { success: false, error: access.error };
+  }
+
+  const supabase = await getStaffDb();
+
+  const { data: cohort, error: cohortError } = await supabase
+    .from("cohorts")
+    .select("id, course_id, courses(id, teacher_id)")
+    .eq("id", parsedCohort.data)
+    .maybeSingle();
+
+  if (cohortError || !cohort) {
+    return { success: false, error: "Группа не найдена" };
+  }
+
+  const courseRel = Array.isArray(cohort.courses) ? cohort.courses[0] : cohort.courses;
+  if (!courseRel?.id) {
+    return { success: false, error: "Курс не найден" };
+  }
+
+  const courseId = cohort.course_id;
+
+  const [
+    { data: enrollmentsData, error: enrollmentsError },
+    { data: assignmentRowsRaw, error: assignmentsError },
+  ] = await Promise.all([
+    supabase
+      .from("enrollments")
+      .select("user_id")
+      .eq("cohort_id", parsedCohort.data)
+      .order("enrolled_at", { ascending: false }),
+    supabase
+      .from("cohort_assignments")
+      .select("lesson_id")
+      .eq("cohort_id", parsedCohort.data),
+  ]);
+
+  if (enrollmentsError) {
+    return { success: false, error: enrollmentsError.message };
+  }
+  if (assignmentsError) {
+    return { success: false, error: assignmentsError.message };
+  }
+
+  const studentIds = (enrollmentsData ?? []).map((e) => e.user_id);
+  const assignedLessonIds = new Set(
+    (assignmentRowsRaw ?? [])
+      .map((r) => r.lesson_id)
+      .filter((v): v is string => Boolean(v)),
+  );
+
+  type EmailRow = { user_id: string; email: string | null; full_name: string | null };
+  const emailByUserId = new Map<string, EmailRow>();
+
+  try {
+    const emailsByUserId = await fetchStudentEmailsByUserIds(studentIds);
+    for (const [userId, email] of emailsByUserId) {
+      emailByUserId.set(userId, {
+        user_id: userId,
+        email,
+        full_name: null,
+      });
+    }
+  } catch (emailsError) {
+    console.error(
+      "[getMatrixGradebookData] emails",
+      emailsError instanceof Error ? emailsError.message : emailsError,
+    );
+  }
+
+  const profileByUserId = new Map<
+    string,
+    { full_name: string | null; avatar_url: string | null }
+  >();
+  if (studentIds.length > 0) {
+    const { data: profileRows } = await supabase
+      .from("profiles")
+      .select("id, full_name, avatar_url")
+      .in("id", studentIds);
+    for (const p of profileRows ?? []) {
+      profileByUserId.set(p.id, {
+        full_name: p.full_name,
+        avatar_url: p.avatar_url,
+      });
+    }
+  }
+
+  const students: MatrixGradebookStudent[] = studentIds.map((sid) => {
+    const emailRow = emailByUserId.get(sid);
+    const email = emailRow?.email?.trim() || "—";
+    const profileRow = profileByUserId.get(sid);
+    const fullName =
+      profileRow?.full_name ?? emailRow?.full_name ?? null;
+    return {
+      id: sid,
+      name: resolveStudentDisplayName(
+        fullName,
+        email === "—" ? null : email,
+        sid,
+      ),
+      email,
+      avatarUrl: profileRow?.avatar_url ?? null,
+    };
+  });
+
+  return fillCourseGradebookMatrix(supabase, {
+    courseId,
+    students,
+    assignedLessonIds,
+  });
 }

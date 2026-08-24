@@ -154,7 +154,7 @@ function LessonMainContent({
       }
       return (
         <div
-          className="prose dark:prose-invert max-w-none"
+          className="prose dark:prose-invert max-w-none prose-h2:text-xl prose-h3:text-lg [&_u]:underline"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       );

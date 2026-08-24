@@ -9,6 +9,12 @@ import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 import type { Json } from "@/types/database.types";
 
+import {
+  assertCourseMutationAccess,
+  getCourseOwnerRole,
+} from "@/lib/auth/course-access";
+import { verifyAccess } from "@/lib/auth/rbac";
+
 type PageProps = {
   params: Promise<{ slug: string; lessonId: string }>;
 };
@@ -35,33 +41,8 @@ export async function generateMetadata({
 export default async function LessonEditorPage({ params }: PageProps) {
   const { slug: slugParam, lessonId } = await params;
   const decodedSlug = decodeSlugParam(slugParam);
-
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
 
   const { data: lesson, error: lessonError } = await supabase
     .from("lessons")
@@ -87,16 +68,35 @@ export default async function LessonEditorPage({ params }: PageProps) {
 
   const { data: course, error: courseError } = await supabase
     .from("courses")
-    .select("id, slug, teacher_id, title")
+    // @ts-expect-error creator/curators aliases are not in generated Database types yet
+    .select(
+      `
+      id,
+      slug,
+      teacher_id,
+      title,
+      creator:profiles!courses_teacher_id_fkey(role),
+      curators:course_curators(user_id)
+    `,
+    )
     .eq("id", module.course_id)
     .maybeSingle();
 
-  if (
-    courseError ||
-    !course ||
-    course.teacher_id !== user.id ||
-    course.slug !== decodedSlug
-  ) {
+  if (courseError || !course || course.slug !== decodedSlug) {
+    redirect("/dashboard/courses");
+  }
+
+  const accessError = await assertCourseMutationAccess(supabase, {
+    userId: user.id,
+    role: profile.role,
+    courseId: course.id,
+    teacherId: course.teacher_id,
+    courseOwnerRole: getCourseOwnerRole({
+      owner: (course as { creator?: unknown }).creator,
+    }),
+  });
+
+  if (accessError) {
     redirect("/dashboard/courses");
   }
 

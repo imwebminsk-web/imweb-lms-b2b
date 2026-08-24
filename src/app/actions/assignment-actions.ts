@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { readBlockSaveToJournal } from "@/lib/gradebook/journal-utils";
+import { assertEnrolledForLessonBlock } from "@/lib/learn/verify-course-enrollment";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
 
@@ -122,6 +123,11 @@ export async function submitAssignment(
 
   if (!user) {
     throw new Error("Требуется вход в систему");
+  }
+
+  const enrollment = await assertEnrolledForLessonBlock(user.id, idParsed.data);
+  if (!enrollment.ok) {
+    throw new Error(enrollment.error);
   }
 
   const { data: block, error: blockError } = await supabase
@@ -253,7 +259,11 @@ export async function getSubmissionForReview(
     if (row.student_id !== user.id) {
       return { success: false, error: "Нет доступа к этой сдаче" };
     }
-  } else if (profile.role === "teacher" || profile.role === "admin") {
+  } else if (
+    profile.role === "teacher" ||
+    profile.role === "admin" ||
+    profile.role === "head_teacher"
+  ) {
     const courseTeacherId = await getCourseTeacherIdForLessonBlock(
       supabase,
       row.lesson_block_id,
@@ -263,7 +273,7 @@ export async function getSubmissionForReview(
       return { success: false, error: "Не удалось определить курс задания" };
     }
 
-    if (profile.role !== "admin" && courseTeacherId !== user.id) {
+    if (profile.role === "teacher" && courseTeacherId !== user.id) {
       return { success: false, error: "Нет доступа к этой сдаче" };
     }
   } else {
@@ -345,7 +355,11 @@ export async function getSubmissionForReviewByLessonBlock(
     if (studentParsed.data !== user.id) {
       return { success: false, error: "Нет доступа" };
     }
-  } else if (profile.role === "teacher" || profile.role === "admin") {
+  } else if (
+    profile.role === "teacher" ||
+    profile.role === "admin" ||
+    profile.role === "head_teacher"
+  ) {
     const courseTeacherId = await getCourseTeacherIdForLessonBlock(
       supabase,
       blockParsed.data,
@@ -353,7 +367,7 @@ export async function getSubmissionForReviewByLessonBlock(
     if (!courseTeacherId) {
       return { success: false, error: "Не удалось определить курс задания" };
     }
-    if (profile.role !== "admin" && courseTeacherId !== user.id) {
+    if (profile.role === "teacher" && courseTeacherId !== user.id) {
       return { success: false, error: "Нет доступа к этому заданию" };
     }
   } else {
@@ -440,7 +454,11 @@ export async function reviewSubmission(
     return { success: false, error: "Профиль не найден" };
   }
 
-  if (profile.role !== "teacher" && profile.role !== "admin") {
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
     return { success: false, error: "Недостаточно прав" };
   }
 
@@ -463,7 +481,7 @@ export async function reviewSubmission(
     return { success: false, error: "Не удалось определить курс задания" };
   }
 
-  if (profile.role !== "admin" && courseTeacherId !== user.id) {
+  if (profile.role === "teacher" && courseTeacherId !== user.id) {
     return { success: false, error: "Нет доступа к этой сдаче" };
   }
 

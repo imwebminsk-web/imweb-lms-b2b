@@ -1,11 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, useTransition } from "react";
 import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
+import { toast } from "sonner";
 
 import { updateBlock } from "@/app/actions/lesson-block-actions";
-import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 
 const BUCKET = "course-covers";
@@ -36,6 +47,8 @@ export function LessonBlockImageUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [isClearPending, startClearTransition] = useTransition();
 
   const pickFile = () => inputRef.current?.click();
 
@@ -79,7 +92,7 @@ export function LessonBlockImageUpload({
         });
 
       if (upErr) {
-        setError(upErr.message || "Ошибка загрузки в Storage.");
+        setError(upErr.message || "Не удалось загрузить изображение.");
         return;
       }
 
@@ -99,11 +112,9 @@ export function LessonBlockImageUpload({
     }
   };
 
-  const clearImage = async () => {
-    if (!window.confirm("Удалить изображение из блока?")) return;
-    setBusy(true);
-    setError(null);
-    try {
+  function handleClearImageConfirm() {
+    startClearTransition(async () => {
+      setError(null);
       const supabase = createClient();
       const url = imageUrl?.trim();
       if (url) {
@@ -118,21 +129,22 @@ export function LessonBlockImageUpload({
       }
       const res = await updateBlock(blockId, {});
       if (res.error) {
+        toast.error(res.error);
         setError(res.error);
         return;
       }
+      toast.success("Изображение убрано");
+      setConfirmClearOpen(false);
       router.refresh();
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
+  }
 
   return (
     <div className="border-border bg-muted/20 space-y-3 rounded-lg border p-4">
       <div className="flex flex-col gap-1">
         <p className="text-sm font-medium">Изображение</p>
         <p className="text-muted-foreground text-xs">
-          Bucket «{BUCKET}», до 5 МБ. Путь: ваш_id/lesson-blocks/{blockId.slice(0, 8)}…
+          Максимальный размер: 5 МБ. Форматы: JPG, PNG, WebP.
         </p>
       </div>
       <input
@@ -169,8 +181,8 @@ export function LessonBlockImageUpload({
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => void clearImage()}
-              disabled={busy}
+              onClick={() => setConfirmClearOpen(true)}
+              disabled={busy || isClearPending}
             >
               Убрать
             </Button>
@@ -197,6 +209,27 @@ export function LessonBlockImageUpload({
           {error}
         </p>
       ) : null}
+
+      <AlertDialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить изображение из блока?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Картинка пропадёт из урока. Это действие нельзя отменить.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isClearPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleClearImageConfirm}
+              disabled={isClearPending}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {isClearPending ? "Удаление…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { FilmIcon, Loader2Icon, UploadIcon } from "lucide-react";
 
@@ -26,10 +25,12 @@ export function CourseVideoUpload({
   courseId: string;
   initialVideoUrl: string | null;
 }) {
-  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Превью храним локально: после загрузки не перезагружаем страницу,
+  // иначе родительская форма сбросит несохранённые поля.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialVideoUrl);
 
   const pickFile = () => inputRef.current?.click();
 
@@ -73,7 +74,7 @@ export function CourseVideoUpload({
         });
 
       if (upErr) {
-        setError(upErr.message || "Ошибка загрузки в Storage.");
+        setError(upErr.message || "Не удалось загрузить видео.");
         return;
       }
 
@@ -87,7 +88,7 @@ export function CourseVideoUpload({
         return;
       }
 
-      router.refresh();
+      setPreviewUrl(publicUrl);
     } finally {
       setBusy(false);
     }
@@ -103,7 +104,7 @@ export function CourseVideoUpload({
         setError(res.error);
         return;
       }
-      router.refresh();
+      setPreviewUrl(null);
     } finally {
       setBusy(false);
     }
@@ -112,10 +113,9 @@ export function CourseVideoUpload({
   return (
     <div className="border-border bg-muted/20 space-y-3 rounded-lg border p-4">
       <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium">Видео (self-hosted)</p>
+        <p className="text-sm font-medium">Промо-видео</p>
         <p className="text-muted-foreground text-xs">
-          Bucket «{BUCKET}», до 500 МБ. URL пишется в{" "}
-          <code className="bg-muted rounded px-1">video_url</code>.
+          Промо-видео курса (до 500 МБ, форматы: MP4, WebM).
         </p>
       </div>
 
@@ -124,10 +124,10 @@ export function CourseVideoUpload({
           "border-border bg-card relative flex aspect-video w-full max-w-md items-center justify-center overflow-hidden rounded-lg border",
         )}
       >
-        {initialVideoUrl ? (
+        {previewUrl ? (
           <video
-            key={initialVideoUrl}
-            src={initialVideoUrl}
+            key={previewUrl}
+            src={previewUrl}
             className="size-full object-contain"
             controls
             preload="metadata"
@@ -164,7 +164,7 @@ export function CourseVideoUpload({
           )}
           <span className="ml-2">Загрузить видео</span>
         </Button>
-        {initialVideoUrl ? (
+        {previewUrl ? (
           <Button
             type="button"
             variant="outline"

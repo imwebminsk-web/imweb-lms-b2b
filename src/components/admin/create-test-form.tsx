@@ -785,6 +785,201 @@ export function CreateTestForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex w-full flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Настройки теста</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="test-title-teacher">Название (для преподавателя)</Label>
+            <Input
+              id="test-title-teacher"
+              value={titleTeacher}
+              onChange={(e) => setTitleTeacher(e.target.value)}
+              placeholder="Как тест виден в библиотеке"
+              disabled={pending}
+            />
+          </div>
+
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="test-title-student">Название (для ученика)</Label>
+            <Input
+              id="test-title-student"
+              value={titleStudent}
+              onChange={(e) => setTitleStudent(e.target.value)}
+              placeholder="Как тест виден ученику"
+              disabled={pending}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="test-folder">Папка</Label>
+            <Popover open={folderComboboxOpen} onOpenChange={setFolderComboboxOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  id="test-folder"
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={folderComboboxOpen}
+                  disabled={pending}
+                  className="w-full justify-between font-normal"
+                >
+                  <span className="truncate">
+                    {folderName.trim() || "Без папки"}
+                  </span>
+                  <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+                <Command>
+                  <CommandInput
+                    placeholder="Найти или создать папку…"
+                    value={searchValue}
+                    onValueChange={setSearchValue}
+                  />
+                  <CommandList>
+                    {filteredFolders.length === 0 && !canCreateCandidate ? (
+                      <CommandEmpty>Папок пока нет</CommandEmpty>
+                    ) : null}
+                    <CommandGroup>
+                      <CommandItem
+                        onClick={() => {
+                          setFolderName("");
+                          setSearchValue("");
+                          setFolderComboboxOpen(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "size-4",
+                            folderName.trim() === "" ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                        Без папки
+                      </CommandItem>
+                      {filteredFolders.map((folder) => (
+                        <CommandItem
+                          key={folder}
+                          onClick={() => {
+                            setFolderName(folder);
+                            setSearchValue("");
+                            setFolderComboboxOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "size-4",
+                              folderName === folder ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                          {folder}
+                        </CommandItem>
+                      ))}
+                      {canCreateCandidate ? (
+                        <CommandItem
+                          onClick={() => {
+                            setFolderName(createCandidate);
+                            setAvailableFolders((prev) =>
+                              [...prev, createCandidate].sort((a, b) =>
+                                a.localeCompare(b, "ru"),
+                              ),
+                            );
+                            setSearchValue("");
+                            setFolderComboboxOpen(false);
+                          }}
+                        >
+                          Создать «{createCandidate}»
+                        </CommandItem>
+                      ) : null}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="test-type">Тип теста</Label>
+            <Select
+              value={testType}
+              onValueChange={(value) => setTestType(value as TestTypeKind)}
+              disabled={pending}
+            >
+              <SelectTrigger id="test-type" className="w-full">
+                <SelectValue placeholder="Выберите тип" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="training">{TEST_TYPE_LABELS.training}</SelectItem>
+                <SelectItem value="final">{TEST_TYPE_LABELS.final}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="test-max-score">Макс. балл / Проходной балл</Label>
+            <Input
+              id="test-max-score"
+              type="number"
+              min={1}
+              inputMode="numeric"
+              value={maxScore}
+              onChange={(e) => setMaxScore(e.target.value)}
+              disabled={pending}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="test-time-limit">Лимит времени (в минутах)</Label>
+            <Input
+              id="test-time-limit"
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={timeLimit}
+              onChange={(e) => setTimeLimit(e.target.value)}
+              disabled={pending}
+              placeholder="0 = без лимита"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-3 sm:col-span-2">
+            <div className="space-y-0.5">
+              <Label htmlFor="test-published">Опубликован</Label>
+              <p className="text-muted-foreground text-xs">
+                Тест будет доступен ученикам для прохождения.
+              </p>
+              {!pointsMatch ? (
+                <p className="text-destructive mt-1 text-xs font-medium">
+                  Публикация доступна после распределения всех баллов
+                </p>
+              ) : null}
+            </div>
+            <Switch
+              id="test-published"
+              checked={pointsMatch ? isPublished : false}
+              disabled={pending || !pointsMatch}
+              onCheckedChange={setIsPublished}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 rounded-lg border p-3 sm:col-span-2">
+            <div className="space-y-0.5">
+              <Label htmlFor="test-journal">В журнал</Label>
+              <p className="text-muted-foreground text-xs">
+                Результат попадёт в журнал оценок.
+              </p>
+            </div>
+            <Switch
+              id="test-journal"
+              checked={saveToJournal}
+              disabled={pending}
+              onCheckedChange={setSaveToJournal}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="sticky top-0 z-10 flex shrink-0 justify-center">
         <Badge
           variant="outline"

@@ -16,6 +16,8 @@ import {
   initialsFromDisplayName,
 } from "@/lib/utils/user-utils";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 type PageProps = {
   params: Promise<{ id: string; studentId: string }>;
 };
@@ -29,32 +31,8 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
     notFound();
   }
 
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
 
   const progressRes = await getStudentProgressForTeacher(
     studentIdTrim,

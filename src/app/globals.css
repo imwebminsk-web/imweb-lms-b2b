@@ -332,6 +332,29 @@
     z-index: 0;
   }
 
+  .tiptap-editor-root .tiptap u,
+  .tiptap-editor-root .ProseMirror u {
+    text-decoration: underline;
+  }
+
+  .tiptap-editor-root .tiptap h2,
+  .tiptap-editor-root .ProseMirror h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .tiptap-editor-root .tiptap h3,
+  .tiptap-editor-root .ProseMirror h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.35;
+    margin-top: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
   .tiptap:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;

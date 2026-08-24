@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
 import { CourseEditorTabs } from "@/components/dashboard/teacher/course-editor-tabs";
 import type { CurriculumModuleRow } from "@/components/dashboard/teacher/curriculum-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  assertCourseMutationAccess,
+  getCourseOwnerRole,
+} from "@/lib/auth/course-access";
 import { createClient } from "@/lib/supabase/server";
-import { selectionsFromCourseTaxonomies } from "@/lib/course-taxonomy-map";
+import { verifyAccess } from "@/lib/auth/rbac";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -37,32 +40,8 @@ export async function generateMetadata({
 export default async function DashboardCourseEditPage({ params }: PageProps) {
   const { slug: slugParam } = await params;
   const decodedSlug = decodeSlugParam(slugParam);
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
 
   const { data: courseRow, error } = await supabase
     .from("courses")
@@ -82,12 +61,11 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
       category,
       has_certificate,
       is_global,
+      teacher_id,
+      creator:profiles!courses_teacher_id_fkey(role),
+      curators:course_curators(user_id),
       course_taxonomies (
-        taxonomy_id,
-        taxonomies (
-          id,
-          taxonomy_groups ( slug )
-        )
+        taxonomy_id
       ),
       promotional_images,
       duration_value,
@@ -108,7 +86,6 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     `,
     )
     .eq("slug", decodedSlug)
-    .eq("teacher_id", user.id)
     .maybeSingle();
 
   if (error) {
@@ -130,18 +107,48 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
             Ожидаемый slug (после decode): {decodedSlug}. Сырой сегмент URL:{" "}
             <span className="break-all">{slugParam}</span>. Проверьте базу данных
             (таблица{" "}
-            <code className="bg-muted rounded px-1">courses</code>, поля{" "}
-            <code className="bg-muted rounded px-1">slug</code> и{" "}
-            <code className="bg-muted rounded px-1">teacher_id</code>).
+            <code className="bg-muted rounded px-1">courses</code>, поле{" "}
+            <code className="bg-muted rounded px-1">slug</code>).
           </p>
         </div>
       </div>
     );
   }
 
-  const taxonomySelections = selectionsFromCourseTaxonomies(
-    courseRow.course_taxonomies ?? [],
-  );
+  const accessError = await assertCourseMutationAccess(supabase, {
+    userId: user.id,
+    role: profile.role,
+    courseId: courseRow.id,
+    teacherId: courseRow.teacher_id,
+    courseOwnerRole: getCourseOwnerRole({
+      owner: (courseRow as { creator?: unknown }).creator,
+    }),
+  });
+
+  if (accessError) {
+    return (
+      <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
+        <Button variant="ghost" className="w-fit px-0" asChild>
+          <Link href="/dashboard/courses">← Назад</Link>
+        </Button>
+        <div
+          className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border px-4 py-6 text-sm"
+          role="alert"
+        >
+          <p className="font-medium">Нет доступа к этому курсу.</p>
+          <p className="mt-2 text-sm opacity-90">{accessError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const taxonomyIds = [
+    ...new Set(
+      (courseRow.course_taxonomies ?? [])
+        .map((row) => row.taxonomy_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  ];
 
   const course = {
     id: courseRow.id,
@@ -161,7 +168,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     duration_value: courseRow.duration_value,
     duration_unit: courseRow.duration_unit,
     start_date: courseRow.start_date,
-    ...taxonomySelections,
+    taxonomy_ids: taxonomyIds,
   };
 
   const rawModules = courseRow.modules ?? [];
@@ -177,12 +184,18 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         .sort((a, b) => a.order_index - b.order_index),
     }));
 
-  const { data: taxonomyRows } = await supabase
-    .from("taxonomies")
-    .select("*, taxonomy_groups!inner(slug, name)")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true })
-    .order("label", { ascending: true });
+  const [{ data: taxonomyRows }, { data: taxonomyGroupRows }] = await Promise.all([
+    supabase
+      .from("taxonomies")
+      .select("*, taxonomy_groups!inner(slug, name)")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("label", { ascending: true }),
+    supabase
+      .from("taxonomy_groups")
+      .select("slug, name")
+      .order("name", { ascending: true }),
+  ]);
 
   const taxonomies: TaxonomyWithGroup[] = (taxonomyRows ?? []).map((row) => ({
     ...row,
@@ -253,7 +266,13 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
         )}
       </header>
 
-      <CourseEditorTabs course={course} modules={modules} taxonomies={taxonomies} b2bOptions={b2bOptions} />
+      <CourseEditorTabs
+        course={course}
+        modules={modules}
+        taxonomies={taxonomies}
+        taxonomyGroups={taxonomyGroupRows ?? []}
+        b2bOptions={b2bOptions}
+      />
     </div>
   );
 }

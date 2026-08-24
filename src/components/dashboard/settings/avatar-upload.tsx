@@ -62,7 +62,10 @@ export function AvatarUpload({
 
     setBusy(true);
     try {
-      const compressed = await compressImage(file);
+      const compressed = await compressImage(file, {
+        maxSizeMB: 0.15,
+        maxWidthOrHeight: 512,
+      });
 
       if (compressed.size > MAX_COMPRESSED_BYTES) {
         toast.error(t("settings.avatarTooLarge"));

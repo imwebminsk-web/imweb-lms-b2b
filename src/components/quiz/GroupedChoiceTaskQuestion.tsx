@@ -358,10 +358,12 @@ export function GroupedChoiceTaskQuestion({
 
   return (
     <div className="flex flex-col">
-      <hr
-        className="my-8 border-slate-200 dark:border-slate-700"
-        aria-hidden
-      />
+      {items.length > 1 ? (
+        <hr
+          className="my-8 border-slate-200 dark:border-slate-700"
+          aria-hidden
+        />
+      ) : null}
       {items.map((item, index) => {
         const selected = new Set(selections[item.id] ?? []);
         const correctIds = new Set(correctByItemId?.[item.id] ?? []);

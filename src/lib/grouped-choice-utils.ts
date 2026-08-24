@@ -1,6 +1,7 @@
 import {
   GROUPED_CHOICE_ANCHOR_TEXT,
   groupedChoiceContentSchema,
+  groupedChoicePlayerContentSchema,
   LEGACY_GROUPED_ITEM_ID,
   type GroupedChoiceItem,
 } from "@/lib/validations/grouped-choice-schema";
@@ -91,32 +92,71 @@ function mapChoiceOptionForPlayer(o: {
   };
 }
 
+function readRawContentItems(content: Json): unknown[] | null {
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return null;
+  }
+  const items = (content as Record<string, unknown>).items;
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  return items;
+}
+
+function readRawContentText(content: Json): string | null {
+  if (!content || typeof content !== "object" || Array.isArray(content)) {
+    return null;
+  }
+  const text = (content as Record<string, unknown>).text;
+  if (typeof text !== "string") {
+    return null;
+  }
+  const trimmed = text.trim();
+  return trimmed.length > 0 ? text : null;
+}
+
+function groupedItemsHavePlayerOptions(
+  items: { options: { id: string }[] }[],
+): boolean {
+  return items.some((item) => item.options.length > 0);
+}
+
 export function resolveGroupedChoicePlayerView(params: {
   content: Json;
   questionType: string | null;
   legacyOptions?: { id: string; content: Json; is_correct?: boolean | null }[];
   questionPoints?: number | null;
 }): GroupedChoicePlayerView {
-  const parsed = groupedChoiceContentSchema.safeParse(params.content);
-  const taskInstruction = parsed.success ? parsed.data.text : "Вопрос";
+  const parsed = groupedChoicePlayerContentSchema.safeParse(params.content);
+  const rawItems = readRawContentItems(params.content);
+  const taskInstruction =
+    parsed.success
+      ? parsed.data.text
+      : (readRawContentText(params.content) ?? "Вопрос");
   const exampleText =
     parsed.success && parsed.data.example_text?.trim()
       ? parsed.data.example_text.trim()
       : null;
 
-  const groupedItems = parsed.success ? parsed.data.items : undefined;
-  if (groupedItems && groupedItems.length > 0) {
-    return {
-      taskInstruction,
-      exampleText,
-      isGrouped: true,
-      items: groupedItems.map((item) => ({
-        id: item.id,
-        text: item.text,
-        points: resolveQuestionPoints(item.points),
-        options: item.options.map((o) => mapChoiceOptionForPlayer(o)),
-      })),
-    };
+  const parsedItems = parsed.success ? parsed.data.items : undefined;
+  // items нет или [] → обязательно таблица options, даже если schema не прошла.
+  const shouldUseLegacyOptions = rawItems === null || rawItems.length === 0;
+
+  if (!shouldUseLegacyOptions && parsedItems && parsedItems.length > 0) {
+    const groupedPlayerItems = parsedItems.map((item) => ({
+      id: item.id,
+      text: item.text,
+      points: resolveQuestionPoints(item.points),
+      options: item.options.map((o) => mapChoiceOptionForPlayer(o)),
+    }));
+    if (groupedItemsHavePlayerOptions(groupedPlayerItems)) {
+      return {
+        taskInstruction,
+        exampleText,
+        isGrouped: true,
+        items: groupedPlayerItems,
+      };
+    }
   }
 
   const legacyOpts = (params.legacyOptions ?? []).filter((o) => {

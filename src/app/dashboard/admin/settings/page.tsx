@@ -3,28 +3,10 @@ import { redirect } from "next/navigation";
 import { getPlatformSettings } from "@/app/actions/settings-actions";
 import { PlatformSettingsForm } from "@/components/dashboard/admin/platform-settings-form";
 import { createClient } from "@/lib/supabase/server";
-import { isAdminOrHead } from "@/lib/utils/user-utils";
+import { verifyAccess } from "@/lib/auth/rbac";
 
 export default async function AdminSettingsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const hasAccess = isAdminOrHead(profile?.role);
-  if (!hasAccess) {
-    redirect("/dashboard");
-  }
+  await verifyAccess(["admin", "head_teacher"]);
 
   const settings = await getPlatformSettings();
 

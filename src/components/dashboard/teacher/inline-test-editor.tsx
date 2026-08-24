@@ -54,7 +54,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
     saveToJournal: true,
     testType: "final",
     maxScore: "100",
-    isPublished: true,
   });
 
   useEffect(() => {
@@ -67,11 +66,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
         const data = res.data.initialData;
         const initialQuestions = data.questions || [];
         const initialMaxScore = data.maxScore || 100;
-        const initialPoints = initialQuestions.reduce(
-          (sum, q) => sum + resolveAdminQuestionMaxPoints(q),
-          0
-        );
-        const canPublish = initialPoints === initialMaxScore;
 
         setSettings({
           title: data.titleTeacher || data.title || "",
@@ -81,7 +75,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
           saveToJournal: data.saveToJournal ?? true,
           testType: data.testType || "final",
           maxScore: String(initialMaxScore),
-          isPublished: canPublish ? (data.isPublished ?? true) : false,
         });
         setQuestions(initialQuestions);
       } else {
@@ -108,17 +101,13 @@ export function InlineTestEditor({ testId }: { testId: string }) {
     }
 
     const finalTitle = settings.title.trim() || "Встроенный тест";
-    const currentPoints = questions.reduce(
-      (sum, q) => sum + resolveAdminQuestionMaxPoints(q),
-      0
-    );
-    const maxScoreNum = parsePositiveInt(settings.maxScore, 100);
 
     const payload = {
       title: finalTitle,
       description: settings.description.trim() || null,
       folder_name: null,
-      is_published: currentPoints === maxScoreNum ? settings.isPublished : false,
+      // Встроенный тест должен оставаться опубликованным: RLS скрывает вопросы ученику при is_published = false.
+      is_published: true,
       title_teacher: finalTitle,
       title_student: finalTitle,
       test_type: settings.testType as "training" | "final",
@@ -250,7 +239,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
     0
   );
   const maxScoreNum = parsePositiveInt(settings.maxScore, 100);
-  const willPublish = settings.isPublished && currentPoints === maxScoreNum;
 
   return (
     <div className="space-y-6">
@@ -322,18 +310,20 @@ export function InlineTestEditor({ testId }: { testId: string }) {
             <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
               <div className="space-y-0.5">
                 <Label htmlFor="inline-published">Опубликован</Label>
-                <p className="text-muted-foreground text-xs">Доступен для прохождения учениками.</p>
+                <p className="text-muted-foreground text-xs">
+                  Встроенный тест всегда доступен записанным ученикам. Иначе политика
+                  базы данных скроет вопросы и варианты.
+                </p>
                 {currentPoints !== maxScoreNum && (
                   <p className="text-destructive text-xs font-medium mt-1">
-                    Публикация доступна после распределения всех баллов
+                    Распределите все баллы, чтобы оценка совпадала с максимумом.
                   </p>
                 )}
               </div>
               <Switch
                 id="inline-published"
-                checked={currentPoints === maxScoreNum ? settings.isPublished : false}
-                disabled={currentPoints !== maxScoreNum}
-                onCheckedChange={(c) => setSettings({ ...settings, isPublished: c })}
+                checked
+                disabled
               />
             </div>
             <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
@@ -369,7 +359,6 @@ export function InlineTestEditor({ testId }: { testId: string }) {
       <Button
         onClick={handleSave}
         disabled={saving}
-        variant={willPublish ? "default" : "secondary"}
         className="w-full sm:w-auto"
       >
         {saving ? (
@@ -377,10 +366,8 @@ export function InlineTestEditor({ testId }: { testId: string }) {
             <Loader2Icon className="mr-2 size-4 animate-spin" />
             Сохранение...
           </>
-        ) : willPublish ? (
-          "Сохранить и Опубликовать"
         ) : (
-          "Сохранить черновик"
+          "Сохранить"
         )}
       </Button>
     </div>

@@ -9,6 +9,7 @@ import {
 import {
   CourseSettingsForm,
   type CourseSettingsFormCourse,
+  type CourseTaxonomyGroupOption,
 } from "./course-settings-form";
 import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
 
@@ -18,11 +19,13 @@ export function CourseEditorTabs({
   course,
   modules,
   taxonomies,
+  taxonomyGroups,
   b2bOptions,
 }: {
   course: CourseSettingsFormCourse;
   modules: CurriculumModuleRow[];
   taxonomies: TaxonomyRow[];
+  taxonomyGroups: CourseTaxonomyGroupOption[];
   b2bOptions?: {
     teams: { id: string; name: string }[];
     jobTitles: { id: string; name: string }[];
@@ -40,18 +43,15 @@ export function CourseEditorTabs({
     course.price,
     course.status,
     course.description,
-    course.image_url,
-    course.video_url,
     course.detailed_description,
     (course.promotional_images ?? []).join("|"),
     course.youtube_url,
     course.vimeo_url,
-    course.age_group,
     course.duration_value,
     course.duration_unit,
     course.start_date,
     String(course.has_certificate),
-    course.delivery_format ?? "",
+    course.taxonomy_ids.join("|"),
   ].join("|");
 
   return (
@@ -61,7 +61,13 @@ export function CourseEditorTabs({
         <TabsTrigger value="curriculum">Программа</TabsTrigger>
       </TabsList>
       <TabsContent value="settings" className="mt-4 flex-none">
-        <CourseSettingsForm course={course} taxonomies={taxonomies} b2bOptions={b2bOptions} key={settingsFormKey} />
+        <CourseSettingsForm
+          course={course}
+          taxonomies={taxonomies}
+          taxonomyGroups={taxonomyGroups}
+          b2bOptions={b2bOptions}
+          key={settingsFormKey}
+        />
       </TabsContent>
       <TabsContent value="curriculum" className="mt-4 flex-none">
         <CurriculumTab

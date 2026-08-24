@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  BarChart3Icon,
   BookOpenIcon,
   Building,
   CheckSquare,
@@ -31,7 +32,7 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
       { title: "Главная", url: "/dashboard", icon: LayoutDashboardIcon },
       { title: "Пользователи", url: "/dashboard/admin/users", icon: Users },
       {
-        title: "Справочники",
+        title: "Фильтры каталога",
         url: "/dashboard/admin/taxonomies",
         icon: LibraryIcon,
       },
@@ -39,6 +40,11 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
         title: "Оргструктура",
         url: "/dashboard/admin/structure",
         icon: Building,
+      },
+      {
+        title: "Аналитика",
+        url: "/dashboard/analytics",
+        icon: BarChart3Icon,
       },
       {
         title: "Настройки платформы",
@@ -52,6 +58,11 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
       { title: "Курсы", url: "/dashboard/courses", icon: BookOpenIcon },
       { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
       { title: "Ученики", url: "/dashboard/students", icon: Users },
+      {
+        title: "Аналитика",
+        url: "/dashboard/analytics",
+        icon: BarChart3Icon,
+      },
       { title: "Тесты", url: "/dashboard/tests", icon: CheckSquare },
       { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
@@ -78,6 +89,7 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
   return nav.filter((item) => {
     if (item.url === "/dashboard/cohorts") return isSchoolMode;
     if (item.url === "/dashboard/admin/structure") return isCorporateMode;
+    if (item.url === "/dashboard/analytics") return isCorporateMode;
     return true;
   });
 }

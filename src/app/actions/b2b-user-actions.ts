@@ -63,36 +63,88 @@ export async function getB2BFormOptions() {
 }
 
 export async function getB2BUsers() {
-  const auth = await requireAdmin();
-  if ("error" in auth) {
-    return auth;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему." };
   }
 
-  const { data: profiles, error: profilesError } = await auth.supabase
+  const { data: caller } = await supabase
     .from("profiles")
-    .select(`
-      id,
-      full_name,
-      role,
-      profile_secrets ( email ),
-      team_members (
-        team_id,
-        job_title_id,
-        teams ( name ),
-        job_titles ( name )
-      ),
-      user_taxonomies (
-        taxonomies ( id, label )
-      )
-    `)
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (caller?.role !== "admin" && caller?.role !== "head_teacher") {
+    return { success: false, error: "Доступ только для администратора или завуча." };
+  }
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, full_name, role, profile_secrets ( email )")
     .order("full_name", { ascending: true, nullsFirst: false });
 
   if (profilesError) {
-    console.error("[getB2BUsers]", profilesError.message);
+    console.error("[getB2BUsers] profiles", profilesError.message);
     return { success: false, error: "Ошибка загрузки пользователей." };
   }
 
-  return { success: true, data: profiles ?? [] };
+  const profileRows = profiles ?? [];
+  const userIds = profileRows.map((profile) => profile.id);
+
+  if (userIds.length === 0) {
+    return { success: true, data: [] };
+  }
+
+  const { data: memberships, error: membershipsError } = await supabase
+    .from("team_members")
+    .select("user_id, team_id, job_title_id, teams ( name ), job_titles ( name )")
+    .in("user_id", userIds);
+
+  if (membershipsError) {
+    console.error("[getB2BUsers] team_members", membershipsError.message);
+    return { success: false, error: "Ошибка загрузки отделов." };
+  }
+
+  // user_taxonomies ещё нет в generated Database types.
+  const { data: taxonomyLinks, error: taxonomyError } = await (supabase as any)
+    .from("user_taxonomies")
+    .select("user_id, taxonomy_id, taxonomies ( id, label )")
+    .in("user_id", userIds);
+
+  if (taxonomyError) {
+    console.error("[getB2BUsers] user_taxonomies", taxonomyError.message);
+  }
+
+  const teamMembersByUser = new Map<string, NonNullable<typeof memberships>>();
+  for (const row of memberships ?? []) {
+    const list = teamMembersByUser.get(row.user_id) ?? [];
+    list.push(row);
+    teamMembersByUser.set(row.user_id, list);
+  }
+
+  type TaxonomyLink = {
+    user_id: string;
+    taxonomy_id: string;
+    taxonomies: { id: string; label: string } | { id: string; label: string }[] | null;
+  };
+  const taxonomiesByUser = new Map<string, TaxonomyLink[]>();
+  for (const row of (taxonomyLinks ?? []) as TaxonomyLink[]) {
+    const list = taxonomiesByUser.get(row.user_id) ?? [];
+    list.push(row);
+    taxonomiesByUser.set(row.user_id, list);
+  }
+
+  const data = profileRows.map((profile) => ({
+    ...profile,
+    team_members: teamMembersByUser.get(profile.id) ?? [],
+    user_taxonomies: taxonomiesByUser.get(profile.id) ?? [],
+  }));
+
+  return { success: true, data };
 }
 
 export async function getB2BDashboardCourses(userId: string) {

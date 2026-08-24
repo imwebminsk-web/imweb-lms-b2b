@@ -5,6 +5,8 @@ import { SettingsPageContent } from "@/components/dashboard/settings/settings-pa
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 export const metadata: Metadata = {
   title: "Настройки профиля",
   description: "Имя, email и роль вашего аккаунта",
@@ -15,24 +17,7 @@ type SettingsPageProps = {
 };
 
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role, avatar_url")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher", "student"]);
 
   const displayName =
     profile.full_name?.trim() ||

@@ -9,6 +9,7 @@ import {
 } from "@/app/actions/test-actions";
 import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
 import { STUDENT_QUIZ_SINGLE_ATTEMPT_ERROR } from "@/lib/learn/student-quiz-constants";
+import { assertEnrolledForTest } from "@/lib/learn/verify-course-enrollment";
 import { createClient } from "@/lib/supabase/server";
 
 const testIdSchema = z.string().uuid("Некорректный ID теста");
@@ -68,6 +69,13 @@ export async function initStudentQuiz(
 
   if (profile.role !== "student") {
     return { success: false, error: "Доступно только ученикам" };
+  }
+
+  const enrollment = await assertEnrolledForTest(user.id, parsed.data, {
+    requireCourseBinding: true,
+  });
+  if (!enrollment.ok) {
+    return { success: false, error: enrollment.error };
   }
 
   const testRes = await getTestWithQuestions(parsed.data);

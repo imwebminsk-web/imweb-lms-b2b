@@ -64,10 +64,16 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && (pathname === "/" || pathname === "/register")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
-    url.search = "";
-    return withSessionCookies(NextResponse.redirect(url));
+    const accountDeactivated =
+      pathname === "/" &&
+      request.nextUrl.searchParams.get("error") === "account_deactivated";
+
+    if (!accountDeactivated) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      url.search = "";
+      return withSessionCookies(NextResponse.redirect(url));
+    }
   }
 
   return supabaseResponse;

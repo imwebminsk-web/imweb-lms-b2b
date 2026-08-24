@@ -191,7 +191,19 @@ function MatrixCell({
   );
 }
 
-export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
+export function MatrixGradebook({
+  data,
+  onStudentClick,
+  nameColumnLabel = "Ученик",
+  emptyColumnsText = "Нет опубликованных тестов или заданий по курсу этой группы (или не назначены уроки в «Управление контентом»).",
+  emptyStudentsText = "В группе пока нет учеников — матрица появится после записи.",
+}: {
+  data: MatrixGradebookData;
+  onStudentClick?: (student: MatrixGradebookStudent) => void;
+  nameColumnLabel?: string;
+  emptyColumnsText?: string;
+  emptyStudentsText?: string;
+}) {
   const router = useRouter();
   const { students, columns, cells } = data;
 
@@ -211,18 +223,13 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
 
   if (columns.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm">
-        Нет опубликованных тестов или заданий по курсу этой группы (или не
-        назначены уроки в «Управление контентом»).
-      </p>
+      <p className="text-muted-foreground text-sm">{emptyColumnsText}</p>
     );
   }
 
   if (students.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm">
-        В группе пока нет учеников — матрица появится после записи.
-      </p>
+      <p className="text-muted-foreground text-sm">{emptyStudentsText}</p>
     );
   }
 
@@ -233,7 +240,7 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
           <TableHeader>
             <TableRow>
               <TableHead className="sticky left-0 z-20 min-w-[160px] border-r bg-background">
-                Ученик
+                {nameColumnLabel}
               </TableHead>
               {columns.map((col) => (
                 <TableHead
@@ -281,9 +288,20 @@ export function MatrixGradebook({ data }: { data: MatrixGradebookData }) {
                         {initialsFromDisplayName(student.name)}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="truncate" title={student.name}>
-                      {student.name}
-                    </span>
+                    {onStudentClick ? (
+                      <button
+                        type="button"
+                        className="truncate text-left hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        title={student.name}
+                        onClick={() => onStudentClick(student)}
+                      >
+                        {student.name}
+                      </button>
+                    ) : (
+                      <span className="truncate" title={student.name}>
+                        {student.name}
+                      </span>
+                    )}
                   </div>
                 </TableCell>
                 {columns.map((col) => {

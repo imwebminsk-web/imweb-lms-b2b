@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import {
   updateCourse,
   type UpdateCourseState,
@@ -16,7 +16,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
-import { type CourseTaxonomySelections } from "@/lib/course-taxonomy-map";
 import type { Database } from "@/types/database.types";
 import { APP_MODE } from "@/lib/config/app-mode";
 
@@ -44,18 +43,26 @@ export type CourseSettingsFormCourse = Pick<
   | "duration_unit"
   | "start_date"
   | "has_certificate"
-> &
-  Pick<CourseTaxonomySelections, "age_group" | "delivery_format">;
+> & {
+  taxonomy_ids: string[];
+};
+
+export type CourseTaxonomyGroupOption = {
+  slug: string;
+  name: string;
+};
 
 const initialState: UpdateCourseState = {};
 
 export function CourseSettingsForm({
   course,
   taxonomies,
+  taxonomyGroups,
   b2bOptions,
 }: {
   course: CourseSettingsFormCourse;
   taxonomies: TaxonomyWithGroup[];
+  taxonomyGroups: CourseTaxonomyGroupOption[];
   b2bOptions?: {
     teams: { id: string; name: string }[];
     jobTitles: { id: string; name: string }[];
@@ -89,33 +96,6 @@ export function CourseSettingsForm({
     updateCourse,
     initialState,
   );
-
-  useEffect(() => {
-    setStatus(course.status);
-    setDurationUnit(course.duration_unit ?? "");
-    setHasCertificate(course.has_certificate);
-    setDetailedDescriptionHtml(course.detailed_description ?? "");
-    setPromotionalImages(
-      [...(course.promotional_images ?? [])].filter(
-        (u) => typeof u === "string" && u.trim().length > 0,
-      ),
-    );
-    setSelectedTeams(b2bOptions?.selectedTeams ?? []);
-    setSelectedJobTitles(b2bOptions?.selectedJobTitles ?? []);
-    setSelectedTags(b2bOptions?.selectedTags ?? []);
-    setIsGlobal(b2bOptions?.isGlobal ?? false);
-  }, [
-    course.id,
-    course.status,
-    course.duration_unit,
-    course.has_certificate,
-    course.detailed_description,
-    course.promotional_images,
-    b2bOptions?.selectedTeams,
-    b2bOptions?.selectedJobTitles,
-    b2bOptions?.selectedTags,
-    b2bOptions?.isGlobal,
-  ]);
 
   const isB2B = APP_MODE === 'corporate' || (APP_MODE === 'all' && viewMode === 'b2b');
 
@@ -176,6 +156,7 @@ export function CourseSettingsForm({
       <CourseAccess 
         course={course}
         taxonomies={taxonomies}
+        taxonomyGroups={taxonomyGroups}
         isB2B={isB2B} 
         b2bOptions={b2bOptions}
         selectedTeams={selectedTeams}

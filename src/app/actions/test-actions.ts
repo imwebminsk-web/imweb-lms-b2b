@@ -43,6 +43,7 @@ import {
 } from "@/lib/ordering-utils";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
+import { assertStudentEnrolledForTest } from "@/lib/learn/verify-course-enrollment";
 import {
   saveFullTestPayloadSchema,
   type SaveFullTestPayload,
@@ -949,6 +950,8 @@ export async function duplicateTest(
         content,
         order_index,
         type,
+        points,
+        media_play_limit,
         options ( id, content, order_index, is_correct )
       )
     `,
@@ -998,74 +1001,15 @@ export async function duplicateTest(
   }
 
   const clonedTestId = insertedTest.id;
-  const sourceQuestions = [...(sourceTest.questions ?? [])].sort(
-    (a, b) => a.order_index - b.order_index,
+  const clonedQuestions = await cloneQuestionsAndOptionsForTest(
+    supabase,
+    clonedTestId,
+    user.id,
+    sourceTest.questions ?? [],
   );
 
-  if (sourceQuestions.length > 0) {
-    const questionInsertRows: Database["public"]["Tables"]["questions"]["Insert"][] =
-      sourceQuestions.map((question) => ({
-        test_id: clonedTestId,
-        content: question.content,
-        order_index: question.order_index,
-        type: question.type,
-      }));
-
-    const { data: insertedQuestions, error: insertQuestionsError } = await supabase
-      .from("questions")
-      .insert(questionInsertRows)
-      .select("id, order_index");
-
-    if (insertQuestionsError || !insertedQuestions) {
-      await rollbackCreatedTest(supabase, clonedTestId, user.id);
-      return {
-        success: false,
-        error: insertQuestionsError?.message ?? "Не удалось скопировать вопросы",
-      };
-    }
-
-    const sourceSortedByOrder = [...sourceQuestions].sort(
-      (a, b) => a.order_index - b.order_index,
-    );
-    const insertedSortedByOrder = [...insertedQuestions].sort(
-      (a, b) => a.order_index - b.order_index,
-    );
-    const oldToNewQuestionId = new Map<string, string>();
-    for (let i = 0; i < sourceSortedByOrder.length; i += 1) {
-      const oldId = sourceSortedByOrder[i]?.id;
-      const newId = insertedSortedByOrder[i]?.id;
-      if (oldId && newId) {
-        oldToNewQuestionId.set(oldId, newId);
-      }
-    }
-
-    const optionRows: Database["public"]["Tables"]["options"]["Insert"][] = sourceQuestions.flatMap(
-      (sourceQuestion) => {
-      const newQuestionId = oldToNewQuestionId.get(sourceQuestion.id);
-      if (!newQuestionId) return [];
-      return [...(sourceQuestion.options ?? [])]
-        .sort((a, b) => a.order_index - b.order_index)
-        .map((option) => ({
-          question_id: newQuestionId,
-          content: option.content,
-          order_index: option.order_index,
-          is_correct: Boolean(option.is_correct),
-        }));
-    });
-
-    if (optionRows.length > 0) {
-      const { error: insertOptionsError } = await supabase
-        .from("options")
-        .insert(optionRows);
-
-      if (insertOptionsError) {
-        await rollbackCreatedTest(supabase, clonedTestId, user.id);
-        return {
-          success: false,
-          error: insertOptionsError.message || "Не удалось скопировать варианты ответов",
-        };
-      }
-    }
+  if (!clonedQuestions.success) {
+    return { success: false, error: clonedQuestions.error };
   }
 
   revalidatePath("/dashboard/tests");
@@ -1183,6 +1127,11 @@ export async function getOrCreateAttempt(
       error: "Войдите, чтобы проходить тест",
       needAuth: true,
     };
+  }
+
+  const enrollment = await assertStudentEnrolledForTest(user.id, idResult.data);
+  if (!enrollment.ok) {
+    return { success: false, error: enrollment.error };
   }
 
   const existing = await fetchInProgressAttemptId(
@@ -1512,7 +1461,9 @@ export async function createInlineTest(
       user_id: user.id,
       scope: "inline",
       lesson_block_id: blockId,
-      is_published: true, // Inline тесты обычно публикуются вместе с уроком
+      // RLS questions_select_visible / options_select_visible отдают строки
+      // ученику только при is_published = true.
+      is_published: true,
     })
     .select("id")
     .single();
@@ -1525,6 +1476,171 @@ export async function createInlineTest(
   }
 
   return { success: true, testId: testRow.id };
+}
+
+/**
+ * Copy-on-write: library-тест копируется в независимый inline-тест этого блока.
+ * Попытки учеников (student_attempts) идут на новый test_id и не смешиваются с библиотекой.
+ */
+export async function cloneLibraryTestToInline(
+  libraryTestId: string,
+  lessonBlockId: string,
+): Promise<{ success: true; testId: string } | { success: false; error: string }> {
+  const forbiddenMessage =
+    "Копировать тесты в урок могут только преподаватели или администраторы.";
+
+  const testIdResult = testIdSchema.safeParse(libraryTestId);
+  if (!testIdResult.success) {
+    return {
+      success: false,
+      error: testIdResult.error.issues[0]?.message ?? "Некорректный ID теста",
+    };
+  }
+
+  const blockIdResult = z
+    .string()
+    .uuid("Некорректный ID блока урока")
+    .safeParse(lessonBlockId.trim());
+  if (!blockIdResult.success) {
+    return {
+      success: false,
+      error:
+        blockIdResult.error.issues[0]?.message ?? "Некорректный ID блока урока",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (
+    profileError ||
+    !profile ||
+    (profile.role !== "teacher" &&
+      profile.role !== "head_teacher" &&
+      profile.role !== "admin")
+  ) {
+    return { success: false, error: forbiddenMessage };
+  }
+
+  const { data: block, error: blockError } = await supabase
+    .from("lesson_blocks")
+    .select("id")
+    .eq("id", blockIdResult.data)
+    .maybeSingle();
+
+  if (blockError || !block) {
+    return { success: false, error: "Блок урока не найден." };
+  }
+
+  const { data: sourceTest, error: sourceError } = await supabase
+    .from("tests")
+    .select(
+      `
+      *,
+      questions (
+        id,
+        content,
+        order_index,
+        type,
+        points,
+        media_play_limit,
+        options ( id, content, order_index, is_correct )
+      )
+    `,
+    )
+    .eq("id", testIdResult.data)
+    .maybeSingle();
+
+  if (sourceError || !sourceTest) {
+    return { success: false, error: "Тест не найден." };
+  }
+
+  let sourceQuestions: CloneSourceQuestion[] = sourceTest.questions ?? [];
+  if (sourceQuestions.length === 0) {
+    const { data: fallbackQuestions, error: fallbackQuestionsError } =
+      await supabase
+        .from("questions")
+        .select(
+          "id, content, order_index, type, points, media_play_limit, options ( id, content, order_index, is_correct )",
+        )
+        .eq("test_id", testIdResult.data)
+        .order("order_index", { ascending: true });
+
+    if (fallbackQuestionsError) {
+      return { success: false, error: fallbackQuestionsError.message };
+    }
+    sourceQuestions = fallbackQuestions ?? [];
+  }
+
+  if (sourceTest.scope !== "library") {
+    return {
+      success: false,
+      error: "В урок можно копировать только тесты из библиотеки.",
+    };
+  }
+
+  if (
+    profile.role === "teacher" &&
+    sourceTest.user_id !== user.id &&
+    sourceTest.is_published !== true
+  ) {
+    return { success: false, error: "Этот тест нельзя использовать в уроке." };
+  }
+
+  const { data: insertedTest, error: insertTestError } = await supabase
+    .from("tests")
+    .insert({
+      title: sourceTest.title,
+      description: sourceTest.description ?? null,
+      title_student: sourceTest.title_student ?? null,
+      title_teacher: sourceTest.title_teacher ?? null,
+      test_type: sourceTest.test_type,
+      auto_check: sourceTest.auto_check,
+      save_to_journal: sourceTest.save_to_journal,
+      max_score: sourceTest.max_score,
+      is_for_kids: sourceTest.is_for_kids,
+      time_limit: sourceTest.time_limit,
+      // RLS скрывает questions/options от ученика, если тест не опубликован.
+      is_published: true,
+      user_id: user.id,
+      scope: "inline",
+      lesson_block_id: block.id,
+      folder_name: null,
+    })
+    .select("id")
+    .single();
+
+  if (insertTestError || !insertedTest) {
+    console.error("[cloneLibraryTestToInline]", insertTestError?.message);
+    return {
+      success: false,
+      error: insertTestError?.message ?? "Не удалось скопировать тест в урок.",
+    };
+  }
+
+  const clonedQuestions = await cloneQuestionsAndOptionsForTest(
+    supabase,
+    insertedTest.id,
+    user.id,
+    sourceQuestions,
+  );
+
+  if (!clonedQuestions.success) {
+    return { success: false, error: clonedQuestions.error };
+  }
+
+  return { success: true, testId: insertedTest.id };
 }
 
 export type AttemptResult = {
@@ -1601,6 +1717,11 @@ export async function submitAnswer(
 
   if (attempt.student_id !== user.id) {
     return { success: false, error: "Нет доступа к этой попытке" };
+  }
+
+  const enrollment = await assertStudentEnrolledForTest(user.id, attempt.test_id);
+  if (!enrollment.ok) {
+    return { success: false, error: enrollment.error };
   }
 
   if (attempt.status !== "in_progress") {
@@ -2529,6 +2650,11 @@ export async function completeAttempt(
     return { success: false, error: "Нет доступа к этой попытке" };
   }
 
+  const enrollment = await assertStudentEnrolledForTest(user.id, attempt.test_id);
+  if (!enrollment.ok) {
+    return { success: false, error: enrollment.error };
+  }
+
   const { data: testRow, error: testError } = await supabase
     .from("tests")
     .select("is_for_kids")
@@ -2732,6 +2858,146 @@ async function rollbackCreatedTest(
     .delete()
     .eq("id", testId)
     .eq("user_id", ownerUserId);
+}
+
+type CloneSourceQuestion = {
+  id: string;
+  content: Json;
+  order_index: number;
+  type: string | null;
+  points?: number | null;
+  media_play_limit?: number | null;
+  options?: Array<{
+    content: Json;
+    order_index: number;
+    is_correct: boolean | null;
+  }> | null;
+};
+
+async function cloneQuestionsAndOptionsForTest(
+  client: SupabaseClient<Database>,
+  clonedTestId: string,
+  ownerUserId: string,
+  sourceQuestions: CloneSourceQuestion[],
+): Promise<{ success: true } | { success: false; error: string }> {
+  const sortedSource = [...sourceQuestions].sort(
+    (a, b) => a.order_index - b.order_index,
+  );
+
+  if (sortedSource.length === 0) {
+    return { success: true };
+  }
+
+  const questionInsertRows: Database["public"]["Tables"]["questions"]["Insert"][] =
+    sortedSource.map((question) => ({
+      test_id: clonedTestId,
+      content: question.content,
+      order_index: question.order_index,
+      type: question.type,
+      points: question.points ?? undefined,
+      media_play_limit: question.media_play_limit ?? undefined,
+    }));
+
+  const { data: insertedQuestions, error: insertQuestionsError } = await client
+    .from("questions")
+    .insert(questionInsertRows)
+    .select("id, order_index");
+
+  if (insertQuestionsError || !insertedQuestions) {
+    await rollbackCreatedTest(client, clonedTestId, ownerUserId);
+    return {
+      success: false,
+      error: insertQuestionsError?.message ?? "Не удалось скопировать вопросы",
+    };
+  }
+
+  const insertedSorted = [...insertedQuestions].sort(
+    (a, b) => a.order_index - b.order_index,
+  );
+  const oldToNewQuestionId = new Map<string, string>();
+  for (let i = 0; i < sortedSource.length; i += 1) {
+    const oldId = sortedSource[i]?.id;
+    const newId = insertedSorted[i]?.id;
+    if (oldId && newId) {
+      oldToNewQuestionId.set(oldId, newId);
+    }
+  }
+
+  const optionRows: Database["public"]["Tables"]["options"]["Insert"][] =
+    sortedSource.flatMap((sourceQuestion) => {
+      const newQuestionId = oldToNewQuestionId.get(sourceQuestion.id);
+      if (!newQuestionId) return [];
+      return [...(sourceQuestion.options ?? [])]
+        .sort((a, b) => a.order_index - b.order_index)
+        .map((option) => ({
+          question_id: newQuestionId,
+          content: option.content,
+          order_index: option.order_index,
+          is_correct: Boolean(option.is_correct),
+        }));
+    });
+
+  if (optionRows.length > 0) {
+    const { error: insertOptionsError } = await client
+      .from("options")
+      .insert(optionRows);
+
+    if (insertOptionsError) {
+      await rollbackCreatedTest(client, clonedTestId, ownerUserId);
+      return {
+        success: false,
+        error:
+          insertOptionsError.message || "Не удалось скопировать варианты ответов",
+      };
+    }
+  }
+
+  const { count: copiedQuestionCount, error: copiedQuestionCountError } =
+    await client
+      .from("questions")
+      .select("id", { count: "exact", head: true })
+      .eq("test_id", clonedTestId);
+
+  if (copiedQuestionCountError) {
+    await rollbackCreatedTest(client, clonedTestId, ownerUserId);
+    return { success: false, error: copiedQuestionCountError.message };
+  }
+
+  if ((copiedQuestionCount ?? 0) !== sortedSource.length) {
+    await rollbackCreatedTest(client, clonedTestId, ownerUserId);
+    return {
+      success: false,
+      error: "Не удалось полностью скопировать вопросы встроенного теста",
+    };
+  }
+
+  const expectedOptionCount = sortedSource.reduce(
+    (sum, question) => sum + (question.options?.length ?? 0),
+    0,
+  );
+  if (expectedOptionCount > 0) {
+    const newQuestionIds = insertedSorted.map((row) => row.id);
+    const { count: copiedOptionCount, error: copiedOptionCountError } =
+      await client
+        .from("options")
+        .select("id", { count: "exact", head: true })
+        .in("question_id", newQuestionIds);
+
+    if (copiedOptionCountError) {
+      await rollbackCreatedTest(client, clonedTestId, ownerUserId);
+      return { success: false, error: copiedOptionCountError.message };
+    }
+
+    if ((copiedOptionCount ?? 0) !== expectedOptionCount) {
+      await rollbackCreatedTest(client, clonedTestId, ownerUserId);
+      return {
+        success: false,
+        error: "Не удалось полностью скопировать варианты ответов",
+      };
+    }
+  }
+
+  return { success: true };
 }
 
 function fillContentToFormFields(content: FillInTheBlanksContent): {
@@ -3480,6 +3746,7 @@ export async function updateFullTest(
       `
       id,
       user_id,
+      scope,
       questions (
         type,
         content,
@@ -3560,9 +3827,15 @@ export async function updateFullTest(
     }
   }
 
+  const settingsRow = mapTestSettingsToRow(d);
+  if (testRow.scope === "inline") {
+    // Иначе RLS questions_select_visible / options_select_visible скроет задания от ученика.
+    settingsRow.is_published = true;
+  }
+
   const { error: updateTestErr } = await supabase
     .from("tests")
-    .update(mapTestSettingsToRow(d))
+    .update(settingsRow)
     .eq("id", tid);
 
   if (updateTestErr) {

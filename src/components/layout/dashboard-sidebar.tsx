@@ -3,7 +3,7 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Building, Settings, Users } from "lucide-react"
+import { BarChart3, Building, Settings, Users } from "lucide-react"
 
 import { signOut } from "@/app/actions/auth-actions"
 import { isCorporateMode, isSchoolMode } from "@/lib/config/app-mode"
@@ -39,6 +39,7 @@ type NavItem = {
 };
 
 const teacherNav: NavItem[] = [
+  { title: "Главная", url: "/dashboard", icon: GrowvyCatalogIcon },
   { title: "Мои курсы", url: "/dashboard/courses", icon: GrowvyCoursesIcon },
   { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
   { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
@@ -69,9 +70,14 @@ const studentNav: NavItem[] = [
 
 const adminNav: NavItem[] = [
   { title: "Главная", url: "/dashboard", icon: GrowvyCatalogIcon },
+  { title: "Курсы", url: "/dashboard/courses", icon: GrowvyCoursesIcon },
+  { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
+  { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
+  { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
+  { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
   { title: "Пользователи", url: "/dashboard/admin/users", icon: Users },
   {
-    title: "Справочники",
+    title: "Фильтры каталога",
     url: "/dashboard/admin/taxonomies",
     icon: GrowvyDictionariesIcon,
   },
@@ -79,6 +85,11 @@ const adminNav: NavItem[] = [
     title: "Оргструктура",
     url: "/dashboard/admin/structure",
     icon: Building,
+  },
+  {
+    title: "Аналитика",
+    url: "/dashboard/analytics",
+    icon: BarChart3,
   },
   {
     title: "Настройки платформы",
@@ -92,6 +103,11 @@ const headTeacherNav: NavItem[] = [
   { title: "Курсы", url: "/dashboard/courses", icon: GrowvyCoursesIcon },
   { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
   { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
+  {
+    title: "Аналитика",
+    url: "/dashboard/analytics",
+    icon: BarChart3,
+  },
   { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
   { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
 ];
@@ -106,6 +122,7 @@ function getNavForRole(role: ProfileRole): NavItem[] {
   return nav.filter((item) => {
     if (item.url === "/dashboard/cohorts") return isSchoolMode;
     if (item.url === "/dashboard/admin/structure") return isCorporateMode;
+    if (item.url === "/dashboard/analytics") return isCorporateMode;
     return true;
   });
 }

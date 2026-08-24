@@ -13,13 +13,17 @@ import { createClient } from "@/lib/supabase/client";
 type LoginFormProps = {
   /** Куда перейти после успешного входа (например /test/uuid из ?next=). */
   redirectTo?: string;
+  initialError?: string;
 };
 
-export function LoginForm({ redirectTo = "/dashboard" }: LoginFormProps) {
+export function LoginForm({
+  redirectTo = "/dashboard",
+  initialError,
+}: LoginFormProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const [pending, setPending] = useState(false);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {

@@ -1,11 +1,12 @@
 "use client";
 
-import { Key, MoreHorizontal } from "lucide-react";
+import { Key, MoreHorizontal, UserX } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
+  deactivateUser,
   deleteUser,
   resetUserPassword,
   updateUserRole,
@@ -138,6 +139,22 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
     });
   }
 
+  function handleDeactivate(userId: string) {
+    if (isPending) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await deactivateUser(userId);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Сотрудник уволен. Курсы остаются активными — смените владельца при необходимости.");
+      router.refresh();
+    });
+  }
+
   function openResetPasswordDialog(user: AdminUserRow) {
     setResetPasswordUser(user);
     setNewPassword("");
@@ -220,11 +237,22 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
               ) : (
                 users.map((user) => {
                   const isSelf = user.id === currentUserId;
+                  const isActive = user.isActive !== false;
                   return (
-                    <TableRow key={user.id}>
+                    <TableRow
+                      key={user.id}
+                      className={isActive ? undefined : "opacity-60"}
+                    >
                       <TableCell>
                         <div className="flex flex-col gap-0.5">
-                          <span className="font-medium">{displayName(user)}</span>
+                          <span className="flex items-center gap-2 font-medium">
+                            {displayName(user)}
+                            {!isActive ? (
+                              <Badge variant="outline" className="text-[10px]">
+                                Уволен
+                              </Badge>
+                            ) : null}
+                          </span>
                           {user.email ? (
                             <span className="text-muted-foreground text-xs">
                               {user.email}
@@ -301,6 +329,14 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                                   <Key className="mr-2 size-4" aria-hidden />
                                   Сбросить пароль
                                 </DropdownMenuItem>
+                                {isActive ? (
+                                  <DropdownMenuItem
+                                    onClick={() => handleDeactivate(user.id)}
+                                  >
+                                    <UserX className="mr-2 size-4" aria-hidden />
+                                    Деактивировать / Уволить
+                                  </DropdownMenuItem>
+                                ) : null}
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
                                   className="text-destructive focus:text-destructive"

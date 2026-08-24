@@ -25,7 +25,7 @@ import {
   updateBlock,
   updateLessonMeta,
 } from "@/app/actions/lesson-block-actions";
-import { createInlineTest } from "@/app/actions/test-actions";
+import { createInlineTest, cloneLibraryTestToInline } from "@/app/actions/test-actions";
 import type {
   LessonBlockActionState,
   LessonBlockType,
@@ -214,9 +214,10 @@ function TextBlockEditor({
     const res = await updateBlock(blockId, { html });
     setSaving(false);
     if (res.error) {
-      window.alert(res.error);
+      toast.error(res.error);
       return;
     }
+    toast.success("Текст сохранён");
     router.refresh();
   }
 
@@ -287,7 +288,13 @@ export function LessonBlockEditor({
   const [isPublished, setIsPublished] = useState(lesson.is_published);
   const [adding, setAdding] = useState<LessonBlockType | null>(null);
   const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
+  const [detachQuizBlockId, setDetachQuizBlockId] = useState<string | null>(
+    null,
+  );
   const [isDeletePending, startDeleteTransition] = useTransition();
+  const [isDetachPending, startDetachTransition] = useTransition();
+  const [cloningBlockId, setCloningBlockId] = useState<string | null>(null);
+  const [isClonePending, startCloneTransition] = useTransition();
 
   useEffect(() => {
     if (metaState.success) {
@@ -307,10 +314,35 @@ export function LessonBlockEditor({
     const res = await addBlock(lesson.id, type);
     setAdding(null);
     if (res.error) {
-      window.alert(res.error);
+      toast.error(res.error);
       return;
     }
     router.refresh();
+  }
+
+  function handlePickLibraryTest(blockId: string, libraryTestId: string) {
+    if (isClonePending) {
+      return;
+    }
+
+    setCloningBlockId(blockId);
+    startCloneTransition(async () => {
+      const cloneRes = await cloneLibraryTestToInline(libraryTestId, blockId);
+      if (!cloneRes.success) {
+        toast.error(cloneRes.error);
+        setCloningBlockId(null);
+        return;
+      }
+
+      const updateRes = await updateBlock(blockId, { test_id: cloneRes.testId });
+      setCloningBlockId(null);
+      if (updateRes.error) {
+        toast.error(updateRes.error);
+        return;
+      }
+      toast.success("Тест скопирован в урок");
+      router.refresh();
+    });
   }
 
   async function handleCreateInlineTest() {
@@ -318,14 +350,14 @@ export function LessonBlockEditor({
     const blockRes = await addBlock(lesson.id, "quiz");
     if (blockRes.error || !blockRes.blockId) {
       setAdding(null);
-      window.alert(blockRes.error || "Не удалось создать блок");
+      toast.error(blockRes.error || "Не удалось создать блок");
       return;
     }
 
     const testRes = await createInlineTest(blockRes.blockId, "Встроенный тест");
     if (!testRes.success) {
       setAdding(null);
-      window.alert(testRes.error || "Не удалось создать тест");
+      toast.error(testRes.error || "Не удалось создать тест");
       return;
     }
 
@@ -333,10 +365,11 @@ export function LessonBlockEditor({
     setAdding(null);
     
     if (updateRes.error) {
-      window.alert(updateRes.error);
+      toast.error(updateRes.error);
       return;
     }
-    
+
+    toast.success("Встроенный тест создан");
     router.refresh();
   }
 
@@ -360,10 +393,24 @@ export function LessonBlockEditor({
   ) {
     const res = await reorderBlock(lesson.id, blockId, direction);
     if (res.error) {
-      window.alert(res.error);
+      toast.error(res.error);
       return;
     }
     router.refresh();
+  }
+
+  function handleDetachQuizConfirm() {
+    if (!detachQuizBlockId) return;
+    startDetachTransition(async () => {
+      const res = await updateBlock(detachQuizBlockId, { test_id: "" });
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Тест убран из блока");
+      setDetachQuizBlockId(null);
+      router.refresh();
+    });
   }
 
   return (
@@ -557,7 +604,7 @@ export function LessonBlockEditor({
                         onBlur={async (e) => {
                           const url = e.target.value.trim();
                           const res = await updateBlock(block.id, { url });
-                          if (res.error) window.alert(res.error);
+                          if (res.error) toast.error(res.error);
                           else router.refresh();
                         }}
                       />
@@ -583,7 +630,7 @@ export function LessonBlockEditor({
                             block.id,
                             buildAssignmentContent(block.content, { instructions }),
                           );
-                          if (res.error) window.alert(res.error);
+                          if (res.error) toast.error(res.error);
                           else router.refresh();
                         }}
                       />
@@ -607,7 +654,7 @@ export function LessonBlockEditor({
                               save_to_journal: checked,
                             }),
                           );
-                          if (res.error) window.alert(res.error);
+                          if (res.error) toast.error(res.error);
                           else router.refresh();
                         }}
                       />
@@ -629,16 +676,19 @@ export function LessonBlockEditor({
                         ) : (
                           <Select
                             value={undefined}
-                            onValueChange={async (test_id) => {
-                              const res = await updateBlock(block.id, {
-                                test_id,
-                              });
-                              if (res.error) window.alert(res.error);
-                              else router.refresh();
-                            }}
+                            disabled={isClonePending}
+                            onValueChange={(libraryTestId) =>
+                              handlePickLibraryTest(block.id, libraryTestId)
+                            }
                           >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Выберите тест…" />
+                              <SelectValue
+                                placeholder={
+                                  cloningBlockId === block.id
+                                    ? "Копирование теста…"
+                                    : "Выберите тест…"
+                                }
+                              />
                             </SelectTrigger>
                             <SelectContent>
                               {groupedTests.map((group) => (
@@ -671,11 +721,7 @@ export function LessonBlockEditor({
                           variant="outline"
                           size="sm"
                           className="w-fit mt-2 text-destructive"
-                          onClick={async () => {
-                            const res = await updateBlock(block.id, { test_id: "" });
-                            if (res.error) window.alert(res.error);
-                            else router.refresh();
-                          }}
+                          onClick={() => setDetachQuizBlockId(block.id)}
                         >
                           Убрать тест
                         </Button>
@@ -713,6 +759,32 @@ export function LessonBlockEditor({
               className={buttonVariants({ variant: "destructive" })}
             >
               {isDeletePending ? "Удаление…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={detachQuizBlockId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetachQuizBlockId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Убрать тест из блока?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Тест отвяжется от урока. Сам тест в библиотеке останется.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDetachPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDetachQuizConfirm}
+              disabled={isDetachPending}
+              className={buttonVariants({ variant: "destructive" })}
+            >
+              {isDetachPending ? "Удаление…" : "Убрать"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

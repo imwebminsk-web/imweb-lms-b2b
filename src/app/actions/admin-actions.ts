@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { verifyAccess } from "@/lib/auth/rbac";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { Database } from "@/types/database.types";
@@ -132,6 +133,42 @@ export async function deleteUser(userId: string): Promise<AdminActionResult> {
   }
 
   revalidatePath("/dashboard");
+  return { success: true };
+}
+
+/** Soft-delete профиля. Курсы и тесты не архивируются автоматически. */
+export async function deactivateUser(
+  targetUserId: string,
+): Promise<AdminActionResult> {
+  const { user } = await verifyAccess(["admin"]);
+
+  const uid = targetUserId.trim();
+  if (!uid) {
+    return { success: false, error: "Не указан пользователь." };
+  }
+
+  if (uid === user.id) {
+    return { success: false, error: "Нельзя деактивировать свой аккаунт." };
+  }
+
+  const supabase = await createClient();
+
+  // is_active ещё нет в generated Database types.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("profiles")
+    .update({ is_active: false })
+    .eq("id", uid);
+
+  if (error) {
+    console.error("[deactivateUser]", error.message);
+    return {
+      success: false,
+      error: error.message || "Не удалось уволить сотрудника.",
+    };
+  }
+
+  revalidatePath("/dashboard/admin/users");
   return { success: true };
 }
 

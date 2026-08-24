@@ -10,6 +10,8 @@ import { createClient } from "@/lib/supabase/server";
 
 import { fetchAdminUsers } from "@/app/dashboard/fetch-dashboard-data";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 export const metadata: Metadata = {
   title: "Пользователи",
   description: "Управление пользователями платформы",
@@ -53,28 +55,8 @@ function AdminUsersContent({
 }
 
 export default async function AdminUsersPage() {
+  const { user, profile } = await verifyAccess(["admin"]);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (profile.role !== "admin") {
-    redirect("/dashboard");
-  }
 
   const displayName =
     profile.full_name?.trim() ||

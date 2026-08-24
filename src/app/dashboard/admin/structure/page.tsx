@@ -11,34 +11,15 @@ import {
 } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 
+import { verifyAccess } from "@/lib/auth/rbac";
+
 export const metadata: Metadata = {
   title: "Оргструктура компании",
   description: "Управление отделами, должностями и назначением курсов",
 };
 
 export default async function AdminStructurePage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (profile.role !== "admin") {
-    redirect("/dashboard");
-  }
+  const { user, profile } = await verifyAccess(["admin"]);
 
   const displayName =
     profile.full_name?.trim() ||

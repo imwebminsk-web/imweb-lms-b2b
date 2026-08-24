@@ -1,16 +1,13 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
-import { isAdminOrHead } from "@/lib/utils/user-utils";
 import { getPendingReviewCounts } from "@/app/actions/grading-actions";
-import {
-  CohortsList,
-  type CohortListRow,
-} from "@/components/dashboard/teacher/cohorts/cohorts-list";
+import { getStaffCohortsDashboard } from "@/app/actions/cohort-actions";
+import { CohortsList } from "@/components/dashboard/teacher/cohorts/cohorts-list";
 import { CreateCohortDialog } from "@/components/dashboard/teacher/cohorts/create-cohort-dialog";
 import { SiteHeader } from "@/components/site-header";
-import { createClient } from "@/lib/supabase/server";
+
+import { verifyAccess } from "@/lib/auth/rbac";
 
 export const metadata: Metadata = {
   title: "Группы",
@@ -18,71 +15,9 @@ export const metadata: Metadata = {
 };
 
 export default async function DashboardCohortsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/");
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    redirect("/");
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    redirect("/dashboard");
-  }
-
-  const privileged = isAdminOrHead(profile.role);
-
-  let coursesQuery = supabase.from("courses").select("id, title").order("title");
-  if (!privileged) {
-    coursesQuery = coursesQuery.eq("teacher_id", user.id);
-  }
-
-  const { data: myCourses, error: coursesError } = await coursesQuery;
-
-  if (coursesError) {
-    console.error("[DashboardCohortsPage] courses", coursesError.message);
-  }
-
-  const courseOptions = (myCourses ?? []).map((c) => ({
-    id: c.id,
-    title: c.title,
-  }));
-
-  const courseIds = courseOptions.map((c) => c.id);
-
-  let cohortRows: CohortListRow[] = [];
-  if (privileged || courseIds.length > 0) {
-    let cohortsQuery = supabase
-      .from("cohorts")
-      .select("id, name, pin_code, is_active, created_at, courses(title)")
-      .order("created_at", { ascending: false });
-
-    if (!privileged) {
-      cohortsQuery = cohortsQuery.in("course_id", courseIds);
-    }
-
-    const { data: cohortsData, error: cohortsError } = await cohortsQuery;
-
-    if (cohortsError) {
-      console.error("[DashboardCohortsPage] cohorts", cohortsError.message);
-    }
-    cohortRows = (cohortsData ?? []) as CohortListRow[];
-  }
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+  const { courses: courseOptions, cohorts: cohortRows } =
+    await getStaffCohortsDashboard();
 
   const [unreadRes, pendingRes] = await Promise.all([
     getUnreadCounts(),

@@ -16,10 +16,14 @@ function sanitizeNext(raw: string | undefined): string {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; returnTo?: string }>;
+  searchParams: Promise<{ next?: string; returnTo?: string; error?: string }>;
 }) {
   const params = await searchParams;
   const redirectTo = sanitizeNext(params.returnTo ?? params.next);
+  const deactivatedError =
+    params.error === "account_deactivated"
+      ? "Аккаунт деактивирован. Обратитесь к администратору."
+      : undefined;
 
-  return <LoginForm redirectTo={redirectTo} />;
+  return <LoginForm redirectTo={redirectTo} initialError={deactivatedError} />;
 }

@@ -1,4 +1,5 @@
 import { getRecentActivity, type ActivityEvent } from "@/app/actions/activity-actions";
+import { getPendingReviews, type PendingReviewItem } from "@/app/actions/teacher-dashboard-actions";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -11,8 +12,6 @@ import {
   dashboardTableRowSchema,
 } from "@/lib/dashboard-table-schema";
 import { formatCoursePriceDecimal } from "@/lib/format-course-price";
-import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
-import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 import type { Database } from "@/types/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -22,9 +21,6 @@ type DbClient = SupabaseClient<Database>;
 function rlsBypassClient(fallback: DbClient): DbClient {
   return createAdminClient() ?? fallback;
 }
-
-/** Верхняя граница строк для виджета «ожидают проверки» на дашборде. */
-const MAX_PENDING_REVIEW_FETCH = 50;
 
 /** PostgREST / URL parser struggle with very large `.in()` lists. */
 const MAX_IN_FILTER_IDS = 500;
@@ -97,26 +93,7 @@ function mapCourseRow(
   });
 }
 
-/** Только данные для UI дашборда (без роли — её знает страница). */
-export type PendingReviewItem =
-  | {
-      kind: "assignment";
-      submissionId: string;
-      studentName: string;
-      courseTitle: string;
-      lessonTitle: string;
-      submittedAt: string;
-      courseSlug: string;
-    }
-  | {
-      kind: "test";
-      attemptId: string;
-      studentName: string;
-      courseTitle: string;
-      lessonTitle: string;
-      submittedAt: string;
-      courseSlug: string;
-    };
+export type { PendingReviewItem };
 
 export type AdminUserRow = {
   id: string;
@@ -124,6 +101,7 @@ export type AdminUserRow = {
   email: string | null;
   role: ProfileRole;
   createdAt: string | null;
+  isActive: boolean;
 };
 
 export type DashboardData = {
@@ -223,17 +201,6 @@ async function fetchTeacherMetrics(
     totalStudents,
     pendingReviews: pendingAssignments + (pendingTestAttempts ?? 0),
   };
-}
-
-type PendingSubmissionRow = {
-  id: string;
-  created_at: string;
-  student_id: string;
-  lesson_block_id: string;
-};
-
-function normalizePendingReviewLimit(limit: number): number {
-  return Math.min(Math.max(limit, 1), MAX_PENDING_REVIEW_FETCH);
 }
 
 function readCourseFromNestedRel(
@@ -376,357 +343,11 @@ async function countPendingAssignmentReviewsForTeacher(
  * Последние сдачи заданий и тестов, ожидающие проверки преподавателя.
  */
 export async function getPendingReviewsForTeacher(
-  userId: string,
+  _userId: string,
   limit = 5,
 ): Promise<PendingReviewItem[]> {
-  const [assignmentItems, testItems] = await Promise.all([
-    getPendingAssignmentReviewsForTeacher(userId, limit),
-    getPendingTestReviewsForTeacher(userId, limit),
-  ]);
-
-  return [...assignmentItems, ...testItems]
-    .sort(
-      (a, b) =>
-        new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
-    )
-    .slice(0, limit);
-}
-
-type PendingTestContext = {
-  lessonTitle: string;
-  courseTitle: string;
-  courseSlug: string;
-};
-
-async function buildTeacherPendingTestContextMap(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  testIds: string[],
-): Promise<Map<string, PendingTestContext>> {
-  const map = new Map<string, PendingTestContext>();
-  const uniqueTestIds = sliceIdsForInFilter(
-    [...new Set(testIds.filter((id) => id.trim().length > 0))],
-  );
-  if (uniqueTestIds.length === 0) {
-    return map;
-  }
-
-  const { data: lessonRows, error: lessonsError } = await supabase
-    .from("lessons")
-    .select(
-      `
-      id,
-      title,
-      test_id,
-      modules!inner(
-        courses!inner(
-          title,
-          slug,
-          teacher_id
-        )
-      )
-    `,
-    )
-    .eq("modules.courses.teacher_id", userId)
-    .in("test_id", uniqueTestIds);
-
-  if (lessonsError) {
-    console.error(
-      "[getPendingReviewsForTeacher] lessons",
-      lessonsError.message,
-    );
-  }
-
-  for (const lesson of lessonRows ?? []) {
-    if (!lesson.test_id) continue;
-
-    const modulesRel = lesson.modules as
-      | {
-          courses:
-            | { title: string | null; slug: string }
-            | { title: string | null; slug: string }[]
-            | null;
-        }
-      | {
-          courses:
-            | { title: string | null; slug: string }
-            | { title: string | null; slug: string }[]
-            | null;
-        }[]
-      | null;
-    const module = Array.isArray(modulesRel) ? modulesRel[0] : modulesRel;
-    const course = readCourseFromNestedRel(module?.courses);
-    if (!course) continue;
-
-    map.set(lesson.test_id, {
-      lessonTitle: lesson.title?.trim() || "Урок",
-      courseTitle: course.title?.trim() || "—",
-      courseSlug: course.slug,
-    });
-  }
-
-  const missingTestIds = sliceIdsForInFilter(
-    uniqueTestIds.filter((testId) => !map.has(testId)),
-  );
-  if (missingTestIds.length === 0) {
-    return map;
-  }
-
-  const orFilter = missingTestIds
-    .map((testId) => `content->>test_id.eq.${testId}`)
-    .join(",");
-
-  const { data: blockRows, error: blocksError } = await supabase
-    .from("lesson_blocks")
-    .select(
-      `
-      content,
-      lessons!inner(
-        title,
-        modules!inner(
-          courses!inner(
-            title,
-            slug,
-            teacher_id
-          )
-        )
-      )
-    `,
-    )
-    .eq("type", "quiz")
-    .eq("lessons.modules.courses.teacher_id", userId)
-    .or(orFilter);
-
-  if (blocksError) {
-    console.error(
-      "[getPendingReviewsForTeacher] quiz blocks",
-      blocksError.message,
-    );
-    return map;
-  }
-
-  for (const block of blockRows ?? []) {
-    const testId = parseTestIdFromQuizBlockContent(block.content);
-    if (!testId || map.has(testId)) continue;
-
-    const lessonRel = block.lessons as
-      | {
-          title: string | null;
-          modules:
-            | {
-                courses:
-                  | { title: string | null; slug: string }
-                  | { title: string | null; slug: string }[]
-                  | null;
-              }
-            | {
-                courses:
-                  | { title: string | null; slug: string }
-                  | { title: string | null; slug: string }[]
-                  | null;
-              }[]
-            | null;
-        }
-      | null;
-    const moduleRel = lessonRel?.modules;
-    const module = Array.isArray(moduleRel) ? moduleRel[0] : moduleRel;
-    const course = readCourseFromNestedRel(module?.courses);
-    if (!course) continue;
-
-    map.set(testId, {
-      lessonTitle: lessonRel?.title?.trim() || "Урок",
-      courseTitle: course.title?.trim() || "—",
-      courseSlug: course.slug,
-    });
-  }
-
-  return map;
-}
-
-type PendingTestAttemptRow = {
-  id: string;
-  completed_at: string | null;
-  student_id: string;
-  test_id: string;
-  tests:
-    | { title: string | null; user_id: string }
-    | { title: string | null; user_id: string }[]
-    | null;
-};
-
-async function getPendingTestReviewsForTeacher(
-  userId: string,
-  limit: number,
-): Promise<PendingReviewItem[]> {
-  const supabase = await createClient();
-  const fetchLimit = normalizePendingReviewLimit(limit);
-  const dataClient = rlsBypassClient(supabase);
-
-  const { data: rows, error } = await dataClient
-    .from("student_attempts")
-    .select(
-      `
-      id,
-      completed_at,
-      student_id,
-      test_id,
-      tests!inner(
-        title,
-        user_id
-      )
-    `,
-    )
-    .eq("status", "pending_review")
-    .eq("is_training_mode", false)
-    .eq("tests.user_id", userId)
-    .order("completed_at", { ascending: false, nullsFirst: false })
-    .limit(fetchLimit);
-
-  if (error) {
-    console.error(
-      "[getPendingReviewsForTeacher] test attempts",
-      JSON.stringify(error, null, 2),
-    );
-    return [];
-  }
-
-  const attemptRows = (rows ?? []) as PendingTestAttemptRow[];
-  if (attemptRows.length === 0) {
-    return [];
-  }
-
-  const testContextById = await buildTeacherPendingTestContextMap(
-    supabase,
-    userId,
-    attemptRows.map((row) => row.test_id),
-  );
-  const studentIds = [...new Set(attemptRows.map((row) => row.student_id))];
-  const profileNameByUserId = new Map<string, string | null>();
-
-  if (studentIds.length > 0) {
-    const { data: profileRows, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", studentIds);
-
-    if (profilesError) {
-      console.error(
-        "[getPendingReviewsForTeacher] profiles",
-        profilesError.message,
-      );
-    }
-
-    for (const profile of profileRows ?? []) {
-      profileNameByUserId.set(profile.id, profile.full_name);
-    }
-  }
-
-  const items: PendingReviewItem[] = [];
-
-  for (const row of attemptRows) {
-    const testsRel = row.tests;
-    const testMeta = Array.isArray(testsRel) ? testsRel[0] : testsRel;
-    const context = testContextById.get(row.test_id);
-    const submittedAt = row.completed_at ?? new Date(0).toISOString();
-
-    items.push({
-      kind: "test",
-      attemptId: row.id,
-      studentName: resolveStudentDisplayName(
-        profileNameByUserId.get(row.student_id),
-        null,
-        row.student_id,
-      ),
-      courseTitle: context?.courseTitle ?? "—",
-      lessonTitle:
-        context?.lessonTitle ?? testMeta?.title?.trim() ?? "Тест",
-      submittedAt,
-      courseSlug: context?.courseSlug ?? "",
-    });
-  }
-
-  return items;
-}
-
-async function getPendingAssignmentReviewsForTeacher(
-  userId: string,
-  limit: number,
-): Promise<PendingReviewItem[]> {
-  const supabase = await createClient();
-  const fetchLimit = normalizePendingReviewLimit(limit);
-
-  const blockContextById = await loadTeacherAssignmentBlockContextMap(
-    supabase,
-    userId,
-  );
-  const blockIds = [...blockContextById.keys()];
-  if (blockIds.length === 0) {
-    return [];
-  }
-
-  const safeBlockIds = sliceIdsForInFilter(blockIds);
-  const admin = createAdminClient();
-  const client = admin ?? supabase;
-
-  const { data: rows, error } = await client
-    .from("assignment_submissions")
-    .select("id, created_at, student_id, lesson_block_id")
-    .eq("status", "pending")
-    .in("lesson_block_id", safeBlockIds)
-    .order("created_at", { ascending: false })
-    .limit(fetchLimit);
-
-  if (error) {
-    console.error(
-      "[getPendingReviewsForTeacher]",
-      JSON.stringify(error, null, 2),
-    );
-    return [];
-  }
-
-  const submissionRows = (rows ?? []) as PendingSubmissionRow[];
-  const studentIds = [...new Set(submissionRows.map((row) => row.student_id))];
-
-  const profileNameByUserId = new Map<string, string | null>();
-  if (studentIds.length > 0) {
-    const { data: profileRows, error: profilesError } = await supabase
-      .from("profiles")
-      .select("id, full_name")
-      .in("id", studentIds);
-
-    if (profilesError) {
-      console.error("[getPendingReviewsForTeacher] profiles", profilesError.message);
-    }
-
-    for (const profile of profileRows ?? []) {
-      profileNameByUserId.set(profile.id, profile.full_name);
-    }
-  }
-
-  const items: PendingReviewItem[] = [];
-
-  for (const row of submissionRows) {
-    const context = blockContextById.get(row.lesson_block_id);
-    if (!context) {
-      continue;
-    }
-
-    items.push({
-      kind: "assignment",
-      submissionId: row.id,
-      studentName: resolveStudentDisplayName(
-        profileNameByUserId.get(row.student_id),
-        null,
-        row.student_id,
-      ),
-      courseTitle: context.courseTitle,
-      lessonTitle: context.lessonTitle,
-      submittedAt: row.created_at,
-      courseSlug: context.courseSlug,
-    });
-  }
-
-  return items;
+  const res = await getPendingReviews("mine", 0, limit);
+  return res.success ? res.items : [];
 }
 
 async function fetchAuthCreatedAtByUserId(
@@ -768,7 +389,9 @@ export async function fetchAdminUsers(
 ): Promise<AdminUserRow[]> {
   const { data: profiles, error } = await supabase
     .from("profiles")
-    .select("id, full_name, role, profile_secrets(email)")
+    // is_active ещё нет в generated Database types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select("id, full_name, role, is_active, profile_secrets(email)" as any)
     .order("full_name", { ascending: true, nullsFirst: false });
 
   if (error) {
@@ -792,6 +415,7 @@ export async function fetchAdminUsers(
       email,
       role: profile.role,
       createdAt: createdAtById.get(profile.id) ?? null,
+      isActive: (profile as { is_active?: boolean | null }).is_active !== false,
     };
   });
 }
@@ -818,9 +442,8 @@ export async function fetchDashboardData(
 
     const courseIds = (courses ?? []).map((c) => c.id);
 
-    const [teacherMetrics, pendingReviews, activityEvents] = await Promise.all([
+    const [teacherMetrics, activityEvents] = await Promise.all([
       fetchTeacherMetrics(supabase, courseIds, userId),
-      getPendingReviewsForTeacher(userId, 5),
       getRecentActivity(userId, 15),
     ]);
 
@@ -828,7 +451,6 @@ export async function fetchDashboardData(
       tableRows: [],
       sectionCards: [],
       teacherMetrics,
-      pendingReviews,
       activityEvents,
     };
   }
