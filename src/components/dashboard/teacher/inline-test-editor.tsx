@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { QuestionField } from "@/types/create-test-form";
+import type { QuestionField, TestTypeKind } from "@/types/create-test-form";
 import { buildTaskContentPayload } from "@/lib/utils/task-content";
 import {
   isPuzzleQuestion,
@@ -52,7 +52,7 @@ export function InlineTestEditor({ testId }: { testId: string }) {
     timeLimit: "0",
     autoCheck: true,
     saveToJournal: true,
-    testType: "final",
+    testType: "final" as TestTypeKind,
     maxScore: "100",
   });
 
@@ -268,7 +268,9 @@ export function InlineTestEditor({ testId }: { testId: string }) {
               <Label>Тип теста</Label>
               <Select
                 value={settings.testType}
-                onValueChange={(v) => setSettings({ ...settings, testType: v })}
+                onValueChange={(v) =>
+                  setSettings({ ...settings, testType: v as TestTypeKind })
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -354,6 +356,7 @@ export function InlineTestEditor({ testId }: { testId: string }) {
         questions={questions}
         onQuestionsChange={setQuestions}
         pending={saving}
+        testType={settings.testType}
       />
 
       <Button

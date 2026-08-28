@@ -34,6 +34,28 @@ export type AssignmentReviewSheetProps = {
   | { fetchMode: "lessonBlock"; lessonBlockId: string; studentId: string }
 );
 
+function parseCohortJournalUrlFromPathname(pathname: string): string | null {
+  const match = pathname.match(/^\/dashboard\/cohorts\/([0-9a-f-]{36})(?:\/|$)/i);
+  if (!match) {
+    return null;
+  }
+  return `/dashboard/cohorts/${match[1]}?tab=journal`;
+}
+
+function resolvePostReviewRedirectUrl(
+  pathname: string,
+  cohortId: string | null,
+): string | null {
+  const fromPathname = parseCohortJournalUrlFromPathname(pathname);
+  if (fromPathname) {
+    return fromPathname;
+  }
+  if (cohortId) {
+    return `/dashboard/cohorts/${cohortId}?tab=journal`;
+  }
+  return null;
+}
+
 function parseOptionalGrade(raw: string): number | null {
   const t = raw.trim();
   if (!t) return null;
@@ -187,6 +209,11 @@ export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
           status === "approved" ? "Задание принято" : "Возвращено на доработку",
         );
         onOpenChange(false);
+        const redirectUrl = resolvePostReviewRedirectUrl(pathname, res.cohortId);
+        if (redirectUrl) {
+          router.push(redirectUrl);
+          return;
+        }
         router.refresh();
       })();
     });

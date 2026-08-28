@@ -7,10 +7,15 @@ import { getPendingReviewCounts } from "@/app/actions/grading-actions";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { GlobalChatListener } from "@/components/providers/global-chat-listener";
 import { GlobalSupportListener } from "@/components/providers/global-support-listener";
+import {
+  SUPPORT_NAV_URL,
+  SupportUnreadProvider,
+} from "@/components/providers/support-unread-provider";
 import { createClient } from "@/lib/supabase/server";
 
-/** URL пункта «Поддержка» — одинаковый для student, teacher и admin навигации. */
-const SUPPORT_NAV_URL = "/dashboard/support";
+/** URL пункта «Поддержка» — для student, admin и head_teacher. */
+
+const SUPPORT_ROLES = new Set(["admin", "head_teacher", "student"]);
 
 export default async function DashboardLayout({
   children,
@@ -43,10 +48,16 @@ export default async function DashboardLayout({
 
   let navBadges: Record<string, number> = {};
   let navPendingBadges: Record<string, number> = {};
+  let supportUnreadCount = 0;
 
-  const supportUnreadRes = await getSupportUnreadCount();
-  if (supportUnreadRes.success && supportUnreadRes.count > 0) {
-    navBadges[SUPPORT_NAV_URL] = supportUnreadRes.count;
+  if (SUPPORT_ROLES.has(profile.role)) {
+    const supportUnreadRes = await getSupportUnreadCount();
+    if (supportUnreadRes.success) {
+      supportUnreadCount = supportUnreadRes.count;
+      if (supportUnreadCount > 0) {
+        navBadges[SUPPORT_NAV_URL] = supportUnreadCount;
+      }
+    }
   }
 
   if (profile.role === "teacher") {
@@ -88,21 +99,23 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="h-full overflow-hidden">
-      <GlobalChatListener />
-      <GlobalSupportListener />
-      <DashboardShell
-        role={profile.role}
-        navBadges={navBadges}
-        navPendingBadges={navPendingBadges}
-        user={{
-          name: displayName,
-          email: user.email ?? "",
-          avatar: profile.avatar_url ?? "",
-        }}
-      >
-        {children}
-      </DashboardShell>
-    </div>
+    <SupportUnreadProvider initialCount={supportUnreadCount}>
+      <div className="h-full overflow-hidden">
+        <GlobalChatListener />
+        {profile.role !== "teacher" ? <GlobalSupportListener /> : null}
+        <DashboardShell
+          role={profile.role}
+          navBadges={navBadges}
+          navPendingBadges={navPendingBadges}
+          user={{
+            name: displayName,
+            email: user.email ?? "",
+            avatar: profile.avatar_url ?? "",
+          }}
+        >
+          {children}
+        </DashboardShell>
+      </div>
+    </SupportUnreadProvider>
   );
 }

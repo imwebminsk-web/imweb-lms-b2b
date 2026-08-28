@@ -9,9 +9,54 @@ type DbClient = SupabaseClient<Database>;
 export const NOT_ENROLLED_IN_COURSE_ERROR =
   "Unauthorized: Not enrolled in this course";
 
+export type CourseEnrollmentDeniedReason =
+  | "not_enrolled"
+  | "pending"
+  | "suspended";
+
 export type CourseEnrollmentResult =
   | { ok: true; cohortId: string | null }
-  | { ok: false; error: string };
+  | { ok: false; error: string; reason: CourseEnrollmentDeniedReason };
+
+function denyEnrollment(
+  reason: CourseEnrollmentDeniedReason,
+): CourseEnrollmentResult {
+  if (reason === "pending") {
+    return {
+      ok: false,
+      reason,
+      error: "Enrollment pending approval",
+    };
+  }
+  if (reason === "suspended") {
+    return {
+      ok: false,
+      reason,
+      error: "Enrollment suspended",
+    };
+  }
+  return {
+    ok: false,
+    reason: "not_enrolled",
+    error: NOT_ENROLLED_IN_COURSE_ERROR,
+  };
+}
+
+function resultFromEnrollmentStatus(
+  cohortId: string | null,
+  status: string,
+): CourseEnrollmentResult {
+  if (status === "active") {
+    return { ok: true, cohortId };
+  }
+  if (status === "pending") {
+    return denyEnrollment("pending");
+  }
+  if (status === "suspended") {
+    return denyEnrollment("suspended");
+  }
+  return denyEnrollment("not_enrolled");
+}
 
 function asCourseId(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -120,10 +165,13 @@ async function readEnrollment(
   client: DbClient,
   userId: string,
   courseId: string,
-): Promise<{ found: true; cohortId: string | null } | { found: false }> {
+): Promise<
+  | { found: true; cohortId: string | null; status: string }
+  | { found: false }
+> {
   const { data, error } = await client
     .from("enrollments")
-    .select("cohort_id")
+    .select("cohort_id, status")
     .eq("user_id", userId)
     .eq("course_id", courseId)
     .maybeSingle();
@@ -137,7 +185,11 @@ async function readEnrollment(
     return { found: false };
   }
 
-  return { found: true, cohortId: data.cohort_id ?? null };
+  return {
+    found: true,
+    cohortId: data.cohort_id ?? null,
+    status: data.status,
+  };
 }
 
 /**
@@ -162,6 +214,7 @@ async function provisionB2BEnrollment(
     user_id: userId,
     course_id: courseId,
     cohort_id: null,
+    status: "active",
   });
 
   if (
@@ -186,12 +239,12 @@ export async function ensureCourseEnrollment(
   const supabase = await createClient();
   const existing = await readEnrollment(supabase, userId, courseId);
   if (existing.found) {
-    return { ok: true, cohortId: existing.cohortId };
+    return resultFromEnrollmentStatus(existing.cohortId, existing.status);
   }
 
   const provisioned = await provisionB2BEnrollment(userId, courseId);
   if (!provisioned) {
-    return { ok: false, error: NOT_ENROLLED_IN_COURSE_ERROR };
+    return denyEnrollment("not_enrolled");
   }
 
   const again = await readEnrollment(supabase, userId, courseId);
@@ -200,13 +253,13 @@ export async function ensureCourseEnrollment(
     if (adminClient) {
       const adminRead = await readEnrollment(adminClient, userId, courseId);
       if (adminRead.found) {
-        return { ok: true, cohortId: adminRead.cohortId };
+        return resultFromEnrollmentStatus(adminRead.cohortId, adminRead.status);
       }
     }
-    return { ok: false, error: NOT_ENROLLED_IN_COURSE_ERROR };
+    return denyEnrollment("not_enrolled");
   }
 
-  return { ok: true, cohortId: again.cohortId };
+  return resultFromEnrollmentStatus(again.cohortId, again.status);
 }
 
 async function privilegedReadClient(): Promise<DbClient> {
@@ -311,7 +364,7 @@ export async function assertEnrolledForLesson(
 ): Promise<CourseEnrollmentResult> {
   const courseId = await resolveCourseIdForLesson(lessonId);
   if (!courseId) {
-    return { ok: false, error: NOT_ENROLLED_IN_COURSE_ERROR };
+    return denyEnrollment("not_enrolled");
   }
   return ensureCourseEnrollment(userId, courseId);
 }
@@ -322,7 +375,7 @@ export async function assertEnrolledForLessonBlock(
 ): Promise<CourseEnrollmentResult> {
   const courseId = await resolveCourseIdForLessonBlock(lessonBlockId);
   if (!courseId) {
-    return { ok: false, error: NOT_ENROLLED_IN_COURSE_ERROR };
+    return denyEnrollment("not_enrolled");
   }
   return ensureCourseEnrollment(userId, courseId);
 }
@@ -339,19 +392,21 @@ export async function assertEnrolledForTest(
   const courseIds = await resolveCourseIdsForTest(testId);
   if (courseIds.length === 0) {
     if (options?.requireCourseBinding) {
-      return { ok: false, error: NOT_ENROLLED_IN_COURSE_ERROR };
+      return denyEnrollment("not_enrolled");
     }
     return { ok: true, cohortId: null };
   }
 
+  let lastDenied: CourseEnrollmentResult | null = null;
   for (const courseId of courseIds) {
     const result = await ensureCourseEnrollment(userId, courseId);
     if (result.ok) {
       return result;
     }
+    lastDenied = result;
   }
 
-  return { ok: false, error: NOT_ENROLLED_IN_COURSE_ERROR };
+  return lastDenied ?? denyEnrollment("not_enrolled");
 }
 
 const STAFF_ROLES = new Set(["admin", "head_teacher", "teacher"]);
@@ -373,7 +428,7 @@ export async function assertStudentEnrolledForTest(
 
   if (error) {
     console.error("[assertStudentEnrolledForTest] profile", error.message);
-    return { ok: false, error: NOT_ENROLLED_IN_COURSE_ERROR };
+    return denyEnrollment("not_enrolled");
   }
 
   if (profile?.role && STAFF_ROLES.has(profile.role)) {

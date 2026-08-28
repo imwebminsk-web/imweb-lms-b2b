@@ -1,8 +1,9 @@
 "use client";
 
-import { CheckSquare, FileText, HourglassIcon } from "lucide-react";
+import { CheckSquare, Download, FileText, Target } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type {
   MatrixGradebookCell,
@@ -10,8 +11,17 @@ import type {
   MatrixGradebookData,
   MatrixGradebookStudent,
 } from "@/app/actions/gradebook-actions";
+import { GradebookLegend } from "@/components/dashboard/gradebook/gradebook-legend";
+import { JournalPointsDisplay } from "@/components/dashboard/gradebook/journal-points-display";
+import {
+  isGradebookDrawerOpenable,
+  isPendingStatus,
+  resolveGradebookCellVisual,
+  type GradebookCellVisual,
+} from "@/components/dashboard/gradebook/progress-status-visuals";
 import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
 import { TestResultSheet } from "@/components/dashboard/teacher/TestResultSheet";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -31,11 +41,29 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { exportGradebookToExcel } from "@/lib/export-gradebook";
 import { initialsFromDisplayName } from "@/lib/utils/user-utils";
 
 function cellKey(studentId: string, columnId: string): string {
   return `${studentId}:${columnId}`;
+}
+
+function matrixCellAriaLabel(visual: GradebookCellVisual): string | undefined {
+  if (visual.kind === "status") {
+    if (visual.key === "pending") {
+      return "На проверке — открыть страницу проверки";
+    }
+    if (visual.key === "approved_pass") {
+      return "Зачёт без оценки — открыть";
+    }
+    return "На пересдаче — открыть";
+  }
+  if (visual.kind === "points") {
+    return `${visual.points} процентов`;
+  }
+  return undefined;
 }
 
 function columnTooltipText(col: MatrixGradebookColumn): string {
@@ -44,6 +72,9 @@ function columnTooltipText(col: MatrixGradebookColumn): string {
   }
   const teacherTitle =
     col.testTitleTeacher?.trim() || col.title?.trim() || "Тест";
+  if (col.testType === "training") {
+    return `${col.lessonTitle} (${teacherTitle}, тренировка)`;
+  }
   return `${col.lessonTitle} (${teacherTitle})`;
 }
 
@@ -66,6 +97,7 @@ function MatrixCell({
     studentName: string;
     studentAvatarUrl: string | null;
     testTitle: string;
+    lessonId: string;
   }) => void;
   onOpenAssignment: (payload: {
     studentId: string;
@@ -78,16 +110,19 @@ function MatrixCell({
   const points = cell?.points ?? null;
 
   const isPendingReview =
-    column.type === "test" && status === "pending" && Boolean(cell?.attemptId);
+    column.type === "test" &&
+    isPendingStatus(status) &&
+    Boolean(cell?.attemptId);
+
+  const hasOpenTarget =
+    (column.type === "test" &&
+      Boolean(cell?.attemptId || cell?.testId)) ||
+    (column.type === "assignment" && Boolean(cell?.blockId));
 
   const isClickable =
-    isPendingReview ||
-    (column.type === "test" &&
-      cell?.testId &&
-      (status === "completed" || status === "in_progress")) ||
-    (column.type === "assignment" &&
-      cell?.blockId &&
-      status !== "not_started");
+    Boolean(cell) &&
+    isGradebookDrawerOpenable(status, points) &&
+    hasOpenTarget;
 
   function handleClick() {
     if (!cell || !isClickable) return;
@@ -102,6 +137,7 @@ function MatrixCell({
         studentName,
         studentAvatarUrl,
         testTitle: column.lessonTitle,
+        lessonId: column.lessonId,
       });
       return;
     }
@@ -114,68 +150,16 @@ function MatrixCell({
     }
   }
 
-  if (status === "not_started" || !cell) {
-    return (
-      <span className="text-muted-foreground tabular-nums">—</span>
-    );
-  }
+  const visual = resolveGradebookCellVisual(status, points);
+  const inner = (
+    <JournalPointsDisplay points={points} status={status} />
+  );
 
-  if (status === "pending") {
+  if (!isClickable) {
     return (
-      <button
-        type="button"
-        onClick={handleClick}
-        className="inline-flex size-full min-h-8 items-center justify-center rounded-sm hover:bg-muted/60"
-        aria-label="На проверке — открыть страницу проверки"
-      >
-        <HourglassIcon
-          className="size-4 text-amber-500 dark:text-amber-400"
-          aria-hidden
-        />
-      </button>
-    );
-  }
-
-  if (status === "in_progress" && points == null) {
-    return (
-      <button
-        type="button"
-        onClick={handleClick}
-        className="inline-flex size-full min-h-8 items-center justify-center rounded-sm text-amber-600 hover:bg-muted/60 dark:text-amber-400"
-        aria-label="В процессе — открыть попытку"
-      >
-        <HourglassIcon className="size-4" aria-hidden />
-      </button>
-    );
-  }
-
-  if (points != null) {
-    const pass = points >= 50;
-    return (
-      <button
-        type="button"
-        onClick={handleClick}
-        className={cn(
-          "inline-flex size-full min-h-8 items-center justify-center rounded-sm font-medium tabular-nums hover:bg-muted/60",
-          pass
-            ? "text-emerald-600 dark:text-emerald-400"
-            : "text-red-600 dark:text-red-400",
-        )}
-      >
-        {points}
-      </button>
-    );
-  }
-
-  if (status === "rejected") {
-    return (
-      <button
-        type="button"
-        onClick={handleClick}
-        className="text-destructive inline-flex size-full min-h-8 items-center justify-center rounded-sm text-xs hover:bg-muted/60"
-      >
-        Откл.
-      </button>
+      <span className="inline-flex size-full min-h-8 cursor-default items-center justify-center">
+        {inner}
+      </span>
     );
   }
 
@@ -183,22 +167,26 @@ function MatrixCell({
     <button
       type="button"
       onClick={handleClick}
-      disabled={!isClickable}
-      className="text-muted-foreground inline-flex size-full min-h-8 items-center justify-center rounded-sm hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent"
+      aria-label={matrixCellAriaLabel(visual)}
+      className="inline-flex size-full min-h-8 cursor-pointer items-center justify-center rounded-sm hover:bg-muted/60"
     >
-      —
+      {inner}
     </button>
   );
 }
 
 export function MatrixGradebook({
   data,
+  cohortId,
+  cohortName,
   onStudentClick,
   nameColumnLabel = "Ученик",
   emptyColumnsText = "Нет опубликованных тестов или заданий по курсу этой группы (или не назначены уроки в «Управление контентом»).",
   emptyStudentsText = "В группе пока нет учеников — матрица появится после записи.",
 }: {
   data: MatrixGradebookData;
+  cohortId?: string;
+  cohortName?: string;
   onStudentClick?: (student: MatrixGradebookStudent) => void;
   nameColumnLabel?: string;
   emptyColumnsText?: string;
@@ -213,6 +201,7 @@ export function MatrixGradebook({
     studentName: string;
     studentAvatarUrl: string | null;
     testTitle: string;
+    lessonId: string;
   } | null>(null);
 
   const [selectedAssignment, setSelectedAssignment] = useState<{
@@ -220,119 +209,208 @@ export function MatrixGradebook({
     blockId: string;
     studentName: string;
   } | null>(null);
+  const [showTraining, setShowTraining] = useState(false);
+
+  const visibleColumns = useMemo(
+    () =>
+      columns.filter(
+        (col) => showTraining || col.testType !== "training",
+      ),
+    [columns, showTraining],
+  );
+
+  const hasTrainingColumns = columns.some(
+    (col) => col.testType === "training",
+  );
+
+  const rows = useMemo(
+    () =>
+      students.map((student) => ({
+        studentName: student.name,
+        studentEmail: student.email,
+        items: columns.map((col) => {
+          const cell = cells[cellKey(student.id, col.id)];
+          if (!cell) {
+            return { columnId: col.id, status: "not_started" };
+          }
+          const status =
+            cell.status === "pending" ? "pending_review" : cell.status;
+          return {
+            columnId: col.id,
+            status,
+            points: cell.points,
+          };
+        }),
+      })),
+    [students, columns, cells],
+  );
 
   if (columns.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm">{emptyColumnsText}</p>
+      <p className="text-muted-foreground px-6 py-4 text-sm">{emptyColumnsText}</p>
     );
   }
 
   if (students.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm">{emptyStudentsText}</p>
+      <p className="text-muted-foreground px-6 py-4 text-sm">{emptyStudentsText}</p>
     );
   }
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="overflow-x-auto rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="sticky left-0 z-20 min-w-[160px] border-r bg-background">
-                {nameColumnLabel}
-              </TableHead>
-              {columns.map((col) => (
-                <TableHead
-                  key={col.id}
-                  className="min-w-[100px] max-w-[100px] px-2 text-center"
-                >
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex max-w-[100px] cursor-default items-center justify-center text-xs font-medium">
-                        {col.type === "test" ? (
-                          <CheckSquare
-                            className="text-muted-foreground mr-1 inline-block size-3 shrink-0"
-                            aria-hidden
-                          />
-                        ) : (
-                          <FileText
-                            className="text-muted-foreground mr-1 inline-block size-3 shrink-0"
-                            aria-hidden
-                          />
-                        )}
-                        <span className="max-w-[100px] truncate inline-block align-middle">
-                          {col.lessonTitle}
-                        </span>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-left">
-                      {columnTooltipText(col)}
-                    </TooltipContent>
-                  </Tooltip>
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {students.map((student: MatrixGradebookStudent) => (
-              <TableRow key={student.id}>
-                <TableCell className="sticky left-0 z-10 border-r bg-background font-medium">
-                  <div className="flex max-w-[180px] items-center gap-2">
-                    <Avatar className="h-8 w-8 shrink-0">
-                      <AvatarImage
-                        src={student.avatarUrl ?? undefined}
-                        alt={student.name}
-                      />
-                      <AvatarFallback className="text-xs">
-                        {initialsFromDisplayName(student.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    {onStudentClick ? (
-                      <button
-                        type="button"
-                        className="truncate text-left hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                        title={student.name}
-                        onClick={() => onStudentClick(student)}
-                      >
-                        {student.name}
-                      </button>
-                    ) : (
-                      <span className="truncate" title={student.name}>
-                        {student.name}
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-                {columns.map((col) => {
-                  const key = cellKey(student.id, col.id);
-                  const cell = cells[key];
-                  return (
-                    <TableCell
+      <>
+        <div className="flex flex-wrap items-center justify-end gap-4 border-b bg-muted/10 px-6 py-3">
+          {hasTrainingColumns ? (
+            <>
+              <Label
+                htmlFor="gradebook-show-training"
+                className="text-muted-foreground font-normal"
+              >
+                Показывать тренировки
+              </Label>
+              <Switch
+                id="gradebook-show-training"
+                checked={showTraining}
+                onCheckedChange={setShowTraining}
+                aria-label="Показывать тренировочные тесты"
+              />
+            </>
+          ) : null}
+          <GradebookLegend />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              exportGradebookToExcel(cohortName || "Группы", columns, rows)
+            }
+          >
+            <Download className="mr-2 size-4" /> Экспорт
+          </Button>
+        </div>
+
+        {visibleColumns.length === 0 ? (
+          <p className="text-muted-foreground px-6 py-4 text-sm">
+            Сейчас тренировочные тесты скрыты. Включите «Показывать
+            тренировки», чтобы увидеть их в журнале.
+          </p>
+        ) : (
+          <div className="custom-scrollbar w-full overflow-x-auto">
+            <Table className="min-w-max">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="sticky left-0 z-20 min-w-[200px] border-r bg-card">
+                    {nameColumnLabel}
+                  </TableHead>
+                  {visibleColumns.map((col) => (
+                    <TableHead
                       key={col.id}
-                      className="p-1 text-center align-middle"
+                      className="min-w-[140px] max-w-[160px] px-2 text-center"
                     >
-                      <MatrixCell
-                        cell={cell}
-                        column={col}
-                        studentName={student.name}
-                        studentAvatarUrl={student.avatarUrl}
-                        onOpenTest={setSelectedTest}
-                        onOpenAssignment={setSelectedAssignment}
-                        onOpenGrading={(attemptId) => {
-                          router.push(
-                            `/dashboard/gradebook/attempts/${attemptId}/grade`,
-                          );
-                        }}
-                      />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex max-w-[130px] cursor-default items-center justify-center text-xs font-medium">
+                            {col.type === "assignment" ? (
+                              <FileText
+                                className="text-muted-foreground mr-1 inline-block size-3 shrink-0"
+                                aria-hidden
+                              />
+                            ) : col.testType === "training" ? (
+                              <Target
+                                className="text-muted-foreground mr-1 inline-block size-3 shrink-0"
+                                aria-hidden
+                              />
+                            ) : (
+                              <CheckSquare
+                                className="text-muted-foreground mr-1 inline-block size-3 shrink-0"
+                                aria-hidden
+                              />
+                            )}
+                            <span className="max-w-[130px] truncate inline-block align-middle">
+                              {col.lessonTitle}
+                            </span>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs text-left">
+                          {columnTooltipText(col)}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {students.map((student: MatrixGradebookStudent) => (
+                  <TableRow key={student.id}>
+                    <TableCell className="sticky left-0 z-10 min-w-[200px] border-r bg-card font-medium">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Avatar className="h-8 w-8 shrink-0">
+                          <AvatarImage
+                            src={student.avatarUrl ?? undefined}
+                            alt={student.name}
+                          />
+                          <AvatarFallback className="text-xs">
+                            {initialsFromDisplayName(student.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {onStudentClick ? (
+                          <button
+                            type="button"
+                            className="truncate text-left hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                            title={student.name}
+                            onClick={() => onStudentClick(student)}
+                          >
+                            {student.name}
+                          </button>
+                        ) : cohortId ? (
+                          <Link
+                            href={`/dashboard/cohorts/${cohortId}/student/${student.id}`}
+                            className="truncate text-left text-primary hover:underline"
+                            title={student.name}
+                          >
+                            {student.name}
+                          </Link>
+                        ) : (
+                          <span className="truncate" title={student.name}>
+                            {student.name}
+                          </span>
+                        )}
+                      </div>
                     </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+                    {visibleColumns.map((col) => {
+                      const key = cellKey(student.id, col.id);
+                      const cell = cells[key];
+                      return (
+                        <TableCell
+                          key={col.id}
+                          className="min-w-[140px] p-1 text-center align-middle"
+                        >
+                          <MatrixCell
+                            cell={cell}
+                            column={col}
+                            studentName={student.name}
+                            studentAvatarUrl={student.avatarUrl}
+                            onOpenTest={setSelectedTest}
+                            onOpenAssignment={setSelectedAssignment}
+                            onOpenGrading={(attemptId) => {
+                              const returnTo = cohortId
+                                ? `/dashboard/cohorts/${cohortId}?tab=journal`
+                                : null;
+                              const gradeUrl = returnTo
+                                ? `/dashboard/gradebook/attempts/${attemptId}/grade?returnTo=${encodeURIComponent(returnTo)}`
+                                : `/dashboard/gradebook/attempts/${attemptId}/grade`;
+                              router.push(gradeUrl);
+                            }}
+                          />
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
 
       <TestResultSheet
         isOpen={selectedTest != null}
@@ -344,6 +422,7 @@ export function MatrixGradebook({
         studentName={selectedTest?.studentName ?? ""}
         studentAvatarUrl={selectedTest?.studentAvatarUrl ?? null}
         testTitle={selectedTest?.testTitle ?? ""}
+        lessonId={selectedTest?.lessonId}
         isTeacher
       />
 
@@ -360,6 +439,7 @@ export function MatrixGradebook({
           isTeacher
         />
       ) : null}
+      </>
     </TooltipProvider>
   );
 }

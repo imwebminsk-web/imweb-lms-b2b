@@ -55,6 +55,8 @@ function getB2BColumns(
       cell: ({ row }) => (
         <CreatorCell
           creatorName={row.original.creatorName}
+          creatorEmail={row.original.creatorEmail}
+          creatorAvatarUrl={row.original.creatorAvatarUrl}
           isCurator={row.original.isCurator}
         />
       ),
@@ -79,9 +81,17 @@ function getB2BColumns(
       header: "Статус",
       cell: ({ row }) => {
         const status = row.original.status;
+        const isActive = status === "active";
         return (
-          <Badge variant={status === "active" ? "default" : "secondary"}>
-            {status === "active" ? "Активен" : "Черновик"}
+          <Badge
+            variant="outline"
+            className={
+              isActive
+                ? "border-emerald-500/40 bg-emerald-500/10 font-medium text-emerald-800 dark:text-emerald-200"
+                : "border-amber-500/40 bg-amber-500/10 font-medium text-amber-800 dark:text-amber-200"
+            }
+          >
+            {isActive ? "Активен" : "Черновик"}
           </Badge>
         );
       },
@@ -122,9 +132,9 @@ export function B2BCoursesTable({
   const rangeEnd = Math.min((pageIndex + 1) * pageSize, totalRows);
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-md border bg-card overflow-x-auto whitespace-nowrap">
-        <Table>
+    <>
+      <div className="custom-scrollbar w-full overflow-x-auto">
+        <Table className="min-w-max">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -173,7 +183,7 @@ export function B2BCoursesTable({
           </TableBody>
         </Table>
       </div>
-      <div className="flex items-center justify-between px-2 py-4">
+      <div className="flex items-center justify-between border-t px-6 py-4">
         <div className="text-sm text-muted-foreground">
           Строки {rangeStart}-{rangeEnd} из {totalRows}
         </div>
@@ -200,7 +210,6 @@ export function B2BCoursesTable({
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
               onClick={() => table.setPageIndex(0)}
               disabled={!table.getCanPreviousPage()}
             >
@@ -209,7 +218,6 @@ export function B2BCoursesTable({
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
               onClick={() => table.previousPage()}
               disabled={!table.getCanPreviousPage()}
             >
@@ -218,7 +226,6 @@ export function B2BCoursesTable({
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
               onClick={() => table.nextPage()}
               disabled={!table.getCanNextPage()}
             >
@@ -227,7 +234,6 @@ export function B2BCoursesTable({
             <Button
               variant="outline"
               size="icon"
-              className="h-8 w-8"
               onClick={() => table.setPageIndex(table.getPageCount() - 1)}
               disabled={!table.getCanNextPage()}
             >
@@ -236,6 +242,6 @@ export function B2BCoursesTable({
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

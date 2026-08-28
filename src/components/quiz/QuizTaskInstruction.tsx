@@ -4,6 +4,7 @@ import { memo } from "react";
 
 import { TaskMediaRenderer } from "@/components/quiz/TaskMediaRenderer";
 import { cn } from "@/lib/utils";
+import { normalizeRichTextHtml } from "@/lib/utils/rich-text-content";
 import type { TaskPresentation } from "@/lib/utils/task-content";
 
 export type QuizTaskInstructionProps = {
@@ -23,9 +24,11 @@ export const QuizTaskInstruction = memo(function QuizTaskInstruction({
   className,
   isReviewMode = false,
 }: QuizTaskInstructionProps) {
+  // Пустой TipTap (`<p></p>`) не считается формулировкой — иначе fallback
+  // («Развёрнутый ответ») подменяет реальный content.text.
+  const savedInstruction = normalizeRichTextHtml(task.instructionHtml);
   const instructionHtml =
-    task.instructionHtml.trim() ||
-    (fallbackTitle?.trim() ? fallbackTitle.trim() : "");
+    savedInstruction || (fallbackTitle?.trim() ? fallbackTitle.trim() : "");
   const hasInstruction = Boolean(instructionHtml);
   const hasExample = Boolean(task.exampleText);
 

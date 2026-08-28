@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { SendHorizonal, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
@@ -43,8 +42,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 import { initialsFromDisplayName } from "@/lib/utils/user-utils";
+import { mergeFetchedSupportMessages } from "@/components/dashboard/support/append-realtime-message";
+import { useSupportTicketRealtime } from "@/components/dashboard/support/use-support-ticket-realtime";
+import { useSupportUnread } from "@/components/providers/support-unread-provider";
 
 type TeacherSupportClientProps = {
   userId: string;
@@ -83,14 +84,16 @@ export function TeacherSupportClient({
   initialTickets,
   initialFilter,
 }: TeacherSupportClientProps) {
-  const router = useRouter();
+  const { refreshCount } = useSupportUnread();
   const [filter, setFilter] = useState<"open" | "closed">(initialFilter);
   const [tickets, setTickets] = useState(initialTickets);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(
     initialTickets[0]?.id ?? null,
   );
   const [messages, setMessages] = useState<SupportChatMessage[]>([]);
-  const [ticketStatus, setTicketStatus] = useState<string>("open");
+  const [ticketStatus, setTicketStatus] = useState<string>(
+    initialTickets[0]?.status ?? "open",
+  );
   const [draft, setDraft] = useState("");
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -99,10 +102,11 @@ export function TeacherSupportClient({
   const [isLoadingTickets, setIsLoadingTickets] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedTicket = tickets.find((t) => t.id === selectedTicketId) ?? null;
   const selectedHasUnreadTeacher = selectedTicket?.hasUnreadTeacher ?? false;
+  const ticketsRef = useRef(tickets);
+  ticketsRef.current = tickets;
 
   const loadTickets = useCallback(async (status: "open" | "closed") => {
     setIsLoadingTickets(true);
@@ -121,40 +125,14 @@ export function TeacherSupportClient({
     });
   }, []);
 
-  const loadMessages = useCallback(
-    async (ticketId: string, withLoading = false) => {
-      if (withLoading) {
-        setIsLoadingMessages(true);
-      }
-
-      const result = await getSupportMessages(ticketId);
-      if (!result.success) {
-        toast.error(result.error);
-        if (withLoading) {
-          setIsLoadingMessages(false);
-        }
-        return;
-      }
-
-      setMessages(result.messages);
-      setTicketStatus(result.ticketStatus);
-      if (withLoading) {
-        setIsLoadingMessages(false);
-      }
-    },
-    [],
-  );
-
-  const scheduleReload = useCallback(() => {
-    if (!selectedTicketId) return;
-    if (reloadTimerRef.current) {
-      clearTimeout(reloadTimerRef.current);
-    }
-    reloadTimerRef.current = setTimeout(() => {
-      void loadMessages(selectedTicketId, false);
-      void loadTickets(filter);
-    }, 100);
-  }, [filter, loadMessages, loadTickets, selectedTicketId]);
+  const handleTicketClosed = useCallback((ticketId: string) => {
+    setTicketStatus("closed");
+    setTickets((current) =>
+      current.map((ticket) =>
+        ticket.id === ticketId ? { ...ticket, status: "closed" } : ticket,
+      ),
+    );
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     const node = scrollRef.current;
@@ -173,39 +151,52 @@ export function TeacherSupportClient({
   useEffect(() => {
     if (!selectedTicketId) {
       setMessages([]);
+      setTicketStatus("open");
       return;
     }
-    void loadMessages(selectedTicketId, true);
-  }, [selectedTicketId, loadMessages]);
 
-  useEffect(() => {
-    if (!selectedTicketId) return;
+    const listed = ticketsRef.current.find((ticket) => ticket.id === selectedTicketId);
+    setTicketStatus(listed?.status ?? "open");
 
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`teacher-support-messages:${selectedTicketId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "support_messages",
-          filter: `ticket_id=eq.${selectedTicketId}`,
-        },
-        () => {
-          scheduleReload();
-        },
-      )
-      .subscribe();
+    let cancelled = false;
+    setIsLoadingMessages(true);
+
+    void (async () => {
+      const result = await getSupportMessages(selectedTicketId);
+      if (cancelled) {
+        return;
+      }
+      if (!result.success) {
+        toast.error(result.error);
+        setIsLoadingMessages(false);
+        return;
+      }
+
+      setTicketStatus((prev) =>
+        prev === "closed" || result.ticketStatus === "closed"
+          ? "closed"
+          : result.ticketStatus,
+      );
+      setMessages((prev) =>
+        mergeFetchedSupportMessages(
+          result.messages,
+          prev.filter((message) => message.ticketId === selectedTicketId),
+        ),
+      );
+      setIsLoadingMessages(false);
+    })();
 
     return () => {
-      if (reloadTimerRef.current) {
-        clearTimeout(reloadTimerRef.current);
-        reloadTimerRef.current = null;
-      }
-      void supabase.removeChannel(channel);
+      cancelled = true;
     };
-  }, [selectedTicketId, scheduleReload]);
+  }, [selectedTicketId]);
+
+  useSupportTicketRealtime({
+    ticketId: selectedTicketId,
+    userId,
+    onMessage: setMessages,
+    onClosed: handleTicketClosed,
+  });
 
   useEffect(() => {
     if (!selectedTicketId || !selectedHasUnreadTeacher) {
@@ -226,13 +217,13 @@ export function TeacherSupportClient({
             : ticket,
         ),
       );
-      router.refresh();
+      void refreshCount();
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [selectedTicketId, selectedHasUnreadTeacher, router]);
+  }, [selectedTicketId, selectedHasUnreadTeacher, refreshCount]);
 
   function handleSend(event: React.FormEvent) {
     event.preventDefault();
@@ -247,6 +238,11 @@ export function TeacherSupportClient({
         return;
       }
       setDraft("");
+      setMessages((prev) =>
+        prev.some((message) => message.id === result.message.id)
+          ? prev
+          : [...prev, result.message],
+      );
       setTickets((current) =>
         current.map((ticket) =>
           ticket.id === selectedTicketId
@@ -254,8 +250,6 @@ export function TeacherSupportClient({
             : ticket,
         ),
       );
-      router.refresh();
-      scheduleReload();
     });
   }
 
@@ -274,7 +268,7 @@ export function TeacherSupportClient({
         setSelectedTicketId(null);
       }
       await loadTickets(filter);
-      router.refresh();
+      void refreshCount();
     });
   }
 
@@ -290,7 +284,7 @@ export function TeacherSupportClient({
       toast.success("Обращение удалено");
       setSelectedTicketId(null);
       await loadTickets(filter);
-      router.refresh();
+      void refreshCount();
     });
   }
 
@@ -405,7 +399,7 @@ export function TeacherSupportClient({
                         {selectedTicket.subject}
                       </CardTitle>
                       {ticketStatus === "closed" ? (
-                        <Badge variant="secondary">Закрыто</Badge>
+                        <Badge variant="secondary">Тикет закрыт</Badge>
                       ) : (
                         <Badge
                           variant="outline"
@@ -446,7 +440,6 @@ export function TeacherSupportClient({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="size-8"
                           disabled={isClosing || isPending || isDeleting}
                           aria-label="Удалить обращение"
                         >
@@ -559,7 +552,7 @@ export function TeacherSupportClient({
                       onChange={(e) => setDraft(e.target.value)}
                       placeholder="Напишите ответ…"
                       maxLength={2000}
-                      disabled={isPending || isLoadingMessages}
+                      disabled={isPending || isLoadingMessages || !canCompose}
                       autoComplete="off"
                     />
                     <Button
@@ -575,7 +568,7 @@ export function TeacherSupportClient({
                   </form>
                 ) : (
                   <p className="text-muted-foreground shrink-0 border-t py-4 text-center text-sm">
-                    Обращение закрыто. Ответы недоступны.
+                    Тикет закрыт. Ответы недоступны.
                   </p>
                 )}
               </CardContent>

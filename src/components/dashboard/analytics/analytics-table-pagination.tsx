@@ -55,7 +55,6 @@ export function AnalyticsTablePagination<TData>({
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
             onClick={() => table.setPageIndex(0)}
             disabled={!table.getCanPreviousPage()}
           >
@@ -64,7 +63,6 @@ export function AnalyticsTablePagination<TData>({
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
           >
@@ -73,7 +71,6 @@ export function AnalyticsTablePagination<TData>({
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
           >
@@ -82,7 +79,6 @@ export function AnalyticsTablePagination<TData>({
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8"
             onClick={() => table.setPageIndex(table.getPageCount() - 1)}
             disabled={!table.getCanNextPage()}
           >

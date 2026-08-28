@@ -207,8 +207,8 @@ export function CourseLanding({
                 <Button
                   type="button"
                   variant="secondary"
-                  size="icon-xs"
-                  className="absolute right-1 top-1 size-7 opacity-90 shadow-sm"
+                  size="icon-sm"
+                  className="absolute right-1 top-1 shadow-sm"
                   disabled={isPending || galleryBusy}
                   aria-label="Убрать из галереи"
                   onClick={() =>

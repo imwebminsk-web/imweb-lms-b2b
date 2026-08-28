@@ -84,7 +84,9 @@ export async function getB2BUsers() {
 
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
-    .select("id, full_name, role, profile_secrets ( email )")
+    // is_active ещё нет в generated Database types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .select("id, full_name, role, is_active, profile_secrets ( email )" as any)
     .order("full_name", { ascending: true, nullsFirst: false });
 
   if (profilesError) {

@@ -1,7 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 
 import { getStudentSubmission } from "@/app/actions/assignment-actions";
-import { getLessonCompletionStatus } from "@/app/actions/lesson-completion-actions";
+import {
+  getLessonCompletionGate,
+  getLessonCompletionStatus,
+} from "@/app/actions/lesson-completion-actions";
 import type { PlayerBlockRow } from "@/components/learn/lesson-block-renderer";
 import { LessonCompletionButton } from "@/components/learn/lesson-completion-button";
 import { PlayerLayout } from "@/components/learn/player-layout";
@@ -48,12 +51,12 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
 
   const courseResult = await fetchPublishedCourseForLearn(decodedSlug, user.id);
   if (!courseResult.ok) {
-    if (courseResult.reason === "not_enrolled") {
-      redirect(
-        `/learn/not-enrolled?slug=${encodeURIComponent(decodedSlug)}`,
-      );
+    if (courseResult.reason === "not_found") {
+      notFound();
     }
-    notFound();
+    redirect(
+      `/learn/not-enrolled?slug=${encodeURIComponent(decodedSlug)}&reason=${encodeURIComponent(courseResult.reason)}`,
+    );
   }
 
   const { course } = courseResult;
@@ -106,6 +109,10 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
   );
 
   const isLessonCompleted = await getLessonCompletionStatus(lessonRow.id);
+  const completionGate = await getLessonCompletionGate(lessonRow.id, user.id);
+  const initialGate = isLessonCompleted
+    ? { state: "completed" as const }
+    : completionGate;
   const learnPathname = `/learn/${slugParam}/${lessonId}`;
 
   const publishedLessonIds = collectPublishedLessonIds(modules ?? []);
@@ -148,7 +155,7 @@ export default async function LearnLessonPlayerPage({ params }: PageProps) {
       lessonCompletion={
         <LessonCompletionButton
           lessonId={lessonRow.id}
-          initialIsCompleted={isLessonCompleted}
+          initialGate={initialGate}
           pathname={learnPathname}
         />
       }

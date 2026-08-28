@@ -57,20 +57,13 @@ export default async function DashboardCoursesPage() {
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col">
         <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-8 px-4 py-6 lg:px-6">
-          <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Мои курсы</h1>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {subtitle}
-              </p>
-            </div>
-            <div className="w-full shrink-0 sm:w-auto">
-              <CreateCourseButton />
-            </div>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Мои курсы</h1>
+            <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>
           </div>
 
-          <Tabs defaultValue={defaultTab}>
-            <TabsList>
+          <Tabs defaultValue={defaultTab} className="w-full">
+            <TabsList variant="line" className="mb-6 w-full justify-start">
               {showCorporateTab ? (
                 <TabsTrigger value="b2b">Корпоративные (B2B)</TabsTrigger>
               ) : null}
@@ -82,21 +75,36 @@ export default async function DashboardCoursesPage() {
               ) : null}
             </TabsList>
             {showCorporateTab ? (
-              <TabsContent value="b2b" className="mt-4">
-                <B2BCoursesTable data={b2bData || []} currentUser={currentUser} />
+              <TabsContent value="b2b" className="mt-0">
+                <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+                  <div className="flex items-center justify-end border-b px-6 py-4">
+                    <CreateCourseButton />
+                  </div>
+                  <B2BCoursesTable data={b2bData || []} currentUser={currentUser} />
+                </section>
               </TabsContent>
             ) : null}
             {showOpenTab ? (
-              <TabsContent value="b2c" className="mt-4">
-                <B2CCoursesTable data={b2cData || []} currentUser={currentUser} />
+              <TabsContent value="b2c" className="mt-0">
+                <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+                  <div className="flex items-center justify-end border-b px-6 py-4">
+                    <CreateCourseButton />
+                  </div>
+                  <B2CCoursesTable data={b2cData || []} currentUser={currentUser} />
+                </section>
               </TabsContent>
             ) : null}
             {isAdmin ? (
-              <TabsContent value="archive" className="mt-4">
-                <ArchivedCoursesTable
-                  data={archivedData || []}
-                  currentUser={currentUser}
-                />
+              <TabsContent value="archive" className="mt-0">
+                <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+                  <div className="flex items-center justify-end border-b px-6 py-4">
+                    <CreateCourseButton />
+                  </div>
+                  <ArchivedCoursesTable
+                    data={archivedData || []}
+                    currentUser={currentUser}
+                  />
+                </section>
               </TabsContent>
             ) : null}
           </Tabs>

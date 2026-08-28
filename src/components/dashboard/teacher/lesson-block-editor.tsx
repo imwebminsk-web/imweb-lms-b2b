@@ -416,7 +416,7 @@ export function LessonBlockEditor({
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-8 lg:px-6">
       <div className="flex flex-col gap-2">
-        <Button variant="ghost" className="w-fit px-0" asChild>
+        <Button variant="link" size="sm" asChild>
           <Link href={courseHref}>← К курсу: {courseTitle}</Link>
         </Button>
         <h1 className="text-2xl font-semibold tracking-tight">
@@ -484,7 +484,7 @@ export function LessonBlockEditor({
               Добавить блок
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          <DropdownMenuContent align="end">
             {(
               [
                 "text",
@@ -566,9 +566,8 @@ export function LessonBlockEditor({
                   </Button>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="destructive"
                     size="icon-xs"
-                    className="text-destructive"
                     title="Удалить блок"
                     aria-label="Удалить блок"
                     onClick={() => setDeleteBlockId(block.id)}
@@ -718,9 +717,9 @@ export function LessonBlockEditor({
                         <p className="text-sm font-medium">{testTitle}</p>
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
-                          className="w-fit mt-2 text-destructive"
+                          className="mt-2 w-fit"
                           onClick={() => setDetachQuizBlockId(block.id)}
                         >
                           Убрать тест

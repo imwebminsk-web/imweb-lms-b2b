@@ -115,7 +115,7 @@ function AddModuleForm({ courseId }: { courseId: string }) {
               disabled={isPending}
             />
           </div>
-          <Button type="submit" disabled={isPending} className="shrink-0">
+          <Button type="submit" disabled={isPending}>
             {isPending ? "Создание…" : "Добавить модуль"}
           </Button>
         </Form>
@@ -170,7 +170,7 @@ function AddLessonForm({
             disabled={isPending}
           />
         </div>
-        <Button type="submit" size="sm" disabled={isPending} className="w-fit">
+        <Button type="submit" size="sm" disabled={isPending}>
           {isPending ? "Добавление…" : "Добавить урок"}
         </Button>
         {state.error ? (
@@ -315,7 +315,6 @@ export function CurriculumTab({
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
                     disabled={isEditPending}
                     onClick={() => handleSaveModuleTitle(module.id)}
                   >
@@ -325,7 +324,6 @@ export function CurriculumTab({
                     type="button"
                     variant="ghost"
                     size="icon-xs"
-                    className="text-muted-foreground hover:text-foreground"
                     disabled={isEditPending}
                     onClick={() => setEditingModuleId(null)}
                   >
@@ -370,7 +368,7 @@ export function CurriculumTab({
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      className="text-muted-foreground hover:text-foreground shrink-0"
+                      className="shrink-0"
                       title="Редактировать название"
                       aria-label="Редактировать название"
                       onClick={() => {
@@ -384,7 +382,7 @@ export function CurriculumTab({
                       type="button"
                       variant="ghost"
                       size="icon-xs"
-                      className="text-muted-foreground hover:text-destructive shrink-0"
+                      className="shrink-0"
                       title="Удалить модуль"
                       aria-label="Удалить модуль"
                       onClick={() => setDeleteModuleId(module.id)}
@@ -492,7 +490,7 @@ export function CurriculumTab({
                           type="button"
                           variant="ghost"
                           size="icon-xs"
-                          className="text-muted-foreground hover:text-destructive shrink-0"
+                          className="shrink-0"
                           title="Удалить урок"
                           aria-label="Удалить урок"
                           onClick={() => setDeleteLessonId(lesson.id)}

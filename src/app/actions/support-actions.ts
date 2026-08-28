@@ -172,7 +172,7 @@ async function requireAuthenticatedUser() {
 }
 
 function isStaffRole(role: ProfileRole | undefined): boolean {
-  return role === "teacher" || role === "admin" || role === "head_teacher";
+  return role === "admin" || role === "head_teacher";
 }
 
 async function getProfileRole(
@@ -422,7 +422,6 @@ export async function markSupportTicketAsRead(
   }
 
   revalidatePath("/dashboard/support");
-  revalidatePath("/", "layout");
   return { success: true };
 }
 
@@ -547,6 +546,30 @@ export async function createSupportTicket(
 
   if (messageError) {
     console.error("[createSupportTicket] message", messageError.message);
+    const adminClient = createAdminClient();
+    if (adminClient) {
+      const { error: rollbackError } = await adminClient
+        .from("support_tickets")
+        .delete()
+        .eq("id", ticket.id);
+      if (rollbackError) {
+        console.error(
+          "[createSupportTicket] rollback",
+          rollbackError.message,
+        );
+      }
+    } else {
+      const { error: rollbackError } = await supabase
+        .from("support_tickets")
+        .delete()
+        .eq("id", ticket.id);
+      if (rollbackError) {
+        console.error(
+          "[createSupportTicket] rollback",
+          rollbackError.message,
+        );
+      }
+    }
     return { success: false, error: "Не удалось отправить первое сообщение." };
   }
 
@@ -698,6 +721,5 @@ export async function sendSupportMessage(
   const message = mapMessageRow(data as RawMessageRow, profiles.get(user.id));
 
   revalidatePath("/dashboard/support");
-  revalidatePath("/", "layout");
   return { success: true, message };
 }

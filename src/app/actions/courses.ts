@@ -17,6 +17,8 @@ export type CourseB2B = {
   status: "active" | "draft";
   teacherId: string;
   creatorName: string | null;
+  creatorEmail: string | null;
+  creatorAvatarUrl: string | null;
   creatorRole: Role | null;
   isCurator: boolean;
   tags: string[];
@@ -30,6 +32,8 @@ export type CourseB2C = {
   status: "published" | "draft";
   teacherId: string;
   creatorName: string | null;
+  creatorEmail: string | null;
+  creatorAvatarUrl: string | null;
   creatorRole: Role | null;
   isCurator: boolean;
   tags: string[];
@@ -40,6 +44,8 @@ export type CourseArchived = {
   title: string;
   teacherId: string;
   creatorName: string | null;
+  creatorEmail: string | null;
+  creatorAvatarUrl: string | null;
   creatorRole: Role | null;
   isCurator: boolean;
   tags: string[];
@@ -47,7 +53,7 @@ export type CourseArchived = {
 
 const COURSE_ACCESS_SELECT = `
   teacher_id,
-  creator:profiles!courses_teacher_id_fkey(full_name, role),
+  creator:profiles!courses_teacher_id_fkey(full_name, role, avatar_url, profile_secrets(email)),
   curators:course_curators(user_id),
   taxonomies:course_taxonomies(taxonomies(label)),
   course_tags(tags(name))
@@ -61,10 +67,28 @@ function unwrapRel<T>(rel: T | T[] | null | undefined): T | null {
 function mapAccessFields(course: Record<string, unknown>, currentUserId: string) {
   const creator = unwrapRel(
     course.creator as
-      | { full_name: string | null; role: Role | null }
-      | { full_name: string | null; role: Role | null }[]
+      | {
+          full_name: string | null;
+          role: Role | null;
+          avatar_url: string | null;
+          profile_secrets:
+            | { email: string | null }
+            | { email: string | null }[]
+            | null;
+        }
+      | {
+          full_name: string | null;
+          role: Role | null;
+          avatar_url: string | null;
+          profile_secrets:
+            | { email: string | null }
+            | { email: string | null }[]
+            | null;
+        }[]
       | null,
   );
+
+  const emailSecret = unwrapRel(creator?.profile_secrets ?? null);
 
   const curators = (course.curators as Array<{ user_id: string }> | null) ?? [];
 
@@ -86,6 +110,8 @@ function mapAccessFields(course: Record<string, unknown>, currentUserId: string)
   return {
     teacherId: String(course.teacher_id ?? ""),
     creatorName: creator?.full_name ?? null,
+    creatorEmail: emailSecret?.email ?? null,
+    creatorAvatarUrl: creator?.avatar_url ?? null,
     creatorRole: creator?.role ?? null,
     isCurator: curators.some((c) => c.user_id === currentUserId),
     tags: Array.from(new Set(tagNames.length > 0 ? tagNames : taxonomyLabels)),

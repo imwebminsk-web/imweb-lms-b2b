@@ -39,7 +39,9 @@ export default async function DashboardStudentsPage() {
             </p>
           </div>
 
-          <StudentsTable students={studentsRes.students} />
+          <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+            <StudentsTable students={studentsRes.students} />
+          </section>
         </main>
       </div>
     </>

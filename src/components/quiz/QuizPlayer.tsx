@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import {
   completeAttempt,
   getAttemptReviewAnswers,
@@ -42,8 +43,6 @@ import {
   useTransition,
   type ReactNode,
 } from "react";
-import { toast } from "sonner";
-
 import {
   ImageLabelingQuestion,
   type ImageLabelingWord,
@@ -154,7 +153,7 @@ export type QuizPlayerProps = {
   questions: SafeTestQuestion[];
   /** Лимит времени в минутах; 0 — без ограничения. */
   timeLimitMinutes?: number;
-  /** Песочница преподавателя: отключает античит, попытка в БД с is_training_mode. */
+  /** Песочница преподавателя: попытка в БД с is_training_mode. */
   isSandbox?: boolean;
   /** Полноэкранный режим на странице урока — скрывает навигацию и прочие блоки. */
   focusedMode?: boolean;
@@ -176,6 +175,7 @@ export function QuizPlayer({
   initialSubmittedIds = [],
 }: QuizPlayerProps) {
   const { t } = useLanguage();
+  const router = useRouter();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [draftsByQuestionId, setDraftsByQuestionId] = useState<
     Record<string, QuestionDraft>
@@ -213,11 +213,7 @@ export function QuizPlayer({
     useState<Map<string, Record<string, Record<string, string>>> | null>(null);
   const [reviewOrderingAssignmentsByQuestionId, setReviewOrderingAssignmentsByQuestionId] =
     useState<Map<string, Record<string, string[]>> | null>(null);
-  const [cheatWarnings, setCheatWarnings] = useState(0);
   const [finishDialogOpen, setFinishDialogOpen] = useState(false);
-
-  const cheatWarningsRef = useRef(0);
-  const handleSubmitQuizRef = useRef<() => void>(() => {});
 
   const applyReviewMaps = useCallback((built: ReviewMaps) => {
     setReviewAnswersByQuestionId(built.reviewAnswersByQuestionId);
@@ -400,7 +396,10 @@ export function QuizPlayer({
     setFinishDialogOpen(true);
   }, [allTasksAnswered, finished, handleSubmitQuiz, isPending]);
 
-  handleSubmitQuizRef.current = handleSubmitQuiz;
+  const handleReturnToLesson = useCallback(() => {
+    onExit?.();
+    router.refresh();
+  }, [onExit, router]);
 
   useEffect(() => {
     if (!focusedMode) return;
@@ -429,7 +428,7 @@ export function QuizPlayer({
               variant="outline"
               size="sm"
               className="shrink-0"
-              onClick={() => onExit?.()}
+              onClick={handleReturnToLesson}
             >
               {t("lesson_view.returnToLesson")}
             </Button>
@@ -440,55 +439,8 @@ export function QuizPlayer({
         </div>
       );
     },
-    [focusedMode, onExit, t, testTitle],
+    [focusedMode, handleReturnToLesson, t, testTitle],
   );
-
-  useEffect(() => {
-    if (finished || isSandbox) return;
-
-    const preventClipboardAndContextMenu = (event: Event) => {
-      event.preventDefault();
-    };
-
-    window.addEventListener("contextmenu", preventClipboardAndContextMenu);
-    window.addEventListener("copy", preventClipboardAndContextMenu);
-    window.addEventListener("paste", preventClipboardAndContextMenu);
-
-    return () => {
-      window.removeEventListener("contextmenu", preventClipboardAndContextMenu);
-      window.removeEventListener("copy", preventClipboardAndContextMenu);
-      window.removeEventListener("paste", preventClipboardAndContextMenu);
-    };
-  }, [finished, isSandbox]);
-
-  useEffect(() => {
-    if (finished || isSandbox) return;
-
-    function handleTabHidden() {
-      if (!document.hidden) return;
-      if (finishingRef.current) return;
-
-      const next = cheatWarningsRef.current + 1;
-      cheatWarningsRef.current = next;
-      setCheatWarnings(next);
-
-      if (next === 1) {
-        toast.warning(t("quiz.cheatWarningFirst"), { duration: 8000 });
-        return;
-      }
-
-      if (next >= 2) {
-        toast.error(t("quiz.cheatAutoSubmit"), { duration: 10000 });
-        handleSubmitQuizRef.current();
-      }
-    }
-
-    document.addEventListener("visibilitychange", handleTabHidden);
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleTabHidden);
-    };
-  }, [finished, isSandbox, t]);
 
   function goToTask(index: number) {
     if (index < 0 || index >= total || index === currentIndex) return;
@@ -575,20 +527,23 @@ export function QuizPlayer({
         reviewOrderingAssignmentsByQuestionId={
           reviewOrderingAssignmentsByQuestionId
         }
-      />,
+      >
+        {onExit ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={handleReturnToLesson}
+          >
+            {t("lesson_view.returnToLesson")}
+          </Button>
+        ) : null}
+      </QuizResultView>,
     );
   }
 
   return wrapFocusedShell(
-    <div
-      className={cn(
-        "flex flex-col gap-8",
-        !isSandbox && "select-none",
-        "[&_input]:cursor-text [&_input]:select-text",
-        "[&_textarea]:cursor-text [&_textarea]:select-text",
-      )}
-      data-cheat-warnings={cheatWarnings > 0 ? cheatWarnings : undefined}
-    >
+    <div className="flex flex-col gap-8">
       {isSandbox ? (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
           Режим песочницы — реальная попытка в базе данных. При повторном открытии

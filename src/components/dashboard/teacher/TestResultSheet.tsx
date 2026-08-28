@@ -11,6 +11,7 @@ import {
   overrideTestAttemptGrade,
   type GradebookBestAttemptDetails,
 } from "@/app/actions/gradebook-actions";
+import { SendToRetakeDialog } from "@/components/dashboard/teacher/send-to-retake-dialog";
 import { QuizResultView } from "@/components/quiz/QuizResultView";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,8 @@ type TestResultSheetProps = {
   studentName: string;
   studentAvatarUrl?: string | null;
   testTitle: string;
+  /** Урок из колонки журнала — чтобы сбросить completion только этого урока. */
+  lessonId?: string;
   /** Показать блок ручной корректировки балла (только для преподавателя). */
   isTeacher?: boolean;
 };
@@ -52,6 +55,7 @@ export function TestResultSheet({
   studentName,
   studentAvatarUrl = null,
   testTitle,
+  lessonId,
   isTeacher = false,
 }: TestResultSheetProps) {
   const router = useRouter();
@@ -137,6 +141,28 @@ export function TestResultSheet({
 
   const displayTitle = details?.testTitle?.trim() || testTitle;
 
+  const retakeDialog =
+    isTeacher && details?.attemptId ? (
+      <section className="border-destructive/30 space-y-3 rounded-xl border p-4">
+        <h3 className="text-sm font-semibold">Пересдача</h3>
+        <p className="text-muted-foreground text-sm">
+          Сбросить попытку и отметку о прохождении урока, чтобы ученик прошёл
+          тест заново.
+        </p>
+        <SendToRetakeDialog
+          attemptId={details.attemptId}
+          testId={testId}
+          studentId={studentId}
+          lessonId={lessonId}
+          disabled={isPending}
+          onSuccess={() => {
+            router.refresh();
+            onOpenChange(false);
+          }}
+        />
+      </section>
+    ) : null;
+
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent
@@ -208,6 +234,12 @@ export function TestResultSheet({
             </section>
           ) : null}
 
+          {details?.attemptId &&
+          details.resultSummary?.requiresManualReview &&
+          isTeacher
+            ? retakeDialog
+            : null}
+
           {details?.attemptId && details.resultSummary && reviewMaps != null ? (
             <>
               {details.gradingVisuals ? (
@@ -253,6 +285,10 @@ export function TestResultSheet({
                   </div>
                 </section>
               ) : null}
+
+              {isTeacher && !details.resultSummary.requiresManualReview
+                ? retakeDialog
+                : null}
 
               <QuizResultView
                 showTestMeta

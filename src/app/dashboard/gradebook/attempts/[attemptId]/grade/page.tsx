@@ -15,6 +15,7 @@ import { verifyAccess } from "@/lib/auth/rbac";
 
 type PageProps = {
   params: Promise<{ attemptId: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
 };
 
 export const metadata: Metadata = {
@@ -22,8 +23,9 @@ export const metadata: Metadata = {
   description: "Ручная проверка развёрнутых ответов ученика",
 };
 
-export default async function AttemptGradePage({ params }: PageProps) {
+export default async function AttemptGradePage({ params, searchParams }: PageProps) {
   const { attemptId } = await params;
+  const { returnTo } = await searchParams;
   await verifyAccess(["admin", "teacher", "head_teacher"]);
 
   const result = await getAttemptGradingDetails(attemptId);
@@ -43,7 +45,10 @@ export default async function AttemptGradePage({ params }: PageProps) {
 
   return (
     <div className="min-w-0">
-      <TeacherAttemptGradingView data={result.data} />
+      <TeacherAttemptGradingView
+        data={result.data}
+        returnTo={returnTo?.trim() || null}
+      />
     </div>
   );
 }

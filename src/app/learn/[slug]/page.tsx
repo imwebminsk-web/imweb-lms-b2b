@@ -37,12 +37,12 @@ export default async function LearnCourseEntryPage({ params }: PageProps) {
 
   const courseResult = await fetchPublishedCourseForLearn(decodedSlug, user.id);
   if (!courseResult.ok) {
-    if (courseResult.reason === "not_enrolled") {
-      redirect(
-        `/learn/not-enrolled?slug=${encodeURIComponent(decodedSlug)}`,
-      );
+    if (courseResult.reason === "not_found") {
+      notFound();
     }
-    notFound();
+    redirect(
+      `/learn/not-enrolled?slug=${encodeURIComponent(decodedSlug)}&reason=${encodeURIComponent(courseResult.reason)}`,
+    );
   }
 
   const { course, cohortId, teacherId } = courseResult;

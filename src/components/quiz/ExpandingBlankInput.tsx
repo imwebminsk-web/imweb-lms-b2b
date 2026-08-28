@@ -22,6 +22,8 @@ export type ExpandingBlankInputProps = {
   className?: string;
   spellCheck?: boolean;
   minWidthCh?: number;
+  /** Block-level essay (`text_input`); inline blank when false. */
+  isLongAnswer?: boolean;
 };
 
 function resizeTextarea(el: HTMLTextAreaElement) {
@@ -44,6 +46,7 @@ export function ExpandingBlankInput({
   className,
   spellCheck,
   minWidthCh = DEFAULT_MIN_WIDTH_CH,
+  isLongAnswer = false,
 }: ExpandingBlankInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorText =
@@ -62,6 +65,42 @@ export function ExpandingBlankInput({
     const target = event.currentTarget;
     resizeTextarea(target);
     onChange(target.value);
+  }
+
+  const textareaClassName = cn(
+    "border-input bg-background text-foreground min-w-0 max-w-full resize-none overflow-hidden rounded-md border px-2 py-1 text-sm leading-normal whitespace-pre-wrap shadow-xs",
+    "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
+    isLongAnswer
+      ? cn(
+          "block h-auto w-full text-left",
+          readOnly ? "bg-muted/60 min-h-10 cursor-default" : "min-h-20",
+        )
+      : cn(
+          "col-start-1 row-start-1 min-h-9 w-full text-center",
+          readOnly && "bg-muted/60 min-h-[120px] cursor-default",
+        ),
+    className,
+  );
+
+  if (isLongAnswer) {
+    return (
+      <span className="my-1 block w-full">
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={value}
+          onInput={handleInput}
+          onChange={handleInput}
+          disabled={disabled}
+          readOnly={readOnly}
+          placeholder={placeholder}
+          aria-label={ariaLabel ?? `Поле ответа ${blankId}`}
+          autoComplete="off"
+          spellCheck={spellCheck}
+          className={textareaClassName}
+        />
+      </span>
+    );
   }
 
   return (
@@ -87,12 +126,7 @@ export function ExpandingBlankInput({
         aria-label={ariaLabel ?? `Поле ответа ${blankId}`}
         autoComplete="off"
         spellCheck={spellCheck}
-        className={cn(
-          "border-input bg-background text-foreground col-start-1 row-start-1 min-h-9 w-full min-w-0 max-w-full resize-none overflow-hidden rounded-md border px-2 py-1 text-center text-sm leading-normal whitespace-pre-wrap shadow-xs",
-          "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
-          readOnly && "bg-muted/60 min-h-[120px] cursor-default",
-          className,
-        )}
+        className={textareaClassName}
       />
     </span>
   );

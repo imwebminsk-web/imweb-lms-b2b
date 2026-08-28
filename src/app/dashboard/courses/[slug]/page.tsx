@@ -95,7 +95,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
   if (!courseRow) {
     return (
       <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
-        <Button variant="ghost" className="w-fit px-0" asChild>
+        <Button variant="link" size="sm" asChild>
           <Link href="/dashboard/courses">← Назад</Link>
         </Button>
         <div
@@ -128,7 +128,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
   if (accessError) {
     return (
       <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
-        <Button variant="ghost" className="w-fit px-0" asChild>
+        <Button variant="link" size="sm" asChild>
           <Link href="/dashboard/courses">← Назад</Link>
         </Button>
         <div
@@ -236,7 +236,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-8">
-      <Button variant="ghost" className="w-fit px-0" asChild>
+      <Button variant="link" size="sm" asChild>
         <Link href="/dashboard/courses">← Назад</Link>
       </Button>
 

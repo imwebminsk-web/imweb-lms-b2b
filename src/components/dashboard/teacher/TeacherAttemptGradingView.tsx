@@ -9,8 +9,11 @@ import { toast } from "sonner";
 import type { AttemptGradingDetails } from "@/app/actions/grading-actions";
 import { submitManualGrades } from "@/app/actions/grading-actions";
 import type { ManualGradingTarget } from "@/app/actions/gradebook-actions";
+import { SendToRetakeDialog } from "@/components/dashboard/teacher/send-to-retake-dialog";
 import { QuizResultView } from "@/components/quiz/QuizResultView";
+import { QuizTaskInstruction } from "@/components/quiz/QuizTaskInstruction";
 import { GroupedFillBlanksTaskQuestion } from "@/components/quiz/GroupedFillBlanksTaskQuestion";
+import { parseTaskPresentation } from "@/lib/utils/task-content";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,14 +31,36 @@ import type { Json } from "@/types/database.types";
 
 type TeacherAttemptGradingViewProps = {
   data: AttemptGradingDetails;
+  returnTo?: string | null;
 };
 
-function initGrades(targets: ManualGradingTarget[]): Record<string, number> {
-  const out: Record<string, number> = {};
+function resolvePostGradeRedirectUrl(
+  returnTo: string | null | undefined,
+  cohortId: string | null,
+): string {
+  if (returnTo?.startsWith("/dashboard/")) {
+    return returnTo;
+  }
+  if (cohortId) {
+    return `/dashboard/cohorts/${cohortId}?tab=journal`;
+  }
+  return "/dashboard/cohorts";
+}
+
+function initGrades(targets: ManualGradingTarget[]): Record<string, string> {
+  const out: Record<string, string> = {};
   for (const t of targets) {
-    out[t.itemId] = 0;
+    out[t.itemId] = "";
   }
   return out;
+}
+
+/** Подпись, если в `content.text` нет формулировки задания. */
+function questionInstructionFallback(q: { type: string | null }): string {
+  if (q.type === "text_input") {
+    return "Развёрнутый ответ";
+  }
+  return "Вопрос";
 }
 
 function questionTypeLabel(type: string): string {
@@ -56,11 +81,14 @@ function questionTypeLabel(type: string): string {
   return labels[type] ?? type;
 }
 
-export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewProps) {
+export function TeacherAttemptGradingView({
+  data,
+  returnTo = null,
+}: TeacherAttemptGradingViewProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [gradesSaved, setGradesSaved] = useState(false);
-  const [grades, setGrades] = useState<Record<string, number>>(() =>
+  const [grades, setGrades] = useState<Record<string, string>>(() =>
     initGrades(data.manualGradingTargets),
   );
 
@@ -95,42 +123,46 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
     return map;
   }, [data.manualGradingTargets]);
 
-  function handleGradeChange(itemId: string, raw: string, maxPoints: number) {
-    const parsed = Number(raw);
-    if (!Number.isFinite(parsed)) {
-      setGrades((prev) => ({ ...prev, [itemId]: 0 }));
-      return;
-    }
-    const clamped = Math.max(0, Math.min(maxPoints, Math.round(parsed)));
-    setGrades((prev) => ({ ...prev, [itemId]: clamped }));
+  function handleGradeChange(itemId: string, raw: string) {
+    setGrades((prev) => ({ ...prev, [itemId]: raw }));
   }
 
   function handleSubmit() {
+    const parsedGrades: Record<string, number> = {};
     for (const t of data.manualGradingTargets) {
-      const value = grades[t.itemId] ?? 0;
-      if (value < 0 || value > t.maxPoints) {
+      const raw = (grades[t.itemId] ?? "").trim();
+      const value = Number(raw);
+      if (
+        raw === "" ||
+        !Number.isFinite(value) ||
+        !Number.isInteger(value) ||
+        value < 0
+      ) {
+        toast.error("Пожалуйста, выставьте баллы за все ответы.");
+        return;
+      }
+      if (value > t.maxPoints) {
         toast.error(
           `Балл для подзадания ${t.itemIndex + 1} должен быть от 0 до ${t.maxPoints}`,
         );
         return;
       }
+      parsedGrades[t.itemId] = value;
     }
 
     if (!data.attemptId) return;
 
     startTransition(() => {
       void (async () => {
-        const res = await submitManualGrades(data.attemptId!, grades);
+        const res = await submitManualGrades(data.attemptId!, parsedGrades);
         if (!res.success) {
           toast.error(res.error);
           return;
         }
-        setGradesSaved(true);
         toast.success(`Баллы сохранены. Итог: ${res.percentScore}%`);
-        router.refresh();
-        window.setTimeout(() => {
-          router.push("/dashboard/cohorts");
-        }, 1400);
+        router.push(
+          resolvePostGradeRedirectUrl(returnTo, res.cohortId),
+        );
       })();
     });
   }
@@ -149,7 +181,7 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6 pb-24">
       <div className="flex flex-wrap items-start gap-3">
-        <Button variant="ghost" size="sm" asChild className="-ml-2 min-h-11 sm:min-h-9">
+        <Button variant="link" size="sm" asChild>
           <Link href="/dashboard/cohorts">
             <ArrowLeftIcon className="mr-1 size-4" aria-hidden />
             К группам
@@ -224,6 +256,16 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                   </Badge>
                 </div>
 
+                <QuizTaskInstruction
+                  task={parseTaskPresentation(
+                    q.content as Json,
+                    q.media_play_limit ?? 0,
+                  )}
+                  fallbackTitle={questionInstructionFallback(q)}
+                  variant="section"
+                  isReviewMode
+                />
+
                 {view ? (
                   <div className="min-w-0 w-full max-w-none overflow-x-hidden">
                     <GroupedFillBlanksTaskQuestion
@@ -266,13 +308,9 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
                           step={1}
                           inputMode="numeric"
                           className="h-11 w-full border-amber-500/40 focus-visible:ring-amber-500/50 sm:w-28"
-                          value={grades[target.itemId] ?? 0}
+                          value={grades[target.itemId] ?? ""}
                           onChange={(e) =>
-                            handleGradeChange(
-                              target.itemId,
-                              e.target.value,
-                              target.maxPoints,
-                            )
+                            handleGradeChange(target.itemId, e.target.value)
                           }
                           disabled={isPending || gradesSaved}
                         />
@@ -351,33 +389,45 @@ export function TeacherAttemptGradingView({ data }: TeacherAttemptGradingViewPro
       </div>
 
       <div className="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-0 z-10 -mx-4 border-t px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
-        <Button
-          type="button"
-          size="lg"
-          className={cn(
-            "min-h-11 w-full sm:w-auto",
-            gradesSaved &&
-              "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
-          )}
-          onClick={handleSubmit}
-          disabled={
-            isPending || gradesSaved || data.manualGradingTargets.length === 0
-          }
-        >
-          {isPending ? (
-            <>
-              <Loader2Icon className="mr-2 size-4 animate-spin" aria-hidden />
-              Сохранение…
-            </>
-          ) : gradesSaved ? (
-            <>
-              <CheckCircle2Icon className="mr-2 size-4" aria-hidden />
-              Проверено
-            </>
-          ) : (
-            "Сохранить баллы"
-          )}
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <Button
+            type="button"
+            size="lg"
+            variant="default"
+            className="w-full sm:w-auto"
+            onClick={handleSubmit}
+            disabled={
+              isPending || gradesSaved || data.manualGradingTargets.length === 0
+            }
+          >
+            {isPending ? (
+              <>
+                <Loader2Icon className="mr-2 size-4 animate-spin" aria-hidden />
+                Сохранение…
+              </>
+            ) : gradesSaved ? (
+              <>
+                <CheckCircle2Icon className="mr-2 size-4" aria-hidden />
+                Проверено
+              </>
+            ) : (
+              "Сохранить баллы"
+            )}
+          </Button>
+          {data.attemptId ? (
+            <SendToRetakeDialog
+              attemptId={data.attemptId}
+              testId={data.testId}
+              studentId={data.studentId}
+              disabled={isPending}
+              triggerSize="lg"
+              triggerClassName="min-h-11 w-full sm:w-auto"
+              onSuccess={() => {
+                router.push("/dashboard");
+              }}
+            />
+          ) : null}
+        </div>
       </div>
     </div>
   );

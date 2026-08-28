@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { Plus, SendHorizonal } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
   createSupportTicket,
   getSupportMessages,
-  getStudentTickets,
   markSupportTicketAsRead,
   sendSupportMessage,
   type SupportChatMessage,
@@ -41,8 +39,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
 import { initialsFromDisplayName } from "@/lib/utils/user-utils";
+import { mergeFetchedSupportMessages } from "@/components/dashboard/support/append-realtime-message";
+import { useSupportTicketRealtime } from "@/components/dashboard/support/use-support-ticket-realtime";
+import { useSupportUnread } from "@/components/providers/support-unread-provider";
 
 type StudentSupportClientProps = {
   userId: string;
@@ -71,7 +71,7 @@ function formatMessageTime(iso: string): string {
 
 function statusBadge(status: string) {
   if (status === "closed") {
-    return <Badge variant="secondary">Закрыто</Badge>;
+    return <Badge variant="secondary">Тикет закрыт</Badge>;
   }
   return (
     <Badge
@@ -93,13 +93,15 @@ export function StudentSupportClient({
   userId,
   initialTickets,
 }: StudentSupportClientProps) {
-  const router = useRouter();
+  const { refreshCount } = useSupportUnread();
   const [tickets, setTickets] = useState(initialTickets);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(
     initialTickets[0]?.id ?? null,
   );
   const [messages, setMessages] = useState<SupportChatMessage[]>([]);
-  const [ticketStatus, setTicketStatus] = useState<string>("open");
+  const [ticketStatus, setTicketStatus] = useState<string>(
+    initialTickets[0]?.status ?? "open",
+  );
   const [draft, setDraft] = useState("");
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -110,54 +112,20 @@ export function StudentSupportClient({
   const [isCreating, startCreateTransition] = useTransition();
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedTicket = tickets.find((t) => t.id === selectedTicketId) ?? null;
   const selectedHasUnreadStudent = selectedTicket?.hasUnreadStudent ?? false;
+  const ticketsRef = useRef(tickets);
+  ticketsRef.current = tickets;
 
-  const loadTickets = useCallback(async () => {
-    const result = await getStudentTickets();
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    setTickets(result.tickets);
+  const handleTicketClosed = useCallback((ticketId: string) => {
+    setTicketStatus("closed");
+    setTickets((current) =>
+      current.map((ticket) =>
+        ticket.id === ticketId ? { ...ticket, status: "closed" } : ticket,
+      ),
+    );
   }, []);
-
-  const loadMessages = useCallback(
-    async (ticketId: string, withLoading = false) => {
-      if (withLoading) {
-        setIsLoadingMessages(true);
-      }
-
-      const result = await getSupportMessages(ticketId);
-      if (!result.success) {
-        toast.error(result.error);
-        if (withLoading) {
-          setIsLoadingMessages(false);
-        }
-        return;
-      }
-
-      setMessages(result.messages);
-      setTicketStatus(result.ticketStatus);
-      if (withLoading) {
-        setIsLoadingMessages(false);
-      }
-    },
-    [],
-  );
-
-  const scheduleReload = useCallback(() => {
-    if (!selectedTicketId) return;
-    if (reloadTimerRef.current) {
-      clearTimeout(reloadTimerRef.current);
-    }
-    reloadTimerRef.current = setTimeout(() => {
-      void loadMessages(selectedTicketId, false);
-      void loadTickets();
-    }, 100);
-  }, [loadMessages, loadTickets, selectedTicketId]);
 
   const scrollToBottom = useCallback(() => {
     const node = scrollRef.current;
@@ -172,39 +140,53 @@ export function StudentSupportClient({
   useEffect(() => {
     if (!selectedTicketId) {
       setMessages([]);
+      setTicketStatus("open");
       return;
     }
-    void loadMessages(selectedTicketId, true);
-  }, [selectedTicketId, loadMessages]);
 
-  useEffect(() => {
-    if (!selectedTicketId) return;
+    const listed = ticketsRef.current.find((ticket) => ticket.id === selectedTicketId);
+    setTicketStatus(listed?.status ?? "open");
 
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`support-messages:${selectedTicketId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "support_messages",
-          filter: `ticket_id=eq.${selectedTicketId}`,
-        },
-        () => {
-          scheduleReload();
-        },
-      )
-      .subscribe();
+    let cancelled = false;
+    setIsLoadingMessages(true);
+
+    void (async () => {
+      const result = await getSupportMessages(selectedTicketId);
+      if (cancelled) {
+        return;
+      }
+      if (!result.success) {
+        toast.error(result.error);
+        setIsLoadingMessages(false);
+        return;
+      }
+
+      // Не откатываем «закрыто», если Realtime успел прийти раньше ответа fetch.
+      setTicketStatus((prev) =>
+        prev === "closed" || result.ticketStatus === "closed"
+          ? "closed"
+          : result.ticketStatus,
+      );
+      setMessages((prev) =>
+        mergeFetchedSupportMessages(
+          result.messages,
+          prev.filter((message) => message.ticketId === selectedTicketId),
+        ),
+      );
+      setIsLoadingMessages(false);
+    })();
 
     return () => {
-      if (reloadTimerRef.current) {
-        clearTimeout(reloadTimerRef.current);
-        reloadTimerRef.current = null;
-      }
-      void supabase.removeChannel(channel);
+      cancelled = true;
     };
-  }, [selectedTicketId, scheduleReload]);
+  }, [selectedTicketId]);
+
+  useSupportTicketRealtime({
+    ticketId: selectedTicketId,
+    userId,
+    onMessage: setMessages,
+    onClosed: handleTicketClosed,
+  });
 
   useEffect(() => {
     if (!selectedTicketId || !selectedHasUnreadStudent) {
@@ -225,13 +207,13 @@ export function StudentSupportClient({
             : ticket,
         ),
       );
-      router.refresh();
+      void refreshCount();
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [selectedTicketId, selectedHasUnreadStudent, router]);
+  }, [selectedTicketId, selectedHasUnreadStudent, refreshCount]);
 
   function handleCreateTicket(event: React.FormEvent) {
     event.preventDefault();
@@ -263,6 +245,11 @@ export function StudentSupportClient({
         return;
       }
       setDraft("");
+      setMessages((prev) =>
+        prev.some((message) => message.id === result.message.id)
+          ? prev
+          : [...prev, result.message],
+      );
       setTickets((current) =>
         current.map((ticket) =>
           ticket.id === selectedTicketId
@@ -270,8 +257,6 @@ export function StudentSupportClient({
             : ticket,
         ),
       );
-      router.refresh();
-      scheduleReload();
     });
   }
 
@@ -399,7 +384,9 @@ export function StudentSupportClient({
               <CardHeader className="shrink-0 border-b pb-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <CardTitle className="text-base">{selectedTicket.subject}</CardTitle>
-                  {statusBadge(selectedTicket.status)}
+                  {statusBadge(
+                    ticketStatus === "closed" ? "closed" : selectedTicket.status,
+                  )}
                 </div>
                 <CardDescription>
                   Создано {formatTicketDate(selectedTicket.createdAt)}
@@ -482,7 +469,7 @@ export function StudentSupportClient({
                       onChange={(e) => setDraft(e.target.value)}
                       placeholder="Напишите сообщение…"
                       maxLength={2000}
-                      disabled={isPending || isLoadingMessages}
+                      disabled={isPending || isLoadingMessages || !canCompose}
                       autoComplete="off"
                     />
                     <Button
@@ -498,7 +485,7 @@ export function StudentSupportClient({
                   </form>
                 ) : (
                   <p className="text-muted-foreground shrink-0 border-t py-4 text-center text-sm">
-                    Обращение закрыто. Новые сообщения отправить нельзя.
+                    Тикет закрыт. Новые сообщения отправить нельзя.
                   </p>
                 )}
               </CardContent>

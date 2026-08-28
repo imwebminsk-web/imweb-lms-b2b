@@ -130,6 +130,7 @@ export type Database = {
           is_chat_enabled: boolean
           name: string
           pin_code: string
+          requires_approval: boolean
         }
         Insert: {
           course_id: string
@@ -139,6 +140,7 @@ export type Database = {
           is_chat_enabled?: boolean
           name: string
           pin_code: string
+          requires_approval?: boolean
         }
         Update: {
           course_id?: string
@@ -148,6 +150,7 @@ export type Database = {
           is_chat_enabled?: boolean
           name?: string
           pin_code?: string
+          requires_approval?: boolean
         }
         Relationships: [
           {
@@ -275,6 +278,7 @@ export type Database = {
           course_id: string
           enrolled_at: string
           id: string
+          status: "active" | "pending" | "suspended"
           user_id: string
         }
         Insert: {
@@ -282,6 +286,7 @@ export type Database = {
           course_id: string
           enrolled_at?: string
           id?: string
+          status?: "active" | "pending" | "suspended"
           user_id: string
         }
         Update: {
@@ -289,6 +294,7 @@ export type Database = {
           course_id?: string
           enrolled_at?: string
           id?: string
+          status?: "active" | "pending" | "suspended"
           user_id?: string
         }
         Relationships: [
@@ -1090,6 +1096,7 @@ export type Database = {
           description: string | null
           folder_name: string | null
           id: string
+          is_archived: boolean
           is_for_kids: boolean
           is_published: boolean | null
           lesson_block_id: string | null
@@ -1109,6 +1116,7 @@ export type Database = {
           description?: string | null
           folder_name?: string | null
           id?: string
+          is_archived?: boolean
           is_for_kids?: boolean
           is_published?: boolean | null
           lesson_block_id?: string | null
@@ -1128,6 +1136,7 @@ export type Database = {
           description?: string | null
           folder_name?: string | null
           id?: string
+          is_archived?: boolean
           is_for_kids?: boolean
           is_published?: boolean | null
           lesson_block_id?: string | null
@@ -1222,7 +1231,7 @@ export type Database = {
       }
     }
     Enums: {
-      attempt_status: "in_progress" | "completed" | "pending_review"
+      attempt_status: "in_progress" | "completed" | "pending_review" | "rejected"
       submission_status: "pending" | "approved" | "rejected"
       course_level:
         | "0"
@@ -1374,7 +1383,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      attempt_status: ["in_progress", "completed", "pending_review"],
+      attempt_status: ["in_progress", "completed", "pending_review", "rejected"],
       submission_status: ["pending", "approved", "rejected"],
       course_level: [
         "0",

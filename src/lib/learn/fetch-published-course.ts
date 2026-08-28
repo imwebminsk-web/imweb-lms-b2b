@@ -12,7 +12,11 @@ export type LearnCourseCurriculum = {
   modules: LearnModuleNav[] | null;
 };
 
-export type LearnCourseFetchError = "not_found" | "not_enrolled";
+export type LearnCourseFetchError =
+  | "not_found"
+  | "not_enrolled"
+  | "pending"
+  | "suspended";
 
 export type LearnCourseFetchResult =
   | {
@@ -51,7 +55,7 @@ export const fetchPublishedCourseForLearn = cache(
 
     const enrollment = await ensureCourseEnrollment(studentId, courseMeta.id);
     if (!enrollment.ok) {
-      return { ok: false, reason: "not_enrolled" };
+      return { ok: false, reason: enrollment.reason };
     }
 
     const cohortId = enrollment.cohortId;
@@ -132,15 +136,6 @@ export const fetchPublishedCourseForLearn = cache(
         .map((a) => a.lesson_id)
         .filter((v): v is string => Boolean(v)),
     );
-
-    if (assignedLessonIds.size === 0) {
-      return {
-        ok: true,
-        course,
-        cohortId,
-        teacherId: courseMeta.teacher_id,
-      };
-    }
 
     return {
       ok: true,

@@ -1,28 +1,9 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { getTests } from "@/app/actions/test-actions";
-import { TestRowActions } from "@/components/admin/tests/TestRowActions";
+import { TestsAdminClient } from "@/components/dashboard/tests/tests-admin-client";
 import { SiteHeader } from "@/components/site-header";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { createClient } from "@/lib/supabase/server";
-import { cn } from "@/lib/utils";
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { verifyAccess } from "@/lib/auth/rbac";
 
 export const metadata: Metadata = {
@@ -31,123 +12,67 @@ export const metadata: Metadata = {
 };
 
 export default async function DashboardTestsPage() {
-  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+  const { user, profile } = await verifyAccess([
+    "admin",
+    "head_teacher",
+    "teacher",
+  ]);
 
   const displayName =
     profile.full_name?.trim() ||
     user.email?.split("@")[0] ||
     "Пользователь";
 
-  const result = await getTests();
-  const groupedTests = result.success
-    ? result.data.reduce(
-        (acc, test) => {
-          const normalizedFolder = test.folder_name?.trim();
-          const folder =
-            normalizedFolder && normalizedFolder.length > 0
-              ? normalizedFolder
-              : "Без папки";
-          const bucket = acc.get(folder) ?? [];
-          bucket.push(test);
-          acc.set(folder, bucket);
-          return acc;
-        },
-        new Map<string, typeof result.data>(),
-      )
-    : new Map<string, never[]>();
-  const folderGroups = [...groupedTests.entries()].sort(([a], [b]) =>
-    a.localeCompare(b, "ru"),
-  );
+  const canHardDelete = profile.role === "admin";
+  const canChangeOwner =
+    profile.role === "admin" || profile.role === "head_teacher";
+
+  const [activeResult, archivedResult] = await Promise.all([
+    getTests(false),
+    getTests(true),
+  ]);
 
   return (
     <>
       <SiteHeader fullName={displayName} />
       <div className="flex flex-1 flex-col">
-        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 lg:px-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-8 px-4 py-6 lg:px-6">
+          <div>
             <h1 className="text-2xl font-semibold tracking-tight">Тесты</h1>
-            <Link
-              href="/dashboard/tests/create"
-              className={cn(buttonVariants({ size: "default" }))}
-            >
-              Создать тест
-            </Link>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Библиотека тестов: создание, редактирование и прохождение в
+              песочнице.
+            </p>
           </div>
 
-          {!result.success ? (
-            <Card className="border-destructive/40 bg-destructive/5">
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Не удалось загрузить список
-                </CardTitle>
-                <CardDescription className="text-destructive">
-                  {result.error}
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          ) : result.data.length === 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Пока нет тестов</CardTitle>
-                <CardDescription>Создайте первый тест.</CardDescription>
-              </CardHeader>
-              <CardFooter>
-                <Link
-                  href="/dashboard/tests/create"
-                  className={cn(buttonVariants({ size: "default" }))}
-                >
-                  Создать тест
-                </Link>
-              </CardFooter>
-            </Card>
-          ) : (
-            <Accordion type="multiple" className="space-y-3">
-              {folderGroups.map(([folderName, tests]) => (
-                <AccordionItem
-                  key={folderName}
-                  value={folderName}
-                  className="rounded-lg border px-4"
-                >
-                  <AccordionTrigger className="py-3">
-                    <div className="flex items-center gap-2 text-left">
-                      <span className="font-medium">{folderName}</span>
-                      <Badge variant="secondary" className="tabular-nums">
-                        {tests.length}
-                      </Badge>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="pb-3">
-                    <ul className="flex flex-col gap-3">
-                      {tests.map((test) => (
-                        <li key={test.id}>
-                          <Card className="flex flex-row items-center gap-4 p-4">
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <p className="line-clamp-1 text-lg font-medium leading-snug">
-                                {test.title}
-                              </p>
-                              {test.description ? (
-                                <p className="text-muted-foreground line-clamp-1 text-sm">
-                                  {test.description}
-                                </p>
-                              ) : (
-                                <p className="text-muted-foreground/70 line-clamp-1 text-sm italic">
-                                  Без описания
-                                </p>
-                              )}
-                              <Badge variant="secondary" className="tabular-nums">
-                                Вопросов: {test.totalQuestions}
-                              </Badge>
-                            </div>
-                            <TestRowActions testId={test.id} />
-                          </Card>
-                        </li>
-                      ))}
-                    </ul>
-                  </AccordionContent>
-                </AccordionItem>
-              ))}
-            </Accordion>
-          )}
+          <Tabs defaultValue="active" className="w-full">
+            <TabsList variant="line" className="mb-6 w-full justify-start">
+              <TabsTrigger value="active">Активные</TabsTrigger>
+              <TabsTrigger value="archive">Архив</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="active" className="mt-0">
+              <TestsAdminClient
+                tests={activeResult.success ? activeResult.data : []}
+                error={activeResult.success ? undefined : activeResult.error}
+                isArchived={false}
+                canHardDelete={canHardDelete}
+                canChangeOwner={canChangeOwner}
+              />
+            </TabsContent>
+
+            <TabsContent value="archive" className="mt-0">
+              <TestsAdminClient
+                tests={archivedResult.success ? archivedResult.data : []}
+                error={
+                  archivedResult.success ? undefined : archivedResult.error
+                }
+                isArchived
+                canHardDelete={canHardDelete}
+                canChangeOwner={canChangeOwner}
+              />
+            </TabsContent>
+          </Tabs>
         </main>
       </div>
     </>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { MoreHorizontal, PencilIcon, Trash2Icon } from "lucide-react";
 
 import {
   createTaxonomy,
@@ -25,6 +25,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -88,9 +94,15 @@ export function TaxonomiesAdminClient({
   const [groupForm, setGroupForm] = useState<GroupFormState>(emptyGroupForm);
   const [groupSlugManual, setGroupSlugManual] = useState(false);
   const [editing, setEditing] = useState<TaxonomyWithGroup | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<TaxonomyWithGroup | null>(
+  const [valueToDelete, setValueToDelete] = useState<TaxonomyWithGroup | null>(
     null,
   );
+  const [isValueDeleteDialogOpen, setIsValueDeleteDialogOpen] = useState(false);
+  const [deleteValueConfirmText, setDeleteValueConfirmText] = useState("");
+  const [deleteGroupTarget, setDeleteGroupTarget] = useState<string | null>(
+    null,
+  );
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [form, setForm] = useState<FormState>(
     emptyForm(initialGroups[0]?.id ?? ""),
   );
@@ -234,81 +246,101 @@ export function TaxonomiesAdminClient({
     });
   }
 
-  function handleDelete() {
-    if (!deleteTarget) return;
+  function openValueDeleteDialog(row: TaxonomyWithGroup) {
+    setValueToDelete(row);
+    setDeleteValueConfirmText("");
+    setIsValueDeleteDialogOpen(true);
+  }
+
+  function closeValueDeleteDialog() {
+    setIsValueDeleteDialogOpen(false);
+    setValueToDelete(null);
+    setDeleteValueConfirmText("");
+  }
+
+  function handleDeleteValue() {
+    if (!valueToDelete) return;
 
     startTransition(async () => {
       setError(null);
-      const result = await deleteTaxonomy(deleteTarget.id);
+      const result = await deleteTaxonomy(valueToDelete.id);
       if (!result.success) {
         setError(result.error);
         return;
       }
       setTaxonomies((prev) =>
-        prev.filter((row) => row.id !== deleteTarget.id),
+        prev.filter((row) => row.id !== valueToDelete.id),
       );
-      setDeleteTarget(null);
+      closeValueDeleteDialog();
     });
   }
 
-  async function handleDeleteGroup(groupId: string) {
+  function handleConfirmDeleteGroup() {
+    if (!deleteGroupTarget) return;
+
+    const groupId = deleteGroupTarget;
     const group = groups.find((item) => item.id === groupId);
-    if (!group) return;
-
-    if (
-      !window.confirm(
-        "Удалить эту категорию и все ее теги?",
-      )
-    ) {
+    if (!group) {
+      setDeleteGroupTarget(null);
+      setDeleteConfirmText("");
       return;
     }
 
-    setIsDeletingGroup(groupId);
-    setGroupError(null);
-    setGroupSuccess(null);
+    startTransition(async () => {
+      setIsDeletingGroup(groupId);
+      setGroupError(null);
+      setGroupSuccess(null);
 
-    const result = await deleteTaxonomyGroup(groupId);
+      const result = await deleteTaxonomyGroup(groupId);
 
-    setIsDeletingGroup(null);
+      setIsDeletingGroup(null);
 
-    if (!result.success) {
-      setGroupError(result.error);
-      return;
-    }
+      if (!result.success) {
+        setGroupError(result.error);
+        return;
+      }
 
-    const remainingGroups = groups.filter((item) => item.id !== groupId);
-    setGroups(remainingGroups);
-    setTaxonomies((prev) => prev.filter((row) => row.group_id !== groupId));
+      const remainingGroups = groups.filter((item) => item.id !== groupId);
+      setGroups(remainingGroups);
+      setTaxonomies((prev) => prev.filter((row) => row.group_id !== groupId));
 
-    if (activeTab === group.slug) {
-      setActiveTab(remainingGroups[0]?.slug ?? "");
-    }
+      if (activeTab === group.slug) {
+        setActiveTab(remainingGroups[0]?.slug ?? "");
+      }
 
-    setGroupSuccess(`Категория «${group.name}» и все её теги удалены.`);
+      setGroupSuccess(`Категория «${group.name}» и все её теги удалены.`);
+      setDeleteGroupTarget(null);
+      setDeleteConfirmText("");
+    });
   }
+
+  const deleteGroup =
+    deleteGroupTarget !== null
+      ? groups.find((item) => item.id === deleteGroupTarget)
+      : null;
 
   if (groups.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            className="rounded-xl"
-            onClick={openCreateGroup}
-            disabled={pending}
-          >
-            <PlusIcon />
-            Создать категорию
-          </Button>
-        </div>
         {groupError ? (
           <p className="text-destructive rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
             {groupError}
           </p>
         ) : null}
-        <p className="text-muted-foreground text-sm">
-          Категорий пока нет. Создайте первую группу фильтров для каталога.
-        </p>
+        <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+          <div className="flex items-center justify-end gap-4 border-b px-6 py-4">
+            <Button
+              type="button"
+              onClick={openCreateGroup}
+              disabled={pending}
+            >
+              Создать категорию
+            </Button>
+          </div>
+          <p className="text-muted-foreground px-6 py-12 text-center text-sm">
+            Категорий пока нет. Создайте первую группу фильтров для каталога.
+          </p>
+        </section>
 
         <Dialog open={groupFormOpen} onOpenChange={setGroupFormOpen}>
           <GroupCreateDialogContent
@@ -327,18 +359,6 @@ export function TaxonomiesAdminClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <Button
-          type="button"
-          className="rounded-xl"
-          onClick={openCreateGroup}
-          disabled={pending}
-        >
-          <PlusIcon />
-          Создать категорию
-        </Button>
-      </div>
-
       {groupError ? (
         <p className="text-destructive rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
           {groupError}
@@ -357,16 +377,19 @@ export function TaxonomiesAdminClient({
         </p>
       ) : null}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="h-auto flex-wrap rounded-xl">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList
+          variant="line"
+          className="mb-6 h-auto w-full flex-wrap justify-start"
+        >
           {groups.map((group) => (
             <TabsTrigger
               key={group.id}
               value={group.slug}
-              className="rounded-lg data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              className="inline-flex items-center gap-2"
             >
               {group.name}
-              <Badge variant="secondary" className="ml-2">
+              <Badge variant="outline">
                 {grouped.get(group.slug)?.length ?? 0}
               </Badge>
             </TabsTrigger>
@@ -374,109 +397,112 @@ export function TaxonomiesAdminClient({
         </TabsList>
 
         {groups.map((group) => (
-          <TabsContent key={group.id} value={group.slug} className="mt-6">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">{group.name}</h2>
-                <p className="text-muted-foreground text-sm">
-                  Значения для фильтров каталога и форм курсов.
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
+          <TabsContent key={group.id} value={group.slug} className="mt-0">
+            <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+              <div className="flex flex-col justify-between gap-4 border-b px-6 py-4 sm:flex-row sm:items-center">
                 <Button
                   type="button"
-                  variant="destructive"
-                  className="rounded-xl"
-                  onClick={() => handleDeleteGroup(group.id)}
+                  variant="ghost"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setDeleteGroupTarget(group.id)}
                   disabled={pending || isDeletingGroup === group.id}
                 >
-                  <Trash2Icon />
                   {isDeletingGroup === group.id
                     ? "Удаление..."
                     : "Удалить категорию"}
                 </Button>
-                <Button
-                  type="button"
-                  className="rounded-xl"
-                  onClick={() => openCreate(group)}
-                  disabled={pending || isDeletingGroup !== null}
-                >
-                  <PlusIcon />
-                  Добавить
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => openCreate(group)}
+                    disabled={pending || isDeletingGroup !== null}
+                  >
+                    Добавить значение
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={openCreateGroup}
+                    disabled={pending}
+                  >
+                    Создать категорию
+                  </Button>
+                </div>
               </div>
-            </div>
 
-            <div className="border-border overflow-hidden rounded-xl border bg-card shadow-sm">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Подпись</TableHead>
-                    <TableHead className="w-24 text-center">Порядок</TableHead>
-                    <TableHead className="w-28 text-center">Активно</TableHead>
-                    <TableHead className="w-36 text-right">Действия</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(grouped.get(group.slug) ?? []).length === 0 ? (
+              <div className="custom-scrollbar w-full overflow-x-auto">
+                <Table className="min-w-max">
+                  <TableHeader>
                     <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="text-muted-foreground py-10 text-center"
-                      >
-                        Записей пока нет. Добавьте первое значение.
-                      </TableCell>
+                      <TableHead>Подпись</TableHead>
+                      <TableHead className="w-24 text-center">Порядок</TableHead>
+                      <TableHead className="w-28 text-center">Активно</TableHead>
+                      <TableHead className="w-12 text-right">Действия</TableHead>
                     </TableRow>
-                  ) : (
-                    (grouped.get(group.slug) ?? []).map((row) => (
-                      <TableRow
-                        key={row.id}
-                        className={cn(!row.is_active && "opacity-60")}
-                      >
-                        <TableCell className="font-medium">{row.label}</TableCell>
-                        <TableCell className="text-center tabular-nums">
-                          {row.sort_order}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Switch
-                            checked={row.is_active}
-                            disabled={pending}
-                            onCheckedChange={() => handleToggle(row)}
-                            aria-label={`Активность: ${row.label}`}
-                          />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="rounded-xl"
-                              onClick={() => openEdit(row)}
-                              disabled={pending}
-                              aria-label={`Редактировать ${row.label}`}
-                            >
-                              <PencilIcon className="size-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive hover:text-destructive rounded-xl"
-                              onClick={() => setDeleteTarget(row)}
-                              disabled={pending}
-                              aria-label={`Удалить ${row.label}`}
-                            >
-                              <Trash2Icon className="size-4" />
-                            </Button>
-                          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {(grouped.get(group.slug) ?? []).length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="text-muted-foreground py-10 text-center"
+                        >
+                          Записей пока нет. Добавьте первое значение.
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    ) : (
+                      (grouped.get(group.slug) ?? []).map((row) => (
+                        <TableRow
+                          key={row.id}
+                          className={cn(!row.is_active && "opacity-60")}
+                        >
+                          <TableCell className="font-medium">{row.label}</TableCell>
+                          <TableCell className="text-center tabular-nums">
+                            {row.sort_order}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Switch
+                              checked={row.is_active}
+                              disabled={pending}
+                              onCheckedChange={() => handleToggle(row)}
+                              aria-label={`Активность: ${row.label}`}
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={pending}
+                                  aria-label={`Действия для ${row.label}`}
+                                >
+                                  <MoreHorizontal className="size-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => openEdit(row)}>
+                                  <PencilIcon className="size-4" aria-hidden />
+                                  Редактировать
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onSelect={() => openValueDeleteDialog(row)}
+                                >
+                                  <Trash2Icon className="size-4" aria-hidden />
+                                  Удалить
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </section>
           </TabsContent>
         ))}
       </Tabs>
@@ -494,7 +520,7 @@ export function TaxonomiesAdminClient({
       </Dialog>
 
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="rounded-xl sm:max-w-md">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Редактировать запись" : "Новая запись"}
@@ -506,7 +532,6 @@ export function TaxonomiesAdminClient({
               <Label htmlFor="taxonomy-label">Подпись (label)</Label>
               <Input
                 id="taxonomy-label"
-                className="rounded-xl"
                 value={form.label}
                 onChange={(e) => handleLabelChange(e.target.value)}
                 placeholder="Например, Онлайн"
@@ -516,7 +541,6 @@ export function TaxonomiesAdminClient({
               <Label htmlFor="taxonomy-sort">Порядок сортировки</Label>
               <Input
                 id="taxonomy-sort"
-                className="rounded-xl"
                 type="number"
                 min={0}
                 value={form.sort_order}
@@ -530,7 +554,6 @@ export function TaxonomiesAdminClient({
             <Button
               type="button"
               variant="outline"
-              className="rounded-xl"
               onClick={() => setFormOpen(false)}
               disabled={pending}
             >
@@ -538,7 +561,6 @@ export function TaxonomiesAdminClient({
             </Button>
             <Button
               type="button"
-              className="rounded-xl"
               onClick={handleSubmit}
               disabled={pending}
             >
@@ -549,28 +571,115 @@ export function TaxonomiesAdminClient({
       </Dialog>
 
       <AlertDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        open={isValueDeleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !pending) {
+            closeValueDeleteDialog();
+          }
+        }}
       >
-        <AlertDialogContent className="rounded-xl">
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить запись?</AlertDialogTitle>
+            <AlertDialogTitle>Удалить значение?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget
-                ? `«${deleteTarget.label}» будет удалена без возможности восстановления.`
-                : null}
+              {valueToDelete
+                ? `Вы собираетесь удалить значение «${valueToDelete.label}». Это действие необратимо.`
+                : "Это действие необратимо."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium">
+              Введите слово{" "}
+              <span className="font-bold text-foreground">Удалить</span> для
+              подтверждения:
+            </label>
+            <Input
+              value={deleteValueConfirmText}
+              onChange={(event) => setDeleteValueConfirmText(event.target.value)}
+              autoComplete="off"
+              aria-label="Подтверждение удаления значения"
+            />
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-xl" disabled={pending}>
-              Отмена
+            <AlertDialogCancel asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className="border-input text-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                disabled={pending}
+              >
+                Отмена
+              </Button>
             </AlertDialogCancel>
-            <AlertDialogAction
-              className="rounded-xl"
-              onClick={handleDelete}
-              disabled={pending}
+            <Button
+              type="button"
+              variant="destructive-outline"
+              onClick={handleDeleteValue}
+              disabled={
+                pending ||
+                deleteValueConfirmText.trim().toLowerCase() !== "удалить"
+              }
             >
-              Удалить
+              {pending ? "Удаление…" : "Удалить"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteGroupTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !pending) {
+            setDeleteGroupTarget(null);
+            setDeleteConfirmText("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить категорию?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteGroup
+                ? `Категория «${deleteGroup.name}» и все её значения будут удалены без возможности восстановления.`
+                : "Это действие необратимо."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium">
+              Введите слово{" "}
+              <span className="font-bold text-foreground">Удалить</span> для
+              подтверждения:
+            </label>
+            <Input
+              value={deleteConfirmText}
+              onChange={(event) => setDeleteConfirmText(event.target.value)}
+              autoComplete="off"
+              aria-label="Подтверждение удаления категории"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending || isDeletingGroup !== null}
+              >
+                Отмена
+              </Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                type="button"
+                variant="destructive-outline"
+                disabled={
+                  pending ||
+                  isDeletingGroup !== null ||
+                  deleteConfirmText.trim().toLowerCase() !== "удалить"
+                }
+                onClick={handleConfirmDeleteGroup}
+              >
+                {isDeletingGroup !== null ? "Удаление…" : "Удалить"}
+              </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -599,7 +708,7 @@ function GroupCreateDialogContent({
   onSubmit,
 }: GroupCreateDialogContentProps) {
   return (
-    <DialogContent className="rounded-xl sm:max-w-md">
+    <DialogContent className="sm:max-w-md">
       <DialogHeader>
         <DialogTitle>Новая категория</DialogTitle>
       </DialogHeader>
@@ -611,7 +720,6 @@ function GroupCreateDialogContent({
           <Label htmlFor="group-name">Название группы</Label>
           <Input
             id="group-name"
-            className="rounded-xl"
             value={groupForm.name}
             onChange={(e) => onNameChange(e.target.value)}
             placeholder="Например, Отдел"
@@ -621,7 +729,6 @@ function GroupCreateDialogContent({
           <Label htmlFor="group-slug">Slug</Label>
           <Input
             id="group-slug"
-            className="rounded-xl"
             value={groupForm.slug}
             onChange={(e) => onSlugChange(e.target.value)}
             placeholder="department"
@@ -636,18 +743,12 @@ function GroupCreateDialogContent({
         <Button
           type="button"
           variant="outline"
-          className="rounded-xl"
           onClick={onCancel}
           disabled={pending}
         >
           Отмена
         </Button>
-        <Button
-          type="button"
-          className="rounded-xl"
-          onClick={onSubmit}
-          disabled={pending}
-        >
+        <Button type="button" onClick={onSubmit} disabled={pending}>
           Создать
         </Button>
       </DialogFooter>

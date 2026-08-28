@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { CheckSquare, FileText, Target } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import type { StudentProgressItem } from "@/app/actions/student-dashboard-actions";
-import { ProgressStatusBadge } from "@/components/learn/progress-status-badge";
+import { GradebookLegend } from "@/components/dashboard/gradebook/gradebook-legend";
+import { JournalPointsDisplay } from "@/components/dashboard/gradebook/journal-points-display";
+import { isGradebookDrawerOpenable } from "@/components/dashboard/gradebook/progress-status-visuals";
 import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
 import { TestResultSheet } from "@/components/dashboard/teacher/TestResultSheet";
-import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -15,32 +19,59 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { JournalPointsDisplay } from "@/components/dashboard/gradebook/journal-points-display";
 import { cn } from "@/lib/utils";
 
-function typeBadge(
-  type: StudentProgressItem["type"],
-  testType?: StudentProgressItem["testType"],
-) {
-  if (type === "test") {
+const ROW_ICON_CLASS =
+  "text-muted-foreground mr-1.5 inline-block size-3 shrink-0";
+
+function rowTypeIcon(item: StudentProgressItem) {
+  if (item.type === "assignment") {
+    return <FileText className={ROW_ICON_CLASS} aria-hidden />;
+  }
+  if (item.testType === "training") {
+    return <Target className={ROW_ICON_CLASS} aria-hidden />;
+  }
+  return <CheckSquare className={ROW_ICON_CLASS} aria-hidden />;
+}
+
+function LessonTitle({
+  item,
+  onOpen,
+}: {
+  item: StudentProgressItem;
+  onOpen: () => void;
+}) {
+  const canOpen =
+    isGradebookDrawerOpenable(item.status, item.points) &&
+    (item.type === "assignment"
+      ? Boolean(item.lessonBlockId)
+      : Boolean(item.testId));
+
+  const label = (
+    <>
+      {rowTypeIcon(item)}
+      {item.title}
+    </>
+  );
+
+  if (!canOpen) {
     return (
-      <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Badge
-          variant="outline"
-          className="border-violet-500/35 bg-violet-500/10 text-violet-900 dark:text-violet-100"
-        >
-          Тест
-        </Badge>
-        <span className="text-muted-foreground text-xs">
-          {testType === "training" ? "(тренировочный)" : "(итоговый)"}
-        </span>
+      <span className="inline-flex max-w-full cursor-default items-center font-medium">
+        {label}
       </span>
     );
   }
+
   return (
-    <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10">
-      Задание
-    </Badge>
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "text-primary inline-flex max-w-full cursor-pointer items-center text-left font-medium hover:underline",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -66,24 +97,57 @@ export function TeacherStudentProgressTable({
     studentName: string;
     studentAvatarUrl: string | null;
     testTitle: string;
+    lessonId?: string;
   } | null>(null);
 
   const [selectedAssignment, setSelectedAssignment] = useState<{
     lessonBlockId: string;
   } | null>(null);
+  const [showTraining, setShowTraining] = useState(false);
+
+  const hasTrainingItems = items.some(
+    (item) => item.type === "test" && item.testType === "training",
+  );
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (item) => showTraining || item.testType !== "training",
+      ),
+    [items, showTraining],
+  );
 
   return (
     <>
-      <p className="text-muted-foreground mb-4 text-sm">
-        Нажмите на строку с тестом или заданием, чтобы открыть подробности.
-      </p>
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p className="text-muted-foreground text-sm">
+          Нажмите на название урока, чтобы открыть подробности.
+        </p>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          {hasTrainingItems ? (
+            <>
+              <Label
+                htmlFor="student-progress-show-training"
+                className="text-muted-foreground font-normal"
+              >
+                Показывать тренировки
+              </Label>
+              <Switch
+                id="student-progress-show-training"
+                checked={showTraining}
+                onCheckedChange={setShowTraining}
+                aria-label="Показывать тренировочные тесты"
+              />
+            </>
+          ) : null}
+          <GradebookLegend />
+        </div>
+      </div>
       <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-[200px]">Урок</TableHead>
-              <TableHead className="w-[100px]">Тип</TableHead>
-              <TableHead className="w-[140px]">Статус</TableHead>
+              <TableHead className="min-w-[200px]">Урок / Задание</TableHead>
               <TableHead className="w-[100px]">Баллы</TableHead>
             </TableRow>
           </TableHeader>
@@ -91,84 +155,57 @@ export function TeacherStudentProgressTable({
             {items.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={2}
                   className="text-muted-foreground py-10 text-center text-sm"
                 >
                   Пока нет тестов и заданий по этому курсу в успеваемости ученика.
                 </TableCell>
               </TableRow>
+            ) : visibleItems.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={2}
+                  className="text-muted-foreground py-10 text-center text-sm"
+                >
+                  Сейчас тренировочные тесты скрыты. Включите «Показывать
+                  тренировки», чтобы увидеть их в журнале.
+                </TableCell>
+              </TableRow>
             ) : (
-              items.map((item) => {
-                const pointsCell = (
-                  <JournalPointsDisplay
-                    points={item.points}
-                    compact
-                  />
-                );
-
-                if (item.type === "assignment") {
-                  const blockId = item.lessonBlockId;
-                  return (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        {blockId ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedAssignment({ lessonBlockId: blockId })
-                            }
-                            className={cn(
-                              "text-primary cursor-pointer text-left font-medium hover:underline",
-                            )}
-                          >
-                            {item.title}
-                          </button>
-                        ) : (
-                          <span className="font-medium">{item.title}</span>
-                        )}
-                      </TableCell>
-                      <TableCell>{typeBadge(item.type, item.testType)}</TableCell>
-                      <TableCell>
-                        <ProgressStatusBadge item={item} />
-                      </TableCell>
-                      <TableCell className="text-sm">{pointsCell}</TableCell>
-                    </TableRow>
-                  );
-                }
-
-                return (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      {item.testId ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSelectedTest({
-                              studentId: viewedStudentId,
-                              testId: item.testId!,
-                              studentName: viewedStudentName,
-                              studentAvatarUrl: viewedStudentAvatarUrl,
-                              testTitle: item.title,
-                            })
-                          }
-                          className={cn(
-                            "text-primary cursor-pointer text-left font-medium hover:underline",
-                          )}
-                        >
-                          {item.title}
-                        </button>
-                      ) : (
-                        <span className="font-medium">{item.title}</span>
-                      )}
-                    </TableCell>
-                    <TableCell>{typeBadge(item.type, item.testType)}</TableCell>
-                    <TableCell>
-                      <ProgressStatusBadge item={item} />
-                    </TableCell>
-                    <TableCell className="text-sm">{pointsCell}</TableCell>
-                  </TableRow>
-                );
-              })
+              visibleItems.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    <LessonTitle
+                      item={item}
+                      onOpen={() => {
+                        if (item.type === "assignment" && item.lessonBlockId) {
+                          setSelectedAssignment({
+                            lessonBlockId: item.lessonBlockId,
+                          });
+                          return;
+                        }
+                        if (item.testId) {
+                          setSelectedTest({
+                            studentId: viewedStudentId,
+                            testId: item.testId,
+                            studentName: viewedStudentName,
+                            studentAvatarUrl: viewedStudentAvatarUrl,
+                            testTitle: item.title,
+                            lessonId: item.lessonId,
+                          });
+                        }
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    <JournalPointsDisplay
+                      points={item.points}
+                      status={item.status}
+                      compact
+                    />
+                  </TableCell>
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
@@ -184,6 +221,7 @@ export function TeacherStudentProgressTable({
         studentName={selectedTest?.studentName ?? ""}
         studentAvatarUrl={selectedTest?.studentAvatarUrl ?? null}
         testTitle={selectedTest?.testTitle ?? ""}
+        lessonId={selectedTest?.lessonId}
         isTeacher
       />
 

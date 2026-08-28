@@ -1,8 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
+import { verifyAccess } from "@/lib/auth/rbac";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { isAdminOrHead } from "@/lib/utils/user-utils";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 export type PlatformContacts = {
   phones: string[];
@@ -39,6 +41,9 @@ export type PlatformSettings = {
   contacts_json: PlatformContacts | null;
   socials_json: PlatformSocials | null;
   legal_info: string | null;
+  privacy_policy: string | null;
+  user_agreement: string | null;
+  public_offer: string | null;
 };
 
 export type UpdatePlatformSettingsInput = Omit<PlatformSettings, "id">;
@@ -109,6 +114,16 @@ function normalizeContacts(raw: unknown): PlatformContacts {
   };
 }
 
+const BLOCKED_URL_SCHEMES = [
+  "javascript:",
+  "data:",
+  "vbscript:",
+  "file:",
+  "blob:",
+] as const;
+
+const MESSENGER_URL_SCHEMES = new Set(["viber:", "tg:", "telegram:", "whatsapp:"]);
+
 function pickString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   if (typeof value !== "string") {
@@ -116,6 +131,52 @@ function pickString(record: Record<string, unknown>, key: string): string | unde
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function parseAbsoluteUrl(value: string): URL | null {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+/** Только http/https. Режет javascript:, data: и относительные строки без схемы. */
+function isSafeHttpUrl(value: string): boolean {
+  const url = parseAbsoluteUrl(value);
+  if (!url) {
+    return false;
+  }
+  return (url.protocol === "http:" || url.protocol === "https:") && url.hostname.length > 0;
+}
+
+/**
+ * Ссылки мессенджеров: https://t.me/... или viber:// / tg:// / whatsapp://.
+ * javascript: и прочие опасные схемы отбрасываются.
+ */
+function isSafeMessengerUrl(value: string): boolean {
+  const lower = value.toLowerCase();
+  if (BLOCKED_URL_SCHEMES.some((scheme) => lower.startsWith(scheme))) {
+    return false;
+  }
+  if (isSafeHttpUrl(value)) {
+    return true;
+  }
+  const url = parseAbsoluteUrl(value);
+  return url !== null && MESSENGER_URL_SCHEMES.has(url.protocol);
+}
+
+function pickSafeHref(
+  record: Record<string, unknown>,
+  key: string,
+  kind: "http" | "messenger",
+): string | undefined {
+  const value = pickString(record, key);
+  if (!value) {
+    return undefined;
+  }
+  const ok = kind === "messenger" ? isSafeMessengerUrl(value) : isSafeHttpUrl(value);
+  return ok ? value : undefined;
 }
 
 function normalizeSocialNetworks(raw: unknown): SocialNetworks {
@@ -134,7 +195,7 @@ function normalizeSocialNetworks(raw: unknown): SocialNetworks {
     "facebook",
     "twitter",
   ] as const) {
-    const value = pickString(record, key);
+    const value = pickSafeHref(record, key, "http");
     if (value) {
       socials[key] = value;
     }
@@ -152,7 +213,7 @@ function normalizeMessengers(raw: unknown): Messengers {
   const messengers: Messengers = {};
 
   for (const key of ["telegram", "whatsapp", "viber"] as const) {
-    const value = pickString(record, key);
+    const value = pickSafeHref(record, key, "messenger");
     if (value) {
       messengers[key] = value;
     }
@@ -201,6 +262,15 @@ function normalizeSettingsRow(row: Record<string, unknown>): PlatformSettings {
     legal_info: preserveFormattedText(
       typeof row.legal_info === "string" ? row.legal_info : null,
     ),
+    privacy_policy: preserveFormattedText(
+      typeof row.privacy_policy === "string" ? row.privacy_policy : null,
+    ),
+    user_agreement: preserveFormattedText(
+      typeof row.user_agreement === "string" ? row.user_agreement : null,
+    ),
+    public_offer: preserveFormattedText(
+      typeof row.public_offer === "string" ? row.public_offer : null,
+    ),
   };
 }
 
@@ -222,30 +292,24 @@ export async function getPlatformSettings(): Promise<PlatformSettings | null> {
 export async function updatePlatformSettings(
   data: UpdatePlatformSettingsInput,
 ): Promise<{ ok: boolean; error?: string }> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { profile } = await verifyAccess(["admin"]);
 
-  if (!user) {
-    return { ok: false, error: "Unauthorized" };
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const hasAccess = isAdminOrHead(profile?.role);
-  if (!hasAccess) {
+  if (profile.role !== "admin") {
     return { ok: false, error: "Forbidden" };
   }
 
-  const adminClient = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  const adminClient = createAdminClient();
+  if (!adminClient) {
+    return {
+      ok: false,
+      error: "Сервер не настроен (отсутствует SUPABASE_SERVICE_ROLE_KEY).",
+    };
+  }
+
+  const organizationName = data.organization_name.trim();
+  if (organizationName.length === 0) {
+    return { ok: false, error: "Укажите название организации." };
+  }
 
   const contacts = data.contacts_json ?? {
     phones: [],
@@ -254,10 +318,13 @@ export async function updatePlatformSettings(
     websites: [],
   };
 
-  const { error } = await adminClient
+  // Нормализатор отбрасывает javascript: и любые схемы кроме http/https (и viber/tg/whatsapp у мессенджеров).
+  const socialsJson = normalizeSocials(data.socials_json);
+
+  const { error } = await (adminClient as any)
     .from("platform_settings")
     .update({
-      organization_name: data.organization_name.trim(),
+      organization_name: organizationName,
       short_description: preserveFormattedText(data.short_description),
       logo_url: data.logo_url,
       contacts_json: {
@@ -266,8 +333,11 @@ export async function updatePlatformSettings(
         addresses: preserveFormattedLines(contacts.addresses),
         websites: linesToPlainArray(contacts.websites ?? []),
       },
-      socials_json: data.socials_json,
+      socials_json: socialsJson,
       legal_info: preserveFormattedText(data.legal_info),
+      privacy_policy: preserveFormattedText(data.privacy_policy),
+      user_agreement: preserveFormattedText(data.user_agreement),
+      public_offer: preserveFormattedText(data.public_offer),
     })
     .eq("is_singleton", true);
 
@@ -275,6 +345,12 @@ export async function updatePlatformSettings(
     console.error("Error updating platform settings:", error);
     return { ok: false, error: error.message };
   }
+
+  revalidatePath("/", "layout");
+  revalidatePath("/(auth)", "layout");
+  revalidatePath("/privacy");
+  revalidatePath("/terms");
+  revalidatePath("/offer");
 
   return { ok: true };
 }

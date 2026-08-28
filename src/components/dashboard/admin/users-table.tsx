@@ -1,11 +1,17 @@
 "use client";
 
-import { Key, MoreHorizontal, UserX } from "lucide-react";
+import { Crown, GraduationCap, Key, MoreHorizontal, Shield, Trash2, User, UserCheck, UserX, ArrowUpDown, ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
+import {
+  getCoreRowModel,
+  getPaginationRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
 import { toast } from "sonner";
 
 import {
+  activateUser,
   deactivateUser,
   deleteUser,
   resetUserPassword,
@@ -22,8 +28,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import {
   Dialog,
   DialogContent,
@@ -49,10 +61,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
+import { initialsFromDisplayName } from "@/lib/utils/user-utils";
 import type { Database } from "@/types/database.types";
 
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
+type UserDangerAction = "delete" | "deactivate";
 
 type UsersTableProps = {
   users: AdminUserRow[];
@@ -91,6 +104,24 @@ function displayName(user: AdminUserRow): string {
   );
 }
 
+function RoleBadge({ role }: { role: ProfileRole }) {
+  const label = ROLE_LABELS[role];
+  const className =
+    role === "student"
+      ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-800 dark:text-blue-200"
+      : role === "teacher"
+        ? "border-emerald-500/40 bg-emerald-500/10 font-medium text-emerald-800 dark:text-emerald-200"
+        : role === "admin"
+          ? "border-violet-500/40 bg-violet-500/10 font-medium text-violet-800 dark:text-violet-200"
+          : "border-amber-500/40 bg-amber-500/10 font-medium text-amber-800 dark:text-amber-200";
+
+  return (
+    <Badge variant="outline" className={className}>
+      {label}
+    </Badge>
+  );
+}
+
 function generateRandomPassword(length = 10): string {
   const array = new Uint32Array(length);
   crypto.getRandomValues(array);
@@ -104,10 +135,64 @@ function generateRandomPassword(length = 10): string {
 export function UsersTable({ users, currentUserId }: UsersTableProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [deleteTarget, setDeleteTarget] = useState<AdminUserRow | null>(null);
+  const [userToDelete, setUserToDelete] = useState<AdminUserRow | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [userDangerAction, setUserDangerAction] =
+    useState<UserDangerAction>("delete");
   const [resetPasswordUser, setResetPasswordUser] =
     useState<AdminUserRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [roleFilter, setRoleFilter] = useState<ProfileRole | "all">("all");
+
+  const uniqueRoles = useMemo(() => {
+    const roles = new Set(users.map((user) => user.role));
+    return (Object.keys(ROLE_LABELS) as ProfileRole[]).filter((role) =>
+      roles.has(role),
+    );
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    let result = users;
+    const normalized = searchQuery.trim().toLowerCase();
+
+    if (normalized) {
+      result = result.filter(
+        (user) =>
+          displayName(user).toLowerCase().includes(normalized) ||
+          (user.email?.toLowerCase().includes(normalized) ?? false),
+      );
+    }
+
+    if (roleFilter !== "all") {
+      result = result.filter((user) => user.role === roleFilter);
+    }
+
+    if (sortOrder) {
+      result = [...result].sort((a, b) => {
+        const comparison = displayName(a).localeCompare(displayName(b), "ru");
+        return sortOrder === "asc" ? comparison : -comparison;
+      });
+    }
+
+    return result;
+  }, [users, searchQuery, roleFilter, sortOrder]);
+
+  const columns = useMemo(() => [{ accessorKey: "id" as const }], []);
+
+  const table = useReactTable({
+    data: filteredUsers,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 10,
+      },
+    },
+  });
 
   function handleRoleChange(userId: string, role: ProfileRole) {
     startTransition(async () => {
@@ -121,36 +206,60 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
     });
   }
 
-  function handleDeleteConfirm() {
-    if (!deleteTarget) {
+  function openUserDangerDialog(user: AdminUserRow, action: UserDangerAction) {
+    setUserToDelete(user);
+    setUserDangerAction(action);
+    setDeleteConfirmText("");
+    setIsDeleteDialogOpen(true);
+  }
+
+  function closeUserDangerDialog() {
+    setIsDeleteDialogOpen(false);
+    setUserToDelete(null);
+    setDeleteConfirmText("");
+    setUserDangerAction("delete");
+  }
+
+  const requiredConfirmWord =
+    userDangerAction === "delete" ? "удалить" : "деактивировать";
+  const confirmPromptWord =
+    userDangerAction === "delete" ? "Удалить" : "Деактивировать";
+
+  function handleDangerConfirm() {
+    if (!userToDelete) {
       return;
     }
 
-    const targetId = deleteTarget.id;
+    const targetId = userToDelete.id;
     startTransition(async () => {
-      const result = await deleteUser(targetId);
+      const result =
+        userDangerAction === "delete"
+          ? await deleteUser(targetId)
+          : await deactivateUser(targetId);
+
       if (!result.success) {
         toast.error(result.error);
         return;
       }
-      toast.success("Пользователь удалён");
-      setDeleteTarget(null);
+
+      toast.success(
+        userDangerAction === "delete"
+          ? "Пользователь удалён"
+          : "Пользователь деактивирован. Курсы остаются активными — смените владельца при необходимости.",
+      );
+      closeUserDangerDialog();
       router.refresh();
     });
   }
 
-  function handleDeactivate(userId: string) {
-    if (isPending) {
-      return;
-    }
-
+  function handleActivateUser(user: AdminUserRow) {
     startTransition(async () => {
-      const result = await deactivateUser(userId);
+      const result = await activateUser(user.id);
       if (!result.success) {
         toast.error(result.error);
         return;
       }
-      toast.success("Сотрудник уволен. Курсы остаются активными — смените владельца при необходимости.");
+      toast.success("Пользователь активирован");
       router.refresh();
     });
   }
@@ -208,34 +317,97 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
 
   return (
     <>
-      <div className="px-4 lg:px-6">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold tracking-tight">
-            Управление пользователями
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            Изменение ролей, сброс паролей и удаление аккаунтов
-          </p>
-        </div>
-        <div className="w-full overflow-x-auto rounded-lg border">
-          <Table className="min-w-[36rem]">
-            <TableHeader>
+      <div className="flex items-center justify-end gap-4 border-b px-6 py-4">
+        <Input
+          type="search"
+          placeholder="Поиск по имени или email…"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          className="w-full sm:max-w-sm"
+          aria-label="Поиск по имени или email пользователя"
+        />
+      </div>
+
+      <div className="custom-scrollbar w-full overflow-x-auto">
+        <Table className="min-w-max">
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 h-8 font-medium"
+                    >
+                      Пользователь
+                      <ArrowUpDown className="ml-2 size-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => setSortOrder(null)}>
+                      По умолчанию
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortOrder("asc")}>
+                      А → Я
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortOrder("desc")}>
+                      Я → А
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableHead>
+              <TableHead>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 h-8 font-medium"
+                    >
+                      Роль
+                      <ChevronDown className="ml-2 size-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => setRoleFilter("all")}>
+                      Все роли
+                    </DropdownMenuItem>
+                    {uniqueRoles.map((role) => (
+                      <DropdownMenuItem
+                        key={role}
+                        onClick={() => setRoleFilter(role)}
+                      >
+                        {ROLE_LABELS[role]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableHead>
+              <TableHead>Дата регистрации</TableHead>
+              <TableHead className="w-12 text-right">Действия</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.length === 0 ? (
               <TableRow>
-                <TableHead>Имя</TableHead>
-                <TableHead>Роль</TableHead>
-                <TableHead>Дата регистрации</TableHead>
-                <TableHead className="w-12 text-right">Действия</TableHead>
+                <TableCell colSpan={4} className="h-24 text-center">
+                  Пользователи не найдены.
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center">
-                    Пользователи не найдены.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                users.map((user) => {
+            ) : filteredUsers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="h-24 text-center">
+                  {searchQuery.trim()
+                    ? `Нет пользователей по запросу «${searchQuery.trim()}».`
+                    : "Нет пользователей по выбранным фильтрам."}
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((tableRow) => {
+                  const user = tableRow.original;
                   const isSelf = user.id === currentUserId;
                   const isActive = user.isActive !== false;
                   return (
@@ -244,24 +416,40 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                       className={isActive ? undefined : "opacity-60"}
                     >
                       <TableCell>
-                        <div className="flex flex-col gap-0.5">
-                          <span className="flex items-center gap-2 font-medium">
-                            {displayName(user)}
-                            {!isActive ? (
-                              <Badge variant="outline" className="text-[10px]">
-                                Уволен
-                              </Badge>
-                            ) : null}
-                          </span>
-                          {user.email ? (
-                            <span className="text-muted-foreground text-xs">
-                              {user.email}
+                        <div className="flex items-center gap-3">
+                          <Avatar className="size-9 shrink-0">
+                            <AvatarImage
+                              src={user.avatarUrl ?? undefined}
+                              alt={displayName(user)}
+                            />
+                            <AvatarFallback className="text-xs">
+                              {initialsFromDisplayName(displayName(user))}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <span className="flex items-center gap-2 font-medium text-foreground">
+                              {displayName(user)}
                             </span>
-                          ) : null}
+                            {user.email ? (
+                              <span className="truncate text-sm text-muted-foreground">
+                                {user.email}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{ROLE_LABELS[user.role]}</Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <RoleBadge role={user.role} />
+                          {!isActive ? (
+                            <Badge
+                              variant="destructive"
+                              className="text-[10px] uppercase px-1.5 py-0.5 leading-none"
+                            >
+                              Деактивирован
+                            </Badge>
+                          ) : null}
+                        </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {formatRegisteredAt(user.createdAt)}
@@ -273,7 +461,6 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="size-8"
                               disabled={isPending}
                               aria-label="Действия с пользователем"
                             >
@@ -293,6 +480,7 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                                       handleRoleChange(user.id, "teacher")
                                     }
                                   >
+                                    <GraduationCap className="size-4" aria-hidden />
                                     Сделать Учителем
                                   </DropdownMenuItem>
                                 )}
@@ -302,6 +490,7 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                                       handleRoleChange(user.id, "student")
                                     }
                                   >
+                                    <User className="size-4" aria-hidden />
                                     Сделать Студентом
                                   </DropdownMenuItem>
                                 )}
@@ -311,6 +500,7 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                                       handleRoleChange(user.id, "admin")
                                     }
                                   >
+                                    <Shield className="size-4" aria-hidden />
                                     Сделать Админом
                                   </DropdownMenuItem>
                                 )}
@@ -320,30 +510,48 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                                       handleRoleChange(user.id, "head_teacher")
                                     }
                                   >
+                                    <Crown className="size-4" aria-hidden />
                                     Сделать Руководителем
                                   </DropdownMenuItem>
                                 )}
                                 <DropdownMenuItem
                                   onClick={() => openResetPasswordDialog(user)}
                                 >
-                                  <Key className="mr-2 size-4" aria-hidden />
+                                  <Key className="size-4" aria-hidden />
                                   Сбросить пароль
                                 </DropdownMenuItem>
                                 {isActive ? (
                                   <DropdownMenuItem
-                                    onClick={() => handleDeactivate(user.id)}
+                                    variant="destructive"
+                                    onClick={() =>
+                                      openUserDangerDialog(user, "deactivate")
+                                    }
                                   >
-                                    <UserX className="mr-2 size-4" aria-hidden />
-                                    Деактивировать / Уволить
+                                    <UserX className="size-4" aria-hidden />
+                                    Деактивировать
                                   </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    onClick={() => handleActivateUser(user)}
+                                  >
+                                    <UserCheck className="size-4" aria-hidden />
+                                    Активировать
+                                  </DropdownMenuItem>
+                                )}
+                                {!isActive ? (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      variant="destructive"
+                                      onClick={() =>
+                                        openUserDangerDialog(user, "delete")
+                                      }
+                                    >
+                                      <Trash2 className="size-4" aria-hidden />
+                                      Удалить
+                                    </DropdownMenuItem>
+                                  </>
                                 ) : null}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => setDeleteTarget(user)}
-                                >
-                                  Удалить пользователя
-                                </DropdownMenuItem>
                               </>
                             )}
                           </DropdownMenuContent>
@@ -353,10 +561,10 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                   );
                 })
               )}
-            </TableBody>
-          </Table>
-        </div>
+          </TableBody>
+        </Table>
       </div>
+      <DataTablePagination table={table} />
 
       <Dialog
         open={resetPasswordUser !== null}
@@ -432,30 +640,65 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
       </Dialog>
 
       <AlertDialog
-        open={deleteTarget !== null}
+        open={isDeleteDialogOpen}
         onOpenChange={(open) => {
-          if (!open) {
-            setDeleteTarget(null);
+          if (!open && !isPending) {
+            closeUserDangerDialog();
           }
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить пользователя?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {userDangerAction === "delete"
+                ? "Удалить пользователя?"
+                : "Деактивировать пользователя?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget
-                ? `Аккаунт «${displayName(deleteTarget)}» и все связанные данные будут удалены без возможности восстановления.`
-                : null}
+              {userToDelete
+                ? `Вы собираетесь ${
+                    userDangerAction === "delete" ? "удалить" : "деактивировать"
+                  } ${displayName(userToDelete)}${
+                    userToDelete.email ? ` (${userToDelete.email})` : ""
+                  }. Это действие необратимо.`
+                : "Это действие необратимо."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium">
+              Введите слово{" "}
+              <span className="font-bold text-foreground">{confirmPromptWord}</span>{" "}
+              для подтверждения:
+            </label>
+            <Input
+              value={deleteConfirmText}
+              onChange={(event) => setDeleteConfirmText(event.target.value)}
+              autoComplete="off"
+              aria-label="Подтверждение действия с пользователем"
+            />
+          </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={isPending}
-              className={cn(buttonVariants({ variant: "destructive" }))}
-            >
-              {isPending ? "Удаление…" : "Удалить"}
+            <AlertDialogCancel asChild>
+              <Button type="button" variant="outline" disabled={isPending}>
+                Отмена
+              </Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                type="button"
+                variant="destructive-outline"
+                disabled={
+                  isPending ||
+                  deleteConfirmText.trim().toLowerCase() !== requiredConfirmWord
+                }
+                onClick={handleDangerConfirm}
+              >
+                {isPending
+                  ? userDangerAction === "delete"
+                    ? "Удаление…"
+                    : "Деактивация…"
+                  : confirmPromptWord}
+              </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

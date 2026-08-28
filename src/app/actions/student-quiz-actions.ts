@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 import {
+  deleteRejectedAttemptsForStudentTest,
   getSubmittedQuestionIdsForAttempt,
   getTestWithQuestions,
   type SafeTestQuestion,
@@ -108,6 +109,15 @@ export async function initStudentQuiz(
 
   if (!attemptId) {
     if (!isTrainingTest) {
+      const deletedRejected = await deleteRejectedAttemptsForStudentTest(
+        supabase,
+        user.id,
+        parsed.data,
+      );
+      if (!deletedRejected.ok) {
+        return { success: false, error: deletedRejected.error };
+      }
+
       const { data: priorAttempts, error: priorError } = await supabase
         .from("student_attempts")
         .select("id")
@@ -202,6 +212,31 @@ export async function initStudentQuiz(
  * Метаданные опубликованного теста для карточки перед стартом (без вопросов и попытки).
  * Студенческая перспектива: title_student, иначе title_teacher / title.
  */
+type AttemptPreviewRow = {
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+
+function pickLatestAttemptPreview(
+  rows: AttemptPreviewRow[],
+): AttemptPreviewRow | null {
+  let latest: AttemptPreviewRow | null = null;
+  let latestTs = Number.NEGATIVE_INFINITY;
+
+  for (const row of rows) {
+    const raw = row.completed_at ?? row.started_at;
+    const ts = raw ? Date.parse(raw) : 0;
+    const normalized = Number.isNaN(ts) ? 0 : ts;
+    if (!latest || normalized >= latestTs) {
+      latest = row;
+      latestTs = normalized;
+    }
+  }
+
+  return latest;
+}
+
 export async function getStudentQuizPreviewTitle(
   testId: string,
 ): Promise<
@@ -210,6 +245,7 @@ export async function getStudentQuizPreviewTitle(
       title: string;
       testType: StudentTestType;
       hasExhaustedAttempts: boolean;
+      hasRejectedAttempt: boolean;
     }
   | { success: false; error: string }
 > {
@@ -248,10 +284,11 @@ export async function getStudentQuizPreviewTitle(
   const testType = resolveStudentTestType(data.test_type);
 
   let hasExhaustedAttempts = false;
+  let hasRejectedAttempt = false;
   if (testType === "final") {
     const { data: attempts, error: attemptsError } = await supabase
       .from("student_attempts")
-      .select("status")
+      .select("status, started_at, completed_at")
       .eq("student_id", user.id)
       .eq("test_id", parsed.data);
 
@@ -261,8 +298,18 @@ export async function getStudentQuizPreviewTitle(
         (a) => a.status === "completed" || a.status === "pending_review",
       );
       hasExhaustedAttempts = hasFinished && !hasInProgress;
+
+      const latest = pickLatestAttemptPreview(attempts as AttemptPreviewRow[]);
+      hasRejectedAttempt =
+        latest?.status === "rejected" && !hasInProgress && !hasExhaustedAttempts;
     }
   }
 
-  return { success: true, title, testType, hasExhaustedAttempts };
+  return {
+    success: true,
+    title,
+    testType,
+    hasExhaustedAttempts,
+    hasRejectedAttempt,
+  };
 }

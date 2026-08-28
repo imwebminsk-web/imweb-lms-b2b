@@ -5,7 +5,9 @@ import { useMemo, useState } from "react";
 
 import type { StudentProgressItem } from "@/app/actions/student-dashboard-actions";
 import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
-import { ProgressStatusBadge } from "@/components/learn/progress-status-badge";
+import { GradebookLegend } from "@/components/dashboard/gradebook/gradebook-legend";
+import { JournalPointsDisplay } from "@/components/dashboard/gradebook/journal-points-display";
+import { isGradebookDrawerOpenable } from "@/components/dashboard/gradebook/progress-status-visuals";
 import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
 import { TestResultSheet } from "@/components/dashboard/teacher/TestResultSheet";
 import { useLanguage } from "@/components/providers/language-provider";
@@ -17,6 +19,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -37,9 +41,16 @@ import {
   sortModules,
   type LearnModuleNav,
 } from "@/lib/learn/curriculum-order";
-import { JournalPointsDisplay } from "@/components/dashboard/gradebook/journal-points-display";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, CheckCircle2, Circle, MessageCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  CheckSquare,
+  Circle,
+  FileText,
+  MessageCircle,
+  Target,
+} from "lucide-react";
 
 export type CourseHubClientProps = {
   course: LearnCourseCurriculum;
@@ -54,17 +65,57 @@ export type CourseHubClientProps = {
   unreadCount?: number;
 };
 
-function typeBadge(
-  type: StudentProgressItem["type"],
-  t: ReturnType<typeof useLanguage>["t"],
-) {
-  if (type === "test") {
-    return <Badge variant="secondary">{t("course_view.badgeTest")}</Badge>;
+const ROW_ICON_CLASS =
+  "text-muted-foreground mr-1.5 inline-block size-3 shrink-0";
+
+function rowTypeIcon(item: StudentProgressItem) {
+  if (item.type === "assignment") {
+    return <FileText className={ROW_ICON_CLASS} aria-hidden />;
   }
+  if (item.testType === "training") {
+    return <Target className={ROW_ICON_CLASS} aria-hidden />;
+  }
+  return <CheckSquare className={ROW_ICON_CLASS} aria-hidden />;
+}
+
+function ProgressLessonTitle({
+  item,
+  onOpen,
+}: {
+  item: StudentProgressItem;
+  onOpen: () => void;
+}) {
+  const canOpen =
+    isGradebookDrawerOpenable(item.status, item.points) &&
+    (item.type === "assignment"
+      ? Boolean(item.lessonBlockId)
+      : Boolean(item.testId));
+
+  const label = (
+    <>
+      {rowTypeIcon(item)}
+      {item.title}
+    </>
+  );
+
+  if (!canOpen) {
+    return (
+      <span className="inline-flex max-w-full cursor-default items-center font-medium">
+        {label}
+      </span>
+    );
+  }
+
   return (
-    <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10">
-      {t("course_view.badgeAssignment")}
-    </Badge>
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "text-primary inline-flex max-w-full cursor-pointer items-center text-left font-medium hover:underline",
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -116,7 +167,22 @@ export function CourseHubClient({
     testId: string;
     studentName: string;
     testTitle: string;
+    lessonId?: string;
   } | null>(null);
+
+  const [showTraining, setShowTraining] = useState(false);
+
+  const hasTrainingItems = courseProgress.some(
+    (item) => item.type === "test" && item.testType === "training",
+  );
+
+  const visibleProgress = useMemo(
+    () =>
+      courseProgress.filter(
+        (item) => showTraining || item.testType !== "training",
+      ),
+    [courseProgress, showTraining],
+  );
 
   const continueHref = useMemo(
     () => getContinueLessonHref(modules, completedSet, course.slug),
@@ -230,9 +296,30 @@ export function CourseHubClient({
           </TabsContent>
 
           <TabsContent value="progress" className="mt-0">
-            <p className="text-muted-foreground mb-4 text-sm">
-              {t("course_view.progressHint")}
-            </p>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <p className="text-muted-foreground text-sm">
+                {t("course_view.progressHint")}
+              </p>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {hasTrainingItems ? (
+                  <>
+                    <Label
+                      htmlFor="course-hub-show-training"
+                      className="text-muted-foreground font-normal"
+                    >
+                      Показывать тренировки
+                    </Label>
+                    <Switch
+                      id="course-hub-show-training"
+                      checked={showTraining}
+                      onCheckedChange={setShowTraining}
+                      aria-label="Показывать тренировочные тесты"
+                    />
+                  </>
+                ) : null}
+                <GradebookLegend />
+              </div>
+            </div>
             <div className="overflow-x-auto rounded-lg border">
               <Table>
                 <TableHeader>
@@ -240,96 +327,68 @@ export function CourseHubClient({
                     <TableHead className="min-w-[200px]">
                       {t("course_view.colLesson")}
                     </TableHead>
-                    <TableHead className="w-[100px]">{t("course_view.colType")}</TableHead>
-                    <TableHead className="w-[140px]">{t("course_view.colStatus")}</TableHead>
-                    <TableHead className="w-[100px]">{t("course_view.colPoints")}</TableHead>
+                    <TableHead className="w-[100px]">
+                      {t("course_view.colPoints")}
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {courseProgress.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={4}
+                        colSpan={2}
                         className="text-muted-foreground py-10 text-center text-sm"
                       >
                         {t("course_view.noProgress")}
                       </TableCell>
                     </TableRow>
+                  ) : visibleProgress.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={2}
+                        className="text-muted-foreground py-10 text-center text-sm"
+                      >
+                        Сейчас тренировочные тесты скрыты. Включите «Показывать
+                        тренировки», чтобы увидеть их в журнале.
+                      </TableCell>
+                    </TableRow>
                   ) : (
-                    courseProgress.map((item) => {
-                      const pointsCell = (
-                        <JournalPointsDisplay
-                          points={item.points}
-                          compact
-                        />
-                      );
-
-                      if (item.type === "assignment") {
-                        const blockId = item.lessonBlockId;
-                        return (
-                          <TableRow key={item.id}>
-                            <TableCell>
-                              {blockId ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setSelectedAssignment({
-                                      lessonBlockId: blockId,
-                                    })
-                                  }
-                                  className={cn(
-                                    "text-primary cursor-pointer text-left font-medium hover:underline",
-                                  )}
-                                >
-                                  {item.title}
-                                </button>
-                              ) : (
-                                <span className="font-medium">{item.title}</span>
-                              )}
-                            </TableCell>
-                            <TableCell>{typeBadge(item.type, t)}</TableCell>
-                            <TableCell>
-                              <ProgressStatusBadge item={item} />
-                            </TableCell>
-                            <TableCell className="text-sm">
-                              {pointsCell}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      }
-
-                      return (
-                        <TableRow key={item.id}>
-                          <TableCell>
-                            {item.testId ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setSelectedTest({
-                                    studentId: userId,
-                                    testId: item.testId!,
-                                    studentName: userDisplayName,
-                                    testTitle: item.title,
-                                  })
-                                }
-                                className={cn(
-                                  "text-primary cursor-pointer text-left font-medium hover:underline",
-                                )}
-                              >
-                                {item.title}
-                              </button>
-                            ) : (
-                              <span className="font-medium">{item.title}</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{typeBadge(item.type, t)}</TableCell>
-                          <TableCell>
-                            <ProgressStatusBadge item={item} />
-                          </TableCell>
-                          <TableCell className="text-sm">{pointsCell}</TableCell>
-                        </TableRow>
-                      );
-                    })
+                    visibleProgress.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <ProgressLessonTitle
+                            item={item}
+                            onOpen={() => {
+                              if (
+                                item.type === "assignment" &&
+                                item.lessonBlockId
+                              ) {
+                                setSelectedAssignment({
+                                  lessonBlockId: item.lessonBlockId,
+                                });
+                                return;
+                              }
+                              if (item.testId) {
+                                setSelectedTest({
+                                  studentId: userId,
+                                  testId: item.testId,
+                                  studentName: userDisplayName,
+                                  testTitle: item.title,
+                                  lessonId: item.lessonId,
+                                });
+                              }
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <JournalPointsDisplay
+                            points={item.points}
+                            status={item.status}
+                            compact
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
                   )}
                 </TableBody>
               </Table>
@@ -379,6 +438,7 @@ export function CourseHubClient({
         testId={selectedTest?.testId ?? ""}
         studentName={selectedTest?.studentName ?? ""}
         testTitle={selectedTest?.testTitle ?? ""}
+        lessonId={selectedTest?.lessonId}
       />
 
       {selectedAssignment ? (

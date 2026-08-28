@@ -3,10 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import {
+  isLessonCompletionBlocked,
+  resolveLessonCompletionGate,
+  type LessonCompletionGate,
+} from "@/lib/learn/lesson-final-test-gate";
 import { assertEnrolledForLesson } from "@/lib/learn/verify-course-enrollment";
 import { createClient } from "@/lib/supabase/server";
 
+export type { LessonCompletionGate } from "@/lib/learn/lesson-final-test-gate";
+
 const lessonIdSchema = z.string().uuid("Некорректный ID урока");
+const userIdSchema = z.string().uuid("Некорректный ID пользователя");
+
+const LESSON_COMPLETION_GATE_ERROR =
+  "Cannot complete lesson: required tests or assignments are not finished.";
 
 /**
  * Есть ли у текущего пользователя отметка «урок завершён» для этого урока.
@@ -41,6 +52,29 @@ export async function getLessonCompletionStatus(
   }
 
   return data != null;
+}
+
+/**
+ * Можно ли отметить урок завершённым: итоговые тесты сданы
+ * и обязательные задания приняты преподавателем.
+ */
+export async function getLessonCompletionGate(
+  lessonId: string,
+  userId: string,
+): Promise<LessonCompletionGate> {
+  const parsedLesson = lessonIdSchema.safeParse(lessonId);
+  const parsedUser = userIdSchema.safeParse(userId);
+  if (!parsedLesson.success || !parsedUser.success) {
+    return { state: "blocked_not_passed" };
+  }
+
+  const supabase = await createClient();
+  const state = await resolveLessonCompletionGate(
+    supabase,
+    parsedLesson.data,
+    parsedUser.data,
+  );
+  return { state };
 }
 
 export type ToggleLessonCompletionResult =
@@ -97,6 +131,15 @@ export async function toggleLessonCompletion(
       return { ok: false, error: error.message };
     }
   } else {
+    const gateState = await resolveLessonCompletionGate(
+      supabase,
+      parsedLesson.data,
+      user.id,
+    );
+    if (isLessonCompletionBlocked(gateState)) {
+      return { ok: false, error: LESSON_COMPLETION_GATE_ERROR };
+    }
+
     const { error } = await supabase.from("lesson_completions").insert({
       lesson_id: parsedLesson.data,
       student_id: user.id,

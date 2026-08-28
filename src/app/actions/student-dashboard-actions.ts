@@ -77,7 +77,8 @@ async function loadEnrolledPublishedLessonsForStudent(
   const { data: enrollRows, error: enrollError } = await supabase
     .from("enrollments")
     .select("course_id, cohort_id, courses(id, slug, title)")
-    .eq("user_id", studentUserId);
+    .eq("user_id", studentUserId)
+    .eq("status", "active");
 
   if (enrollError) {
     return { ok: false, error: enrollError.message };
@@ -137,8 +138,7 @@ async function loadEnrolledPublishedLessonsForStudent(
   const courseRestrictedLessonIds = new Map<string, Set<string>>();
   for (const row of enrollRows ?? []) {
     if (!row.cohort_id) continue;
-    const fromCohort = cohortToLessonIds.get(row.cohort_id);
-    if (!fromCohort || fromCohort.size === 0) continue;
+    const fromCohort = cohortToLessonIds.get(row.cohort_id) ?? new Set<string>();
     const merged =
       courseRestrictedLessonIds.get(row.course_id) ?? new Set<string>();
     for (const lid of fromCohort) merged.add(lid);
@@ -167,7 +167,7 @@ async function loadEnrolledPublishedLessonsForStudent(
     };
     const cid = mod?.course_id ?? "";
     const restricted = courseRestrictedLessonIds.get(cid);
-    if (restricted && restricted.size > 0 && !restricted.has(row.id)) {
+    if (restricted && !restricted.has(row.id)) {
       continue;
     }
     const course = mod?.courses;
@@ -323,6 +323,7 @@ async function fetchStudentProgressItemsForUserId(
   const hasCompletedByTest = new Set<string>();
   const hasInProgressByTest = new Set<string>();
   const hasPendingReviewByTest = new Set<string>();
+  const hasRejectedByTest = new Set<string>();
 
   for (const a of attemptRowsRaw ?? []) {
     if (a.status === "completed") {
@@ -339,6 +340,9 @@ async function fetchStudentProgressItemsForUserId(
     }
     if (a.status === "pending_review") {
       hasPendingReviewByTest.add(a.test_id);
+    }
+    if (a.status === "rejected") {
+      hasRejectedByTest.add(a.test_id);
     }
   }
 
@@ -452,6 +456,8 @@ async function fetchStudentProgressItemsForUserId(
           status = "completed";
         } else if (hasInProgressByTest.has(tid)) {
           status = "in_progress";
+        } else if (hasRejectedByTest.has(tid)) {
+          status = "rejected";
         }
 
         items.push({
@@ -493,6 +499,8 @@ async function fetchStudentProgressItemsForUserId(
         status = "completed";
       } else if (hasInProgressByTest.has(tid)) {
         status = "in_progress";
+      } else if (hasRejectedByTest.has(tid)) {
+        status = "rejected";
       }
 
       items.push({

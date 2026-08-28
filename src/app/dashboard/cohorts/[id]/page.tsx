@@ -11,11 +11,18 @@ import {
 import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
 import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
 import { TeacherCohortTabs } from "@/components/dashboard/cohorts/teacher-cohort-tabs";
+import { CopyPinButton } from "@/components/dashboard/teacher/cohorts/copy-pin-button";
 import { CohortAssignmentManager } from "@/components/dashboard/teacher/cohorts/cohort-assignment-manager";
 import { CohortSettingsForm } from "@/components/dashboard/teacher/cohorts/cohort-settings-form";
 import { CohortStudentsList } from "@/components/dashboard/teacher/cohorts/cohort-students-list";
 import { CohortStatusToggle } from "@/components/dashboard/teacher/cohorts/cohort-status-toggle";
 import { MatrixGradebook } from "@/components/dashboard/teacher/cohorts/matrix-gradebook";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
@@ -24,6 +31,7 @@ import { verifyAccess } from "@/lib/auth/rbac";
 
 type CohortPageProps = {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
 };
 
 type LessonWithTestRow = {
@@ -44,9 +52,12 @@ type CohortAssignmentRow = {
   lesson_id: string | null;
 };
 
-export default async function CohortDetailsPage({ params }: CohortPageProps) {
+export default async function CohortDetailsPage({ params, searchParams }: CohortPageProps) {
   const { id } = await params;
+  const { tab: tabParam } = await searchParams;
   const cohortId = id?.trim();
+  const defaultTab =
+    tabParam === "journal" || tabParam === "chat" ? tabParam : "management";
 
   if (!cohortId) {
     notFound();
@@ -70,7 +81,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
     .select(
-      "id, name, pin_code, is_active, is_chat_enabled, created_at, course_id, courses(id, title, teacher_id)",
+      "id, name, pin_code, is_active, is_chat_enabled, requires_approval, created_at, course_id, courses(id, title, teacher_id)",
     )
     .eq("id", cohortId)
     .maybeSingle();
@@ -171,7 +182,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
 
   const managementNode = (
     <>
-      <section className="rounded-xl border p-6 space-y-4">
+      <section className="rounded-xl border bg-card text-card-foreground shadow-sm p-6 space-y-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight">{cohort.name}</h1>
@@ -179,9 +190,12 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
               Курс: {courseRel.title}
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="font-mono text-sm tracking-widest">
-                PIN: {cohort.pin_code}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="font-mono text-sm tracking-widest">
+                  PIN: {cohort.pin_code}
+                </Badge>
+                <CopyPinButton pinCode={cohort.pin_code} />
+              </div>
               {cohort.is_active ? (
                 <Badge
                   variant="outline"
@@ -199,15 +213,43 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
         </div>
       </section>
 
-      <CohortSettingsForm
-        cohort={{
-          id: cohort.id,
-          name: cohort.name,
-          is_chat_enabled: cohort.is_chat_enabled,
-        }}
-      />
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem
+          value="settings"
+          className="rounded-xl border bg-card text-card-foreground shadow-sm px-4 sm:px-6"
+        >
+          <AccordionTrigger className="py-4 text-lg font-semibold hover:no-underline">
+            Настройки группы
+          </AccordionTrigger>
+          <AccordionContent className="pb-4">
+            <p className="text-muted-foreground mb-4 text-sm">
+              Название, чат, зал ожидания и удаление группы. Удаление необратимо.
+            </p>
+            <CohortSettingsForm
+              cohort={{
+                id: cohort.id,
+                name: cohort.name,
+                is_chat_enabled: cohort.is_chat_enabled,
+                requires_approval: cohort.requires_approval,
+              }}
+            />
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
-      <section className="rounded-xl border p-6 space-y-4">
+      <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+        <div className="flex flex-col justify-between border-b px-6 py-4 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Ученики</h2>
+            <p className="text-muted-foreground text-sm">
+              Список зачисленных учеников в эту группу.
+            </p>
+          </div>
+        </div>
+        <CohortStudentsList cohortId={cohort.id} students={cohortStudents} />
+      </section>
+
+      <section className="rounded-xl border bg-card text-card-foreground shadow-sm p-6 space-y-4">
         <h2 className="text-xl font-semibold tracking-tight">Управление контентом</h2>
         <CohortAssignmentManager
           cohortId={cohort.id}
@@ -220,37 +262,29 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
 
   const journalNode = (
     <>
-      <section className="rounded-xl border overflow-hidden">
-        <div className="border-b px-6 py-4">
-          <h2 className="text-lg font-semibold tracking-tight">
-            Сводный журнал
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            Ученики в строках, тесты и задания в колонках. Нажмите на ячейку,
-            чтобы открыть разбор.
-          </p>
-        </div>
-        <div className="p-4">
-          {matrixRes.success ? (
-            <MatrixGradebook data={matrixRes.data} />
-          ) : (
-            <p className="text-destructive text-sm" role="alert">
-              {matrixRes.error}
+      <section className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+        <div className="flex flex-col justify-between border-b px-6 py-4 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">
+              Сводный журнал
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              Кликните на имя ученика, чтобы открыть его личный журнал. Кликните на
+              оценку или статус, чтобы открыть детали ответа.
             </p>
-          )}
+          </div>
         </div>
-      </section>
-
-      <section className="rounded-xl border">
-        <div className="border-b px-4 py-4 sm:px-6">
-          <h2 className="text-lg font-semibold tracking-tight">Ученики</h2>
-          <p className="text-muted-foreground text-sm">
-            Откройте журнал по каждому ученику — таблица успеваемости по курсу группы.
+        {matrixRes.success ? (
+          <MatrixGradebook
+            data={matrixRes.data}
+            cohortId={cohort.id}
+            cohortName={cohort.name}
+          />
+        ) : (
+          <p className="text-destructive px-6 py-4 text-sm" role="alert">
+            {matrixRes.error}
           </p>
-        </div>
-        <div className="px-4 pb-4 sm:px-6">
-          <CohortStudentsList cohortId={cohort.id} students={cohortStudents} />
-        </div>
+        )}
       </section>
     </>
   );
@@ -284,6 +318,7 @@ export default async function CohortDetailsPage({ params }: CohortPageProps) {
             chatNode={chatNode}
             unreadCount={unreadCount}
             pendingReviewCount={pendingReviewCount}
+            defaultTab={defaultTab}
           />
         </main>
       </div>

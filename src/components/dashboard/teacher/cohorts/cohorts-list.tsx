@@ -65,15 +65,15 @@ export function CohortsList({
 
   if (cohorts.length === 0) {
     return (
-      <div className="border-muted-foreground/25 text-muted-foreground rounded-xl border border-dashed px-6 py-12 text-center text-sm">
+      <p className="text-muted-foreground px-6 py-12 text-center text-sm">
         Пока нет групп. Создайте первую кнопкой «Создать группу».
-      </div>
+      </p>
     );
   }
 
   return (
-    <div className="w-full overflow-x-auto rounded-lg border">
-      <Table className="min-w-[48rem]">
+    <div className="custom-scrollbar w-full overflow-x-auto">
+      <Table className="min-w-max">
         <TableHeader>
           <TableRow>
             <TableHead>Группа</TableHead>
@@ -120,7 +120,6 @@ export function CohortsList({
                     type="button"
                     size="icon"
                     variant="outline"
-                    className="size-8"
                     aria-label="Скопировать PIN"
                     onClick={() => void copyPin(row.pin_code, row.id)}
                   >

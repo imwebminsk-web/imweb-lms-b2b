@@ -24,6 +24,7 @@ import { ImageLabelingImageUploadField } from "@/components/admin/questions/Imag
 import type {
   QuestionField,
   QuestionKind,
+  TestTypeKind,
   LabelingPairField,
   PuzzleOptionField,
 } from "@/types/create-test-form";
@@ -71,12 +72,14 @@ export interface UnifiedQuestionEditorProps {
   questions: QuestionField[];
   onQuestionsChange: (questions: QuestionField[]) => void;
   pending?: boolean;
+  testType?: TestTypeKind;
 }
 
 export function UnifiedQuestionEditor({
   questions,
   onQuestionsChange,
   pending = false,
+  testType,
 }: UnifiedQuestionEditorProps) {
   const [mobileExpandedQuestionIndex, setMobileExpandedQuestionIndex] = useState(-1);
 
@@ -581,7 +584,10 @@ export function UnifiedQuestionEditor({
                   <SelectItem value="fill_blanks_typing_multi">
                     {QUESTION_TYPE_LABELS.fill_blanks_typing_multi}
                   </SelectItem>
-                  <SelectItem value="text_input">
+                  <SelectItem
+                    value="text_input"
+                    disabled={testType === "training"}
+                  >
                     {QUESTION_TYPE_LABELS.text_input}
                   </SelectItem>
                   <SelectItem value="ordering">

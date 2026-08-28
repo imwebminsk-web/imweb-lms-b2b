@@ -190,6 +190,19 @@ export const saveFullTestPayloadSchema = z
     description: data.description ?? null,
   }))
   .superRefine((data, ctx) => {
+    if (data.test_type === "training") {
+      data.questions.forEach((q, index) => {
+        if (q.type === "text_input") {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              "Тренировочный тест не может содержать задания «Развернутый ответ», так как они требуют ручной проверки.",
+            path: ["questions", index, "type"],
+          });
+        }
+      });
+    }
+
     data.questions.forEach((q, i) => {
       if (
         q.type === "matching_puzzle" ||

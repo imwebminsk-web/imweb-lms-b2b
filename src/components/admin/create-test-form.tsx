@@ -998,6 +998,7 @@ export function CreateTestForm({
         questions={questions}
         onQuestionsChange={setQuestions}
         pending={pending}
+        testType={testType}
       />
 
       <div className="flex shrink-0 flex-col gap-3">

@@ -48,12 +48,21 @@ export function JoinCohortForm() {
   }, [state.error]);
 
   useEffect(() => {
-    if (!state.success || !state.redirectUrl) return;
+    if (!state.success) return;
     if (successHandled.current) return;
     successHandled.current = true;
+
+    if (state.isPending) {
+      toast.success(
+        "Заявка отправлена. Ожидайте одобрения преподавателя.",
+      );
+      return;
+    }
+
+    if (!state.redirectUrl) return;
     toast.success(t("dashboard.enrollSuccess"));
     router.push(state.redirectUrl);
-  }, [state.success, state.redirectUrl, router, t]);
+  }, [state.success, state.isPending, state.redirectUrl, router, t]);
 
   return (
     <Card className="border-border/80 shadow-sm">

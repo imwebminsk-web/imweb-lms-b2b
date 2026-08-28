@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { verifyAccess } from "@/lib/auth/rbac";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
@@ -14,6 +15,7 @@ export type GlobalTeacherStudent = {
   studentId: string;
   studentName: string;
   studentEmail: string;
+  avatarUrl: string | null;
   cohortCount: number;
   cohorts: TeacherStudentCohort[];
   firstEnrolledAt: string;
@@ -80,38 +82,6 @@ async function assertTeacherAccess(
   }
 
   return { ok: true, userId: user.id };
-}
-
-async function getTeacherCohortIds(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  teacherId: string,
-): Promise<string[]> {
-  const { data: courses, error: coursesError } = await supabase
-    .from("courses")
-    .select("id")
-    .eq("teacher_id", teacherId);
-
-  if (coursesError) {
-    console.error("[getTeacherCohortIds] courses", coursesError.message);
-    return [];
-  }
-
-  const courseIds = (courses ?? []).map((course) => course.id);
-  if (courseIds.length === 0) {
-    return [];
-  }
-
-  const { data: cohorts, error: cohortsError } = await supabase
-    .from("cohorts")
-    .select("id")
-    .in("course_id", courseIds);
-
-  if (cohortsError) {
-    console.error("[getTeacherCohortIds] cohorts", cohortsError.message);
-    return [];
-  }
-
-  return (cohorts ?? []).map((cohort) => cohort.id);
 }
 
 /**
@@ -192,6 +162,7 @@ export async function getGlobalTeacherStudents(
 
   const studentIds = [...byStudent.keys()];
   const profileNameByUserId = new Map<string, string | null>();
+  const avatarUrlByUserId = new Map<string, string | null>();
   const emailByUserId = new Map<string, string | null>();
 
   if (studentIds.length > 0) {
@@ -199,7 +170,10 @@ export async function getGlobalTeacherStudents(
       { data: profileRows, error: profilesError },
       { data: emailRows, error: emailsError },
     ] = await Promise.all([
-      supabase.from("profiles").select("id, full_name").in("id", studentIds),
+      supabase
+        .from("profiles")
+        .select("id, full_name, avatar_url")
+        .in("id", studentIds),
       supabase.rpc("get_users_emails", { p_user_ids: studentIds }),
     ]);
 
@@ -222,6 +196,7 @@ export async function getGlobalTeacherStudents(
 
     for (const profile of profileRows ?? []) {
       profileNameByUserId.set(profile.id, profile.full_name);
+      avatarUrlByUserId.set(profile.id, profile.avatar_url ?? null);
     }
 
     for (const row of (emailRows ?? []) as EmailRpcRow[]) {
@@ -252,6 +227,7 @@ export async function getGlobalTeacherStudents(
         studentId,
       ),
       studentEmail: email ?? "—",
+      avatarUrl: avatarUrlByUserId.get(studentId) ?? null,
       cohortCount: cohorts.length,
       cohorts,
       firstEnrolledAt: agg.firstEnrolledAt,
@@ -266,12 +242,14 @@ export async function getGlobalTeacherStudents(
 }
 
 /**
- * Отчисляет ученика из выбранных групп текущего преподавателя.
+ * Отчисляет ученика из выбранных групп. Только admin.
  */
 export async function unenrollStudentFromCohorts(
   studentId: string,
   cohortIds: string[],
 ): Promise<{ success: true } | { success: false; error: string }> {
+  await verifyAccess(["admin"]);
+
   const sid = studentId.trim();
   const normalizedCohortIds = [
     ...new Set(cohortIds.map((id) => id.trim()).filter(Boolean)),
@@ -286,48 +264,6 @@ export async function unenrollStudentFromCohorts(
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { success: false, error: "Нужна авторизация." };
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    return { success: false, error: "Профиль не найден." };
-  }
-
-  if (
-    profile.role !== "teacher" &&
-    profile.role !== "admin" &&
-    profile.role !== "head_teacher"
-  ) {
-    return { success: false, error: "Нет прав на отчисление." };
-  }
-
-  const isAdminOrHead =
-    profile.role === "admin" || profile.role === "head_teacher";
-
-  if (!isAdminOrHead) {
-    const teacherCohortIds = new Set(await getTeacherCohortIds(supabase, user.id));
-    const unauthorized = normalizedCohortIds.filter(
-      (cohortId) => !teacherCohortIds.has(cohortId),
-    );
-
-    if (unauthorized.length > 0) {
-      return {
-        success: false,
-        error: "Нет доступа к одной или нескольким выбранным группам.",
-      };
-    }
-  }
 
   const { error: deleteError } = await supabase
     .from("enrollments")

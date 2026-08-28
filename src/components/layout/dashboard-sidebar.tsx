@@ -30,6 +30,10 @@ import {
 import type { ProfileRole } from "@/lib/dashboard/sidebar-nav";
 import type { TranslationKey } from "@/lib/i18n/dict";
 import { cn } from "@/lib/utils";
+import {
+  SUPPORT_NAV_URL,
+  useSupportUnread,
+} from "@/components/providers/support-unread-provider";
 
 type NavItem = {
   title: string;
@@ -44,7 +48,6 @@ const teacherNav: NavItem[] = [
   { title: "Группы", url: "/dashboard/cohorts", icon: GrowvyGroupsIcon },
   { title: "Ученики", url: "/dashboard/students", icon: GrowvyStudentsIcon },
   { title: "Тесты", url: "/dashboard/tests", icon: GrowvyTestsIcon },
-  { title: "Поддержка", url: "/dashboard/support", icon: GrowvySupportIcon },
 ];
 
 const studentNav: NavItem[] = [
@@ -226,7 +229,12 @@ function DashboardSidebarPanel({
 }: DashboardSidebarProps) {
   const pathname = usePathname();
   const { t } = useLanguage();
+  const { count: supportUnreadCount } = useSupportUnread();
   const items = getNavForRole(role);
+  const badges = {
+    ...navBadges,
+    [SUPPORT_NAV_URL]: supportUnreadCount,
+  };
 
   function navLabel(item: NavItem): string {
     if (role === "student" && item.labelKey) {
@@ -261,7 +269,7 @@ function DashboardSidebarPanel({
       <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {items.map((item) => {
           const active = isActive(pathname, item.url);
-          const badgeCount = navBadges[item.url] ?? 0;
+          const badgeCount = badges[item.url] ?? 0;
           const pendingCount = navPendingBadges[item.url] ?? 0;
           const Icon = item.icon;
 

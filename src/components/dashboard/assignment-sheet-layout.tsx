@@ -166,9 +166,9 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <Button
                 type="button"
+                variant="default"
                 disabled={props.isPending}
                 onClick={props.onApprove}
-                className="border-emerald-600/30 bg-emerald-600 text-white hover:bg-emerald-600/90 dark:border-emerald-500/40 dark:bg-emerald-600 dark:hover:bg-emerald-600/90"
               >
                 {props.isPending ? "Сохранение…" : "Принять"}
               </Button>

@@ -1,37 +1,58 @@
 "use client";
 
+import {
+  getGradeColor,
+  PROGRESS_STATUS_VISUAL,
+  resolveGradebookCellVisual,
+} from "@/components/dashboard/gradebook/progress-status-visuals";
 import { cn } from "@/lib/utils";
 
 type JournalPointsDisplayProps = {
   points: number | null;
+  /** Если баллов нет — показываем иконку статуса, как в MatrixCell. */
+  status?: string | null;
   className?: string;
   compact?: boolean;
 };
 
 /**
- * Баллы журнала (0–100): зелёный при проходе (≥50), красный ниже.
+ * Баллы или иконка статуса: одна и та же логика, что в ячейке матрицы журнала.
  */
 export function JournalPointsDisplay({
   points,
+  status,
   className,
 }: JournalPointsDisplayProps) {
-  if (points == null) {
-    return <span className={cn("text-muted-foreground", className)}>—</span>;
+  const visual = resolveGradebookCellVisual(status, points);
+
+  if (visual.kind === "points") {
+    return (
+      <span
+        className={cn(
+          "font-medium tabular-nums",
+          getGradeColor(visual.points),
+          className,
+        )}
+      >
+        {visual.points}%
+      </span>
+    );
   }
 
-  const pass = points >= 50;
+  if (visual.kind === "status") {
+    const { Icon, className: iconClass, label } =
+      PROGRESS_STATUS_VISUAL[visual.key];
+    return (
+      <Icon
+        className={cn("size-4", iconClass, className)}
+        aria-label={label}
+      />
+    );
+  }
 
   return (
-    <span
-      className={cn(
-        "font-medium tabular-nums",
-        pass
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-red-600 dark:text-red-400",
-        className,
-      )}
-    >
-      {points}
+    <span className={cn("text-muted-foreground tabular-nums", className)}>
+      —
     </span>
   );
 }

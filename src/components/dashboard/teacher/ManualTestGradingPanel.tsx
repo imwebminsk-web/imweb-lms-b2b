@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
-import { cn } from "@/lib/utils";
 import type { SafeTestQuestion } from "@/app/actions/test-actions";
 import type { Json } from "@/types/database.types";
 
@@ -209,11 +208,8 @@ export function ManualTestGradingPanel({
         <Button
           type="button"
           size="lg"
-          className={cn(
-            "w-full sm:w-auto",
-            gradesSaved &&
-              "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
-          )}
+          variant="default"
+          className="w-full sm:w-auto"
           onClick={handleSubmit}
           disabled={isPending || gradesSaved}
         >

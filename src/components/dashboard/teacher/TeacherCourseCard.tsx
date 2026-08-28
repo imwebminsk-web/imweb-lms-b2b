@@ -93,18 +93,17 @@ export function TeacherCourseCard({ course }: TeacherCourseCardProps) {
               <DropdownMenuTrigger asChild>
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="secondary"
                   size="icon"
-                  className="size-8 bg-white/95 text-foreground shadow-sm hover:bg-white"
                   aria-label={`Действия для курса «${course.title}»`}
                   disabled={isDeletePending}
                 >
                   <MoreVertical className="size-4" aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-40">
+              <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  className="text-red-600 focus:text-red-600"
+                  variant="destructive"
                   onSelect={(event) => {
                     event.preventDefault();
                     setDeleteDialogOpen(true);
@@ -136,7 +135,7 @@ export function TeacherCourseCard({ course }: TeacherCourseCardProps) {
 
         <Button
           variant="outline"
-          className="mt-4 w-full rounded-xl"
+          className="mt-4 w-full"
           asChild
         >
           <Link href={editHref}>Редактировать</Link>

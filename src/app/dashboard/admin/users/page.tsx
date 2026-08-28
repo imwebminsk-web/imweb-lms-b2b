@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { CorporateUsersTable } from "@/components/admin/users/corporate-users-table";
 import { UsersTable } from "@/components/dashboard/admin/users-table";
@@ -27,31 +26,49 @@ function AdminUsersContent({
   currentUserId,
 }: AdminUsersContentProps) {
   if (APP_MODE === "school") {
-    return <UsersTable users={adminUsers} currentUserId={currentUserId} />;
+    return (
+      <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+        <UsersTable users={adminUsers} currentUserId={currentUserId} />
+      </section>
+    );
   }
 
   if (APP_MODE === "corporate") {
-    return <CorporateUsersTable />;
+    return (
+      <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+        <CorporateUsersTable />
+      </section>
+    );
   }
 
   return (
-    <Tabs defaultValue="school">
-      <TabsList className="mx-4 mb-4 h-auto flex-wrap rounded-xl lg:mx-6">
-        <TabsTrigger value="school" className="rounded-lg">
-          Школа (B2C)
-        </TabsTrigger>
-        <TabsTrigger value="corporate" className="rounded-lg">
-          Корпорация (B2B)
-        </TabsTrigger>
+    <Tabs defaultValue="school" className="w-full">
+      <TabsList variant="line" className="mb-6 w-full justify-start">
+        <TabsTrigger value="school">Школа (B2C)</TabsTrigger>
+        <TabsTrigger value="corporate">Корпорация (B2B)</TabsTrigger>
       </TabsList>
       <TabsContent value="school" className="mt-0">
-        <UsersTable users={adminUsers} currentUserId={currentUserId} />
+        <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+          <UsersTable users={adminUsers} currentUserId={currentUserId} />
+        </section>
       </TabsContent>
       <TabsContent value="corporate" className="mt-0">
-        <CorporateUsersTable />
+        <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+          <CorporateUsersTable />
+        </section>
       </TabsContent>
     </Tabs>
   );
+}
+
+function usersPageSubtitle(): string {
+  if (APP_MODE === "school") {
+    return "Изменение ролей, сброс паролей и удаление аккаунтов.";
+  }
+  if (APP_MODE === "corporate") {
+    return "Управление корпоративными пользователями, отделами и тегами.";
+  }
+  return "Управление пользователями школы и корпорации.";
 }
 
 export default async function AdminUsersPage() {
@@ -68,15 +85,21 @@ export default async function AdminUsersPage() {
   return (
     <>
       <SiteHeader fullName={displayName} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <div className="@container/main flex min-w-0 flex-1 flex-col gap-2">
-          <div className="flex min-w-0 flex-col gap-4 py-4 md:gap-6 md:py-6">
-            <AdminUsersContent
-              adminUsers={adminUsers}
-              currentUserId={user.id}
-            />
+      <div className="flex flex-1 flex-col">
+        <main className="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col gap-8 px-4 py-6 lg:px-6">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Пользователи
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {usersPageSubtitle()}
+            </p>
           </div>
-        </div>
+          <AdminUsersContent
+            adminUsers={adminUsers}
+            currentUserId={user.id}
+          />
+        </main>
       </div>
     </>
   );

@@ -64,6 +64,8 @@ function getArchivedColumns(
       cell: ({ row }) => (
         <CreatorCell
           creatorName={row.original.creatorName}
+          creatorEmail={row.original.creatorEmail}
+          creatorAvatarUrl={row.original.creatorAvatarUrl}
           isCurator={row.original.isCurator}
         />
       ),
@@ -78,12 +80,12 @@ function getArchivedColumns(
       cell: ({ row }) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-8 w-8 p-0">
+            <Button variant="ghost" size="icon">
               <span className="sr-only">Открыть меню</span>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 min-w-[14rem]">
+          <DropdownMenuContent align="end">
             <DropdownMenuLabel>Действия</DropdownMenuLabel>
             <DropdownMenuItem onClick={() => onRestore(row.original.id)}>
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -134,9 +136,8 @@ export function ArchivedCoursesTable({
 
   return (
     <>
-      <div className="space-y-4">
-        <div className="rounded-md border bg-card overflow-x-auto whitespace-nowrap">
-          <Table>
+      <div className="custom-scrollbar w-full overflow-x-auto">
+        <Table className="min-w-max">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
@@ -180,7 +181,7 @@ export function ArchivedCoursesTable({
             </TableBody>
           </Table>
         </div>
-        <div className="flex items-center justify-between px-2 py-4">
+        <div className="flex items-center justify-between border-t px-6 py-4">
           <div className="text-sm text-muted-foreground">
             Строки {rangeStart}-{rangeEnd} из {totalRows}
           </div>
@@ -209,7 +210,6 @@ export function ArchivedCoursesTable({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
                 onClick={() => table.setPageIndex(0)}
                 disabled={!table.getCanPreviousPage()}
               >
@@ -218,7 +218,6 @@ export function ArchivedCoursesTable({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
               >
@@ -227,7 +226,6 @@ export function ArchivedCoursesTable({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
@@ -236,7 +234,6 @@ export function ArchivedCoursesTable({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
                 onClick={() => table.setPageIndex(table.getPageCount() - 1)}
                 disabled={!table.getCanNextPage()}
               >
@@ -245,7 +242,6 @@ export function ArchivedCoursesTable({
             </div>
           </div>
         </div>
-      </div>
 
       <RestoreCourseModal
         courseId={selectedCourseId ?? ""}

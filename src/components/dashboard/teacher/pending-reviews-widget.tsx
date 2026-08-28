@@ -16,9 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
-  CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import {
@@ -132,8 +130,8 @@ export function PendingReviewsWidget({
 
   return (
     <section className="px-4 lg:px-6">
-      <Card>
-        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <Card className="overflow-hidden">
+        <div className="flex flex-col justify-between border-b px-6 py-4 sm:flex-row sm:items-center">
           <div className="space-y-1">
             <CardTitle>Требует внимания</CardTitle>
             <CardDescription>
@@ -143,7 +141,7 @@ export function PendingReviewsWidget({
           {showStaffFilter ? (
             <Select value={filter} onValueChange={handleFilterChange} disabled={isFetching}>
               <SelectTrigger
-                className="w-full sm:w-64 [&_[data-slot=select-value]]:line-clamp-none"
+                className="mt-3 w-full sm:mt-0 sm:w-64 [&_[data-slot=select-value]]:line-clamp-none"
                 size="default"
                 aria-label="Фильтр по сотруднику"
               >
@@ -160,106 +158,106 @@ export function PendingReviewsWidget({
               </SelectContent>
             </Select>
           ) : null}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error ? (
-            <p className="text-destructive text-sm">{error}</p>
-          ) : null}
-          {reviews.length === 0 && !isFetching ? (
-            <div className="border-muted-foreground/25 text-muted-foreground rounded-xl border border-dashed px-6 py-12 text-center text-sm">
-              Все работы проверены! 🎉
-            </div>
-          ) : reviews.length === 0 && isFetching ? (
-            <div className="text-muted-foreground flex items-center justify-center gap-2 py-12 text-sm">
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-              Загрузка…
-            </div>
-          ) : (
-            <>
-              <div className="w-full overflow-x-auto rounded-lg border">
-                <Table className="min-w-[52rem]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Ученик</TableHead>
-                      <TableHead>Тип</TableHead>
-                      <TableHead>Курс</TableHead>
-                      <TableHead>Урок</TableHead>
-                      <TableHead>Дата</TableHead>
-                      <TableHead className="text-right">Действие</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reviews.map((review) => (
-                      <TableRow key={pendingReviewKey(review)}>
-                        <TableCell className="font-medium">
-                          {review.studentName}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              review.kind === "test"
-                                ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-                                : undefined
-                            }
-                          >
-                            {review.kind === "test" ? "Тест" : "Задание"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{review.courseTitle}</TableCell>
-                        <TableCell>{review.lessonTitle}</TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap">
-                          {formatSubmittedAt(review.submittedAt)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {review.kind === "test" ? (
-                            <Button size="sm" variant="ghost" asChild>
-                              <Link
-                                href={`/dashboard/gradebook/attempts/${review.attemptId}/grade`}
-                              >
-                                Проверить
-                              </Link>
-                            </Button>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                setSelectedSubmissionId(review.submissionId)
-                              }
+        </div>
+        {error ? (
+          <p className="text-destructive px-6 py-4 text-sm" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {reviews.length === 0 && !isFetching ? (
+          <div className="text-muted-foreground px-6 py-12 text-center text-sm">
+            Все работы проверены! 🎉
+          </div>
+        ) : reviews.length === 0 && isFetching ? (
+          <div className="text-muted-foreground flex items-center justify-center gap-2 px-6 py-12 text-sm">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Загрузка…
+          </div>
+        ) : (
+          <>
+            <div className="custom-scrollbar w-full overflow-x-auto">
+              <Table className="min-w-max">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ученик</TableHead>
+                    <TableHead>Тип</TableHead>
+                    <TableHead>Курс</TableHead>
+                    <TableHead>Урок</TableHead>
+                    <TableHead>Дата</TableHead>
+                    <TableHead className="text-right">Действие</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {reviews.map((review) => (
+                    <TableRow key={pendingReviewKey(review)}>
+                      <TableCell className="font-medium">
+                        {review.studentName}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            review.kind === "test"
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+                              : undefined
+                          }
+                        >
+                          {review.kind === "test" ? "Тест" : "Задание"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{review.courseTitle}</TableCell>
+                      <TableCell>{review.lessonTitle}</TableCell>
+                      <TableCell className="text-muted-foreground whitespace-nowrap">
+                        {formatSubmittedAt(review.submittedAt)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {review.kind === "test" ? (
+                          <Button size="sm" variant="ghost" asChild>
+                            <Link
+                              href={`/dashboard/gradebook/attempts/${review.attemptId}/grade`}
                             >
                               Проверить
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setSelectedSubmissionId(review.submissionId)
+                            }
+                          >
+                            Проверить
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {hasMore ? (
+              <div className="flex justify-center border-t px-6 py-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  disabled={isFetching}
+                  onClick={() => void loadPage(filter, reviews.length, true)}
+                >
+                  {isFetching ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                      Загрузка…
+                    </>
+                  ) : (
+                    "Загрузить еще"
+                  )}
+                </Button>
               </div>
-              {hasMore ? (
-                <div className="flex justify-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full sm:w-auto"
-                    disabled={isFetching}
-                    onClick={() => void loadPage(filter, reviews.length, true)}
-                  >
-                    {isFetching ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" aria-hidden />
-                        Загрузка…
-                      </>
-                    ) : (
-                      "Загрузить еще"
-                    )}
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </CardContent>
+            ) : null}
+          </>
+        )}
       </Card>
 
       {selectedSubmissionId &&

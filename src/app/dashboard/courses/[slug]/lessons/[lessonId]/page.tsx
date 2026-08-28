@@ -121,6 +121,7 @@ export default async function LessonEditorPage({ params }: PageProps) {
     .from("tests")
     .select("id, title, folder_name")
     .eq("scope", "library")
+    .eq("is_archived", false)
     .order("title", { ascending: true });
 
   if (testsError) {

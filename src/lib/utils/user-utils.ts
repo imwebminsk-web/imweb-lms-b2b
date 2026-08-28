@@ -1,15 +1,15 @@
 export const isAdminOrHead = (role?: string | null) =>
   role === "admin" || role === "head_teacher";
 
-/** Имя для UI: profiles.full_name → часть email до @ → UUID. */
+/** Имя для UI: profiles.full_name → часть email до @ → «Пользователь». */
 export function resolveStudentDisplayName(
   fullName: string | null | undefined,
   email: string | null | undefined,
   userId: string,
 ): string {
   if (fullName?.trim()) return fullName.trim();
-  if (email) return email.split("@")[0] ?? userId;
-  return userId;
+  if (email) return email.split("@")[0] ?? "Пользователь";
+  return "Пользователь";
 }
 
 /** Инициалы для AvatarFallback (1–2 буквы из имени). */

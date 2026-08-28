@@ -99,8 +99,8 @@ export function TextInputQuestion({
             aria-label={`Поле ответа ${seg.id}`}
             placeholder={isReviewMode ? undefined : "Введите развёрнутый ответ…"}
             className={cn(
-              "min-h-[120px] w-full resize-y",
-              isReviewMode && "bg-muted/60 cursor-default",
+              "h-auto min-h-20 w-full resize-y text-left",
+              isReviewMode && "bg-muted/60 min-h-10 cursor-default",
             )}
           />
         );

@@ -83,8 +83,8 @@ export default async function CohortStudentJournalPage({ params }: PageProps) {
         <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 lg:px-6">
           <div className="flex flex-wrap items-center gap-3">
             <Button asChild variant="outline">
-              <Link href={`/dashboard/cohorts/${cohortIdTrim}`}>
-                Назад к группе
+              <Link href={`/dashboard/cohorts/${cohortIdTrim}?tab=journal`}>
+                Назад к журналу
               </Link>
             </Button>
           </div>

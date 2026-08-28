@@ -99,6 +99,7 @@ export type AdminUserRow = {
   id: string;
   fullName: string | null;
   email: string | null;
+  avatarUrl: string | null;
   role: ProfileRole;
   createdAt: string | null;
   isActive: boolean;
@@ -391,7 +392,7 @@ export async function fetchAdminUsers(
     .from("profiles")
     // is_active ещё нет в generated Database types.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .select("id, full_name, role, is_active, profile_secrets(email)" as any)
+    .select("id, full_name, avatar_url, role, is_active, profile_secrets(email)" as any)
     .order("full_name", { ascending: true, nullsFirst: false });
 
   if (error) {
@@ -413,6 +414,7 @@ export async function fetchAdminUsers(
       id: profile.id,
       fullName: profile.full_name,
       email,
+      avatarUrl: (profile as { avatar_url?: string | null }).avatar_url ?? null,
       role: profile.role,
       createdAt: createdAtById.get(profile.id) ?? null,
       isActive: (profile as { is_active?: boolean | null }).is_active !== false,

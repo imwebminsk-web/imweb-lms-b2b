@@ -24,6 +24,7 @@ import type { Json } from "@/types/database.types";
 export type AttemptGradingDetails = GradebookBestAttemptDetails & {
   studentId: string;
   studentName: string;
+  testId: string;
 };
 
 export type GetPendingReviewCountsResult =
@@ -34,14 +35,61 @@ const attemptIdSchema = z.string().uuid("Некорректный ID попыт�
 
 const manualGradesSchema = z.record(
   z.string().min(1),
-  z.coerce.number().int().min(0),
+  z
+    .number({ error: "Укажите баллы для всех развёрнутых ответов" })
+    .int("Балл должен быть целым числом")
+    .min(0, "Балл не может быть отрицательным"),
 );
 
+async function resolveCohortIdForTestStudent(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  testId: string,
+  studentId: string,
+): Promise<string | null> {
+  const { data: lessonRow, error: lessonError } = await supabase
+    .from("lessons")
+    .select("modules!inner(course_id)")
+    .eq("test_id", testId)
+    .limit(1)
+    .maybeSingle();
+
+  if (lessonError || !lessonRow) {
+    return null;
+  }
+
+  const nested = lessonRow as unknown as {
+    modules?: { course_id: string | null } | { course_id: string | null }[] | null;
+  };
+  const moduleRel = Array.isArray(nested.modules)
+    ? nested.modules[0]
+    : nested.modules;
+  const courseId = moduleRel?.course_id;
+  if (!courseId) {
+    return null;
+  }
+
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("enrollments")
+    .select("cohort_id")
+    .eq("user_id", studentId)
+    .eq("course_id", courseId)
+    .not("cohort_id", "is", null)
+    .order("enrolled_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (enrollmentError || !enrollment?.cohort_id) {
+    return null;
+  }
+
+  return enrollment.cohort_id;
+}
+
 export type SubmitManualGradesResult =
-  | { success: true; percentScore: number }
+  | { success: true; percentScore: number; cohortId: string | null }
   | { success: false; error: string };
 
-/** Число сдач со статусом pending по когортам (через enrollments). */
+/** Число сдач на проверке по когортам: задания pending + тесты pending_review. */
 export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsResult> {
   const supabase = await createClient();
   const {
@@ -61,9 +109,10 @@ export async function getPendingReviewCounts(): Promise<GetPendingReviewCountsRe
 
   const counts: Record<string, number> = {};
   for (const row of rows ?? []) {
-    if (row.cohort_id) {
-      counts[row.cohort_id] = Number(row.pending_count);
-    }
+    if (!row.cohort_id) continue;
+    // Postgres bigint / агрегаты иногда приходят строкой — Number() безопаснее, чем +value.
+    const parsed = Number(row.pending_count);
+    counts[row.cohort_id] = Number.isFinite(parsed) ? parsed : 0;
   }
 
   return { success: true, counts };
@@ -167,6 +216,7 @@ export async function getAttemptGradingDetails(
       ...detailsRes.data,
       studentId: attempt.student_id,
       studentName,
+      testId: attempt.test_id,
     },
   };
 }
@@ -517,5 +567,14 @@ export async function submitManualGrades(
   revalidatePath("/learn");
   revalidatePath(`/dashboard/gradebook/attempts/${attempt.id}/grade`);
 
-  return { success: true, percentScore };
+  const cohortId = await resolveCohortIdForTestStudent(
+    supabase,
+    attempt.test_id,
+    attempt.student_id,
+  );
+  if (cohortId) {
+    revalidatePath(`/dashboard/cohorts/${cohortId}`, "page");
+  }
+
+  return { success: true, percentScore, cohortId };
 }

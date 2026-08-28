@@ -126,6 +126,74 @@ export async function deleteUser(userId: string): Promise<AdminActionResult> {
     return adminClient;
   }
 
+  // Двухшаговое удаление: нельзя удалить активного пользователя.
+  // is_active ещё нет в generated Database types.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: targetProfile, error: profileError } = await (adminClient as any)
+    .from("profiles")
+    .select("is_active")
+    .eq("id", uid)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("[deleteUser] profile", profileError.message);
+    return { success: false, error: "Не удалось проверить пользователя." };
+  }
+
+  if (!targetProfile) {
+    return { success: false, error: "Пользователь не найден." };
+  }
+
+  if (targetProfile.is_active !== false) {
+    return {
+      success: false,
+      error: "Сначала деактивируйте пользователя, затем удалите.",
+    };
+  }
+
+  // courses.teacher_id — владелец курса (ON DELETE RESTRICT).
+  const { count: courseCount, error: coursesError } = await adminClient
+    .from("courses")
+    .select("id", { count: "exact", head: true })
+    .eq("teacher_id", uid);
+
+  if (coursesError) {
+    console.error("[deleteUser] courses", coursesError.message);
+    return {
+      success: false,
+      error: "Не удалось проверить курсы пользователя.",
+    };
+  }
+
+  if ((courseCount ?? 0) > 0) {
+    return {
+      success: false,
+      error:
+        "Невозможно удалить пользователя: к нему привязаны курсы. Сначала удалите их или передайте другому автору.",
+    };
+  }
+
+  const { count: testCount, error: testsError } = await adminClient
+    .from("tests")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", uid);
+
+  if (testsError) {
+    console.error("[deleteUser] tests", testsError.message);
+    return {
+      success: false,
+      error: "Не удалось проверить тесты пользователя.",
+    };
+  }
+
+  if ((testCount ?? 0) > 0) {
+    return {
+      success: false,
+      error:
+        "Невозможно удалить пользователя: к нему привязаны тесты. Сначала удалите их или передайте другому автору.",
+    };
+  }
+
   const { error } = await adminClient.auth.admin.deleteUser(uid);
   if (error) {
     console.error("[deleteUser]", error.message);
@@ -151,20 +219,66 @@ export async function deactivateUser(
     return { success: false, error: "Нельзя деактивировать свой аккаунт." };
   }
 
-  const supabase = await createClient();
+  const adminClient = requireServiceRoleClient();
+  if ("success" in adminClient) {
+    return adminClient;
+  }
 
   // is_active ещё нет в generated Database types.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase as any)
+  const { data, error } = await (adminClient as any)
     .from("profiles")
     .update({ is_active: false })
-    .eq("id", uid);
+    .eq("id", uid)
+    .select("id")
+    .maybeSingle();
 
-  if (error) {
-    console.error("[deactivateUser]", error.message);
+  if (error || !data) {
+    console.error("[deactivateUser]", error?.message ?? "no rows updated");
     return {
       success: false,
-      error: error.message || "Не удалось уволить сотрудника.",
+      error: error?.message || "Не удалось деактивировать пользователя.",
+    };
+  }
+
+  revalidatePath("/dashboard/admin/users");
+  return { success: true };
+}
+
+/** Восстанавливает доступ: is_active = true. Не разрушительное действие. */
+export async function activateUser(
+  targetUserId: string,
+): Promise<AdminActionResult> {
+  const { user } = await verifyAccess(["admin"]);
+
+  const uid = targetUserId.trim();
+  if (!uid) {
+    return { success: false, error: "Не указан пользователь." };
+  }
+
+  if (uid === user.id) {
+    return { success: false, error: "Нельзя изменить статус своего аккаунта." };
+  }
+
+  const adminClient = requireServiceRoleClient();
+  if ("success" in adminClient) {
+    return adminClient;
+  }
+
+  // is_active ещё нет в generated Database types.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (adminClient as any)
+    .from("profiles")
+    .update({ is_active: true })
+    .eq("id", uid)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !data) {
+    console.error("[activateUser]", error?.message ?? "no rows updated");
+    return {
+      success: false,
+      error: error?.message || "Не удалось активировать пользователя.",
     };
   }
 

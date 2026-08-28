@@ -1,6 +1,6 @@
 "use client";
 
-import { deleteTest } from "@/app/actions/test-actions";
+import { archiveTest } from "@/app/actions/test-actions";
 import { Button } from "@/components/ui/button";
 import { Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -17,16 +17,16 @@ export function DeleteTestButton({ testId }: DeleteTestButtonProps) {
   function handleClick() {
     if (
       !window.confirm(
-        "Вы уверены, что хотите удалить этот тест? Это действие необратимо.",
+        "Вы уверены, что хотите архивировать этот тест? Его можно будет восстановить.",
       )
     ) {
       return;
     }
 
     startTransition(async () => {
-      const res = await deleteTest(testId);
+      const res = await archiveTest(testId);
       if (!res.success) {
-        window.alert(`Ошибка при удалении: ${res.error}`);
+        window.alert(`Ошибка при архивации: ${res.error}`);
         return;
       }
       router.refresh();

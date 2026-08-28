@@ -147,6 +147,7 @@ function ParsedHtmlBlankSlot({ blankId }: { blankId: string }) {
           value={typed}
           onChange={() => {}}
           readOnly
+          isLongAnswer
         />
       );
     }
@@ -155,6 +156,7 @@ function ParsedHtmlBlankSlot({ blankId }: { blankId: string }) {
         blankId={blankId}
         value={typed}
         onChange={(next) => updateBlank(blankId, next)}
+        isLongAnswer
       />
     );
   }

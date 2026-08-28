@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import {
   getStudentQuizPreviewTitle,
@@ -29,14 +30,32 @@ type TestRevealWrapperProps = {
 
 export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
   const { t } = useLanguage();
+  const router = useRouter();
+  const pathname = usePathname();
   const fallbackTitle = t("lesson_view.defaultQuizTitle");
   const [cardTitle, setCardTitle] = useState(fallbackTitle);
   const [testType, setTestType] = useState<StudentTestType | null>(null);
   const [hasExhaustedAttempts, setHasExhaustedAttempts] = useState(false);
+  const [hasRejectedAttempt, setHasRejectedAttempt] = useState(false);
   const [isUnavailable, setIsUnavailable] = useState(false);
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const [quizData, setQuizData] = useState<InitStudentQuizSuccess | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  async function reloadPreview() {
+    const res = await getStudentQuizPreviewTitle(testId);
+    if (!res.success) {
+      setIsUnavailable(true);
+      setPreviewLoaded(true);
+      return;
+    }
+    setCardTitle(res.title);
+    setTestType(res.testType);
+    setHasExhaustedAttempts(res.hasExhaustedAttempts);
+    setHasRejectedAttempt(res.hasRejectedAttempt);
+    setIsUnavailable(false);
+    setPreviewLoaded(true);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +64,7 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
       setPreviewLoaded(false);
       setIsUnavailable(false);
       setHasExhaustedAttempts(false);
+      setHasRejectedAttempt(false);
       setTestType(null);
       setCardTitle(fallbackTitle);
 
@@ -60,6 +80,7 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
       setCardTitle(res.title);
       setTestType(res.testType);
       setHasExhaustedAttempts(res.hasExhaustedAttempts);
+      setHasRejectedAttempt(res.hasRejectedAttempt);
       setPreviewLoaded(true);
     }
 
@@ -86,6 +107,13 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
     }
   }
 
+  function handleExitToLesson() {
+    setQuizData(null);
+    void reloadPreview();
+    router.push(pathname);
+    router.refresh();
+  }
+
   if (quizData) {
     return (
       <QuizPlayer
@@ -96,7 +124,7 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
         timeLimitMinutes={quizData.test.timeLimitMinutes}
         initialSubmittedIds={quizData.initialSubmittedIds}
         focusedMode
-        onExit={() => setQuizData(null)}
+        onExit={handleExitToLesson}
       />
     );
   }
@@ -138,6 +166,7 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
           <Button
             type="button"
             size="lg"
+            variant={hasRejectedAttempt ? "destructive" : "default"}
             onClick={handleStart}
             disabled={isLoading}
           >
@@ -146,6 +175,8 @@ export function TestRevealWrapper({ testId }: TestRevealWrapperProps) {
                 <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
                 {t("lesson_view.loading")}
               </>
+            ) : hasRejectedAttempt ? (
+              t("lesson_view.retakeTest")
             ) : (
               t("lesson_view.takeTest")
             )}

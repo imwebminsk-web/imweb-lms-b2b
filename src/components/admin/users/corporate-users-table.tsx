@@ -1,16 +1,37 @@
 "use client";
 
-import { PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { ArrowUpDown, ChevronDown, MoreHorizontal, PlusIcon, Trash2, UserCheck, UserX } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  getCoreRowModel,
+  getPaginationRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
 import { toast } from "sonner";
 
+import {
+  activateUser,
+  deactivateUser,
+  deleteUser,
+} from "@/app/actions/admin-actions";
 import {
   createB2BUser,
   getB2BFormOptions,
   getB2BUsers,
 } from "@/app/actions/b2b-user-actions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -19,6 +40,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -47,11 +75,15 @@ type B2BUserRow = {
   teams: string[];
   jobTitles: string[];
   tags: string[];
+  isActive: boolean;
 };
+
+type CorporateDangerAction = "delete" | "deactivate";
 
 type RawProfile = {
   id: string;
   full_name: string | null;
+  is_active?: boolean | null;
   profile_secrets:
     | { email: string | null }
     | { email: string | null }[]
@@ -99,6 +131,7 @@ function mapProfileToRow(profile: RawProfile): B2BUserRow {
     teams,
     jobTitles,
     tags,
+    isActive: profile.is_active !== false,
   };
 }
 
@@ -110,6 +143,10 @@ const emptyForm = {
   taxonomyIds: [] as string[],
 };
 
+function b2bDisplayName(user: B2BUserRow): string {
+  return user.fullName?.trim() || user.email?.split("@")[0] || "—";
+}
+
 export function CorporateUsersTable() {
   const [users, setUsers] = useState<B2BUserRow[]>([]);
   const [teams, setTeams] = useState<FormOption[]>([]);
@@ -120,6 +157,72 @@ export function CorporateUsersTable() {
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
+  const [teamFilter, setTeamFilter] = useState<string>("all");
+  const [userToDelete, setUserToDelete] = useState<B2BUserRow | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [userDangerAction, setUserDangerAction] =
+    useState<CorporateDangerAction>("delete");
+
+  const requiredConfirmWord =
+    userDangerAction === "delete" ? "удалить" : "деактивировать";
+  const confirmPromptWord =
+    userDangerAction === "delete" ? "Удалить" : "Деактивировать";
+
+  const uniqueTeams = useMemo(() => {
+    const teams = new Set<string>();
+    for (const user of users) {
+      for (const team of user.teams) {
+        teams.add(team);
+      }
+    }
+    return [...teams].sort((a, b) => a.localeCompare(b, "ru"));
+  }, [users]);
+
+  const filteredUsers = useMemo(() => {
+    let result = users;
+    const normalized = searchQuery.trim().toLowerCase();
+
+    if (normalized) {
+      result = result.filter(
+        (user) =>
+          b2bDisplayName(user).toLowerCase().includes(normalized) ||
+          (user.email?.toLowerCase().includes(normalized) ?? false),
+      );
+    }
+
+    if (teamFilter !== "all") {
+      result = result.filter((user) => user.teams.includes(teamFilter));
+    }
+
+    if (sortOrder) {
+      result = [...result].sort((a, b) => {
+        const comparison = b2bDisplayName(a).localeCompare(
+          b2bDisplayName(b),
+          "ru",
+        );
+        return sortOrder === "asc" ? comparison : -comparison;
+      });
+    }
+
+    return result;
+  }, [users, searchQuery, teamFilter, sortOrder]);
+
+  const columns = useMemo(() => [{ accessorKey: "id" as const }], []);
+
+  const table = useReactTable({
+    data: isLoading ? [] : filteredUsers,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 10,
+      },
+    },
+  });
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -155,6 +258,59 @@ export function CorporateUsersTable() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  function openUserDangerDialog(user: B2BUserRow, action: CorporateDangerAction) {
+    setUserToDelete(user);
+    setUserDangerAction(action);
+    setDeleteConfirmText("");
+    setIsDeleteDialogOpen(true);
+  }
+
+  function closeUserDangerDialog() {
+    setIsDeleteDialogOpen(false);
+    setUserToDelete(null);
+    setDeleteConfirmText("");
+    setUserDangerAction("delete");
+  }
+
+  function handleDangerConfirm() {
+    if (!userToDelete) {
+      return;
+    }
+
+    const targetId = userToDelete.id;
+    startTransition(async () => {
+      const result =
+        userDangerAction === "delete"
+          ? await deleteUser(targetId)
+          : await deactivateUser(targetId);
+
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(
+        userDangerAction === "delete"
+          ? "Пользователь удалён"
+          : "Пользователь деактивирован. Курсы остаются активными — смените владельца при необходимости.",
+      );
+      closeUserDangerDialog();
+      await loadData();
+    });
+  }
+
+  function handleActivateUser(user: B2BUserRow) {
+    startTransition(async () => {
+      const result = await activateUser(user.id);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Пользователь активирован");
+      await loadData();
+    });
+  }
 
   function openCreateDialog() {
     setForm(emptyForm);
@@ -205,41 +361,96 @@ export function CorporateUsersTable() {
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-4 px-4 lg:px-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Сотрудники</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Управление корпоративными пользователями, отделами и тегами.
-          </p>
-        </div>
+    <>
+      <div className="flex items-center justify-end gap-4 border-b px-6 py-4">
+        <Input
+          type="search"
+          placeholder="Поиск по имени или email…"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          className="w-full sm:max-w-sm"
+          aria-label="Поиск по имени или email сотрудника"
+        />
         <Button
           type="button"
-          className="rounded-xl"
           onClick={openCreateDialog}
           disabled={isLoading || isPending}
+          className="w-full shrink-0 sm:w-auto"
         >
           <PlusIcon />
           Добавить сотрудника
         </Button>
       </div>
 
-      <div className="border-border overflow-hidden rounded-xl border bg-card shadow-sm">
-        <Table>
+      <div className="custom-scrollbar w-full overflow-x-auto">
+        <Table className="min-w-max">
           <TableHeader>
             <TableRow>
-              <TableHead>ФИО</TableHead>
+              <TableHead>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 h-8 font-medium"
+                    >
+                      ФИО
+                      <ArrowUpDown className="ml-2 size-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => setSortOrder(null)}>
+                      По умолчанию
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortOrder("asc")}>
+                      А → Я
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSortOrder("desc")}>
+                      Я → А
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Отдел</TableHead>
+              <TableHead>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 h-8 font-medium"
+                    >
+                      Отдел
+                      <ChevronDown className="ml-2 size-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onClick={() => setTeamFilter("all")}>
+                      Все отделы
+                    </DropdownMenuItem>
+                    {uniqueTeams.map((team) => (
+                      <DropdownMenuItem
+                        key={team}
+                        onClick={() => setTeamFilter(team)}
+                      >
+                        {team}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableHead>
               <TableHead>Должность</TableHead>
               <TableHead>Теги</TableHead>
+              <TableHead className="w-12 text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="text-muted-foreground py-10 text-center"
                 >
                   Загрузка...
@@ -248,21 +459,48 @@ export function CorporateUsersTable() {
             ) : users.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="text-muted-foreground py-10 text-center"
                 >
                   Сотрудников пока нет. Добавьте первого сотрудника.
                 </TableCell>
               </TableRow>
+            ) : filteredUsers.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="text-muted-foreground py-10 text-center"
+                >
+                  {searchQuery.trim()
+                    ? `Нет сотрудников по запросу «${searchQuery.trim()}».`
+                    : "Нет сотрудников по выбранным фильтрам."}
+                </TableCell>
+              </TableRow>
             ) : (
-              users.map((user) => (
+              table.getRowModel().rows.map((tableRow) => {
+                const user = tableRow.original;
+                const isActive = user.isActive !== false;
+
+                return (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">
                     {user.fullName?.trim() || "—"}
                   </TableCell>
                   <TableCell>{user.email ?? "—"}</TableCell>
                   <TableCell>
-                    {user.teams.length > 0 ? user.teams.join(", ") : "—"}
+                    <div className="flex flex-col items-start gap-1">
+                      <span>
+                        {user.teams.length > 0 ? user.teams.join(", ") : "—"}
+                      </span>
+                      {!isActive ? (
+                        <Badge
+                          variant="destructive"
+                          className="text-[10px] uppercase px-1.5 py-0.5 leading-none"
+                        >
+                          Деактивирован
+                        </Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {user.jobTitles.length > 0
@@ -282,12 +520,63 @@ export function CorporateUsersTable() {
                       )}
                     </div>
                   </TableCell>
+                  <TableCell className="text-right">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={isPending}
+                          aria-label={`Действия для ${b2bDisplayName(user)}`}
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {isActive ? (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() =>
+                              openUserDangerDialog(user, "deactivate")
+                            }
+                          >
+                            <UserX className="size-4" aria-hidden />
+                            Деактивировать
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => handleActivateUser(user)}
+                          >
+                            <UserCheck className="size-4" aria-hidden />
+                            Активировать
+                          </DropdownMenuItem>
+                        )}
+                        {!isActive ? (
+                          <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() =>
+                                openUserDangerDialog(user, "delete")
+                              }
+                            >
+                              <Trash2 className="size-4" aria-hidden />
+                              Удалить
+                            </DropdownMenuItem>
+                          </>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
                 </TableRow>
-              ))
+                );
+              })
             )}
           </TableBody>
         </Table>
       </div>
+      {!isLoading ? <DataTablePagination table={table} /> : null}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="rounded-xl sm:max-w-md">
@@ -421,6 +710,71 @@ export function CorporateUsersTable() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+
+      <AlertDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !isPending) {
+            closeUserDangerDialog();
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {userDangerAction === "delete"
+                ? "Удалить пользователя?"
+                : "Деактивировать пользователя?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {userToDelete
+                ? `Вы собираетесь ${
+                    userDangerAction === "delete" ? "удалить" : "деактивировать"
+                  } ${b2bDisplayName(userToDelete)}${
+                    userToDelete.email ? ` (${userToDelete.email})` : ""
+                  }. Это действие необратимо.`
+                : "Это действие необратимо."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="mt-4 space-y-2">
+            <label className="text-sm font-medium">
+              Введите слово{" "}
+              <span className="font-bold text-foreground">{confirmPromptWord}</span>{" "}
+              для подтверждения:
+            </label>
+            <Input
+              value={deleteConfirmText}
+              onChange={(event) => setDeleteConfirmText(event.target.value)}
+              autoComplete="off"
+              aria-label="Подтверждение действия с сотрудником"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button type="button" variant="outline" disabled={isPending}>
+                Отмена
+              </Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                type="button"
+                variant="destructive-outline"
+                disabled={
+                  isPending ||
+                  deleteConfirmText.trim().toLowerCase() !== requiredConfirmWord
+                }
+                onClick={handleDangerConfirm}
+              >
+                {isPending
+                  ? userDangerAction === "delete"
+                    ? "Удаление…"
+                    : "Деактивация…"
+                  : confirmPromptWord}
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

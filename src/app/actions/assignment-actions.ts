@@ -58,6 +58,51 @@ async function getCourseTeacherIdForLessonBlock(
   return typeof teacherId === "string" ? teacherId : null;
 }
 
+async function resolveCohortIdForLessonBlockStudent(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  lessonBlockId: string,
+  studentId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("lesson_blocks")
+    .select("lessons!inner(modules!inner(course_id))")
+    .eq("id", lessonBlockId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  const nested = data as unknown as {
+    lessons?: {
+      modules?: { course_id: string | null } | { course_id: string | null }[] | null;
+    } | null;
+  };
+  const moduleRel = Array.isArray(nested.lessons?.modules)
+    ? nested.lessons.modules[0]
+    : nested.lessons?.modules;
+  const courseId = moduleRel?.course_id;
+  if (!courseId) {
+    return null;
+  }
+
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("enrollments")
+    .select("cohort_id")
+    .eq("user_id", studentId)
+    .eq("course_id", courseId)
+    .not("cohort_id", "is", null)
+    .order("enrolled_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (enrollmentError || !enrollment?.cohort_id) {
+    return null;
+  }
+
+  return enrollment.cohort_id;
+}
+
 export type AssignmentSubmissionRow =
   Database["public"]["Tables"]["assignment_submissions"]["Row"];
 
@@ -426,7 +471,10 @@ export async function reviewSubmission(
   grade: number | null,
   teacherComment: string | null,
   pathname: string,
-): Promise<{ success: true } | { success: false; error: string }> {
+): Promise<
+  | { success: true; cohortId: string | null }
+  | { success: false; error: string }
+> {
   const parsed = submissionIdSchema.safeParse(submissionId);
   if (!parsed.success) {
     return {
@@ -464,7 +512,7 @@ export async function reviewSubmission(
 
   const { data: sub, error: subError } = await supabase
     .from("assignment_submissions")
-    .select("id, lesson_block_id")
+    .select("id, lesson_block_id, student_id")
     .eq("id", parsed.data)
     .maybeSingle();
 
@@ -517,5 +565,15 @@ export async function reviewSubmission(
   revalidatePath(pathname);
   revalidatePath("/", "layout");
   revalidatePath("/dashboard/cohorts");
-  return { success: true };
+
+  const cohortId = await resolveCohortIdForLessonBlockStudent(
+    supabase,
+    sub.lesson_block_id,
+    sub.student_id,
+  );
+  if (cohortId) {
+    revalidatePath(`/dashboard/cohorts/${cohortId}`, "page");
+  }
+
+  return { success: true, cohortId };
 }

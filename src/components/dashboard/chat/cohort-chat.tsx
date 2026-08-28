@@ -302,8 +302,8 @@ export function CohortChat({
                       <Button
                         type="button"
                         variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-destructive size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                        size="icon-sm"
+                        className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                         aria-label="Удалить сообщение"
                         disabled={isPending || deletingId === message.id}
                         onClick={() => handleDeleteMessage(message.id)}

@@ -72,7 +72,6 @@ export function getSidebarNavForRole(role: ProfileRole): SidebarNavItem[] {
       { title: "Группы", url: "/dashboard/cohorts", icon: UsersIcon },
       { title: "Ученики", url: "/dashboard/students", icon: Users },
       { title: "Тесты", url: "/dashboard/tests", icon: CheckSquare },
-      { title: "Поддержка", url: "/dashboard/support", icon: LifeBuoyIcon },
     ];
   } else {
     nav = [

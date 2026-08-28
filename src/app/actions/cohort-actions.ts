@@ -350,7 +350,11 @@ export async function updateCohortStatus(
 
 export async function updateCohortSettings(
   cohortId: string,
-  data: { name?: string; is_chat_enabled?: boolean },
+  data: {
+    name?: string;
+    is_chat_enabled?: boolean;
+    requires_approval?: boolean;
+  },
 ): Promise<UpdateCohortSettingsResult> {
   const cid = cohortId.trim();
   if (!cid) {
@@ -362,7 +366,11 @@ export async function updateCohortSettings(
     return { success: false, error: ownership.error };
   }
 
-  const payload: { name?: string; is_chat_enabled?: boolean } = {};
+  const payload: {
+    name?: string;
+    is_chat_enabled?: boolean;
+    requires_approval?: boolean;
+  } = {};
 
   if (data.name !== undefined) {
     const groupName = data.name.trim();
@@ -377,6 +385,10 @@ export async function updateCohortSettings(
 
   if (data.is_chat_enabled !== undefined) {
     payload.is_chat_enabled = data.is_chat_enabled;
+  }
+
+  if (data.requires_approval !== undefined) {
+    payload.requires_approval = data.requires_approval;
   }
 
   if (Object.keys(payload).length === 0) {
@@ -653,6 +665,8 @@ export async function bulkUnassignContentFromCohort(
   return { success: true };
 }
 
+export type EnrollmentStatus = "active" | "pending" | "suspended";
+
 export type CohortStudentRow = {
   enrollmentId: string;
   userId: string;
@@ -660,7 +674,15 @@ export type CohortStudentRow = {
   email: string;
   enrolledAt: string;
   avatarUrl: string | null;
+  status: EnrollmentStatus;
 };
+
+function normalizeEnrollmentStatus(value: string | null | undefined): EnrollmentStatus {
+  if (value === "pending" || value === "suspended") {
+    return value;
+  }
+  return "active";
+}
 
 /**
  * Ученики группы с корректными именами (profiles + email fallback).
@@ -689,7 +711,7 @@ export async function getCohortStudents(
     await Promise.all([
       db
         .from("enrollments")
-        .select("id, user_id, enrolled_at")
+        .select("id, user_id, enrolled_at, status")
         .eq("cohort_id", cid)
         .order("enrolled_at", { ascending: false }),
       // RPC проверяет auth.uid() = владелец курса — нужен user-клиент, не service role.
@@ -751,8 +773,64 @@ export async function getCohortStudents(
       email,
       enrolledAt: row.enrolled_at,
       avatarUrl: profileRow?.avatar_url ?? null,
+      status: normalizeEnrollmentStatus(row.status),
     };
   });
 
   return { success: true, students };
+}
+
+export type UpdateEnrollmentStatusResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Меняет статус записи ученика в группе (одобрение, приостановка, возврат доступа).
+ */
+export async function updateEnrollmentStatus(
+  userId: string,
+  cohortId: string,
+  status: EnrollmentStatus,
+): Promise<UpdateEnrollmentStatusResult> {
+  const uid = userId.trim();
+  const cid = cohortId.trim();
+
+  if (!uid || !cid) {
+    return { success: false, error: "Не указаны ученик или группа." };
+  }
+
+  if (status !== "active" && status !== "pending" && status !== "suspended") {
+    return { success: false, error: "Некорректный статус записи." };
+  }
+
+  const ownership = await assertCanManageCohort(cid);
+  if (!ownership.ok) {
+    return { success: false, error: ownership.error };
+  }
+
+  const db = await getActionDb();
+  const { data: updated, error: updateError } = await db
+    .from("enrollments")
+    .update({ status })
+    .eq("user_id", uid)
+    .eq("cohort_id", cid)
+    .select("id")
+    .maybeSingle();
+
+  if (updateError) {
+    console.error("[updateEnrollmentStatus]", updateError.message);
+    return {
+      success: false,
+      error: updateError.message || "Не удалось обновить статус ученика.",
+    };
+  }
+
+  if (!updated) {
+    return { success: false, error: "Запись ученика в этой группе не найдена." };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cid}`);
+  revalidatePath("/dashboard");
+  return { success: true };
 }

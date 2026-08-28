@@ -8,7 +8,6 @@ import {
 import { StudentSupportClient } from "@/components/dashboard/support/student-support-client";
 import { TeacherSupportClient } from "@/components/dashboard/support/teacher-support-client";
 import { SiteHeader } from "@/components/site-header";
-import { createClient } from "@/lib/supabase/server";
 
 import { verifyAccess } from "@/lib/auth/rbac";
 
@@ -18,7 +17,11 @@ export const metadata: Metadata = {
 };
 
 export default async function SupportPage() {
-  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher", "student"]);
+  const { user, profile } = await verifyAccess([
+    "admin",
+    "head_teacher",
+    "student",
+  ]);
 
   const displayName =
     profile.full_name?.trim() ||
@@ -44,11 +47,7 @@ export default async function SupportPage() {
     );
   }
 
-  if (
-    profile.role === "teacher" ||
-    profile.role === "admin" ||
-    profile.role === "head_teacher"
-  ) {
+  if (profile.role === "admin" || profile.role === "head_teacher") {
     const ticketsRes = await getAllSupportTickets("open");
     if (!ticketsRes.success) {
       throw new Error(ticketsRes.error);

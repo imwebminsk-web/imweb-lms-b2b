@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 export type JoinCohortByPinState = {
   error?: string;
   success?: boolean;
+  isPending?: boolean;
   redirectUrl?: string;
 };
 
@@ -35,6 +36,9 @@ export async function joinCohortByPin(
   _prev: JoinCohortByPinState,
   formData: FormData,
 ): Promise<JoinCohortByPinState> {
+  // Замедляет перебор PIN: каждая попытка занимает минимум 1 секунду.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
   const pinRaw = String(formData.get("pin") ?? "");
   const pin = pinRaw.toUpperCase().trim().replace(/\s+/g, "");
 
@@ -77,6 +81,11 @@ export async function joinCohortByPin(
 
   const payload = parseRpcPayload(rpcRaw);
 
+  if (payload.code === "pending_approval") {
+    revalidatePath("/dashboard");
+    return { success: true, isPending: true };
+  }
+
   if (!payload.ok) {
     switch (payload.code) {
       case "invalid_pin":
@@ -92,11 +101,11 @@ export async function joinCohortByPin(
         };
       case "unauthorized":
         return { error: "Нужна авторизация." };
+      case "suspended":
+        return { error: "Доступ приостановлен" };
       case "course_not_published":
-        return {
-          error:
-            "Этот курс ещё не опубликован. Дождитесь открытия доступа от преподавателя.",
-        };
+        // Старый код RPC: не раскрываем, что PIN существует.
+        return { error: "Неверный или неактивный код доступа" };
       default:
         return { error: "Не удалось присоединиться к группе." };
     }

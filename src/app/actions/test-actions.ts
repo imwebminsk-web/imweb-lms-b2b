@@ -41,6 +41,8 @@ import {
   resolveOrderingPlayerView,
   sumOrderingItemPoints,
 } from "@/lib/ordering-utils";
+import { verifyAccess } from "@/lib/auth/rbac";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
 import { assertStudentEnrolledForTest } from "@/lib/learn/verify-course-enrollment";
@@ -86,6 +88,7 @@ import {
   validateMatchingPairsStructure,
 } from "@/lib/utils/scoring-utils";
 import { mergeLegacyAudioUrlIntoHtml } from "@/lib/utils/task-content";
+import { resolveLessonIdsForTest } from "@/lib/learn/resolve-lesson-ids-for-test";
 import type {
   CreateTestFormInitialData,
   QuestionField,
@@ -97,6 +100,7 @@ import { z } from "zod";
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
 
 const testIdSchema = z.string().uuid("Некорректный ID теста");
+const userIdSchema = z.string().uuid("Некорректный ID пользователя");
 
 type TestAccessContext = {
   userId: string | null;
@@ -609,19 +613,59 @@ export type SafeTestForClientPayload = TestWithQuestionsPayload;
 
 export type TestListItem = Pick<
   Tables<"tests">,
-  "id" | "title" | "description" | "folder_name"
+  "id" | "title" | "description" | "folder_name" | "created_at" | "user_id" | "is_archived"
 >;
+
+export type TestListAuthor = {
+  fullName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+};
 
 export type TestListUserStatus = "not_started" | "in_progress" | "completed";
 
 /** Элемент каталога с прогрессом текущего пользователя по попыткам. */
 export type TestListItemEnriched = TestListItem & {
+  author: TestListAuthor | null;
   totalQuestions: number;
   userStatus: TestListUserStatus;
   /** Максимум `score` среди завершённых попыток (число верных ответов). */
   bestScore: number | null;
   hasCompletedAttempt: boolean;
 };
+
+async function loadTestAuthorsByUserId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userIds: string[],
+): Promise<Map<string, TestListAuthor>> {
+  const map = new Map<string, TestListAuthor>();
+  if (userIds.length === 0) {
+    return map;
+  }
+
+  const { data: profiles, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, avatar_url, profile_secrets(email)")
+    .in("id", userIds);
+
+  if (error) {
+    console.error("[getTests] profiles", error.message);
+    return map;
+  }
+
+  for (const profile of profiles ?? []) {
+    const secret = profile.profile_secrets;
+    const email =
+      secret && !Array.isArray(secret) ? secret.email : null;
+    map.set(profile.id, {
+      fullName: profile.full_name,
+      email,
+      avatarUrl: profile.avatar_url,
+    });
+  }
+
+  return map;
+}
 
 export async function getUniqueTestFolders(): Promise<
   { success: true; data: string[] } | { success: false; error: string }
@@ -647,7 +691,8 @@ export async function getUniqueTestFolders(): Promise<
   let query = supabase
     .from("tests")
     .select("folder_name")
-    .eq("scope", "library");
+    .eq("scope", "library")
+    .eq("is_archived", false);
 
   if (!isAdminOrHead) {
     query = query.eq("user_id", user.id);
@@ -673,8 +718,11 @@ export async function getUniqueTestFolders(): Promise<
 /**
  * Список тестов и сводка по `student_attempts` для текущего пользователя.
  * Гость / student: только опубликованные. Teacher: свои + опубликованные. Admin: все.
+ * По умолчанию скрывает архивные тесты (`is_archived = false`).
  */
-export async function getTests(): Promise<
+export async function getTests(
+  isArchived = false,
+): Promise<
   | { success: true; data: TestListItemEnriched[] }
   | { success: false; error: string }
 > {
@@ -696,8 +744,9 @@ export async function getTests(): Promise<
 
   let testsQuery = supabase
     .from("tests")
-    .select("id, title, description, folder_name")
+    .select("id, title, description, folder_name, created_at, user_id, is_archived")
     .eq("scope", "library")
+    .eq("is_archived", isArchived)
     .order("created_at", { ascending: false });
 
   if (!user || role === "student") {
@@ -735,11 +784,21 @@ export async function getTests(): Promise<
     totalByTest.set(row.test_id, (totalByTest.get(row.test_id) ?? 0) + 1);
   }
 
+  const authorUserIds = [
+    ...new Set(
+      list
+        .map((test) => test.user_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    ),
+  ];
+  const authorsByUserId = await loadTestAuthorsByUserId(supabase, authorUserIds);
+
   if (!user) {
     return {
       success: true,
       data: list.map((t) => ({
         ...t,
+        author: t.user_id ? (authorsByUserId.get(t.user_id) ?? null) : null,
         totalQuestions: totalByTest.get(t.id) ?? 0,
         userStatus: "not_started" as const,
         bestScore: null,
@@ -802,6 +861,7 @@ export async function getTests(): Promise<
 
     return {
       ...t,
+      author: t.user_id ? (authorsByUserId.get(t.user_id) ?? null) : null,
       totalQuestions,
       userStatus,
       bestScore:
@@ -814,13 +874,227 @@ export async function getTests(): Promise<
 }
 
 /**
- * Удаляет тест. Каскад по дочерним таблицам — в БД (`ON DELETE CASCADE`).
- * Дополнительно: только строка с `user_id` = текущий пользователь (Zero Trust в приложении).
+ * Soft delete: помечает тест как архивный. Строка, вопросы и попытки остаются.
+ * Teacher — только свои тесты. Admin / head_teacher — любой тест.
  */
-export async function deleteTest(
+export async function archiveTest(
   testId: string,
 ): Promise<{ success: true } | { success: false; error: string }> {
-  const genericDeleteError =
+  const genericError =
+    "Не удалось архивировать тест. Возможно, у вас недостаточно прав или возникла ошибка базы данных.";
+
+  try {
+    const idResult = testIdSchema.safeParse(testId);
+    if (!idResult.success) {
+      return {
+        success: false,
+        error:
+          idResult.error.issues[0]?.message ?? "Некорректный ID теста",
+      };
+    }
+
+    const { user, profile } = await verifyAccess([
+      "admin",
+      "teacher",
+      "head_teacher",
+    ]);
+
+    const isAdminOrHead =
+      profile.role === "admin" || profile.role === "head_teacher";
+
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      console.error("archiveTest: SUPABASE_SERVICE_ROLE_KEY is not configured");
+      return { success: false, error: genericError };
+    }
+
+    const tid = idResult.data;
+
+    let query = adminClient
+      .from("tests")
+      .update({ is_archived: true })
+      .eq("id", tid);
+
+    if (!isAdminOrHead) {
+      query = query.eq("user_id", user.id);
+    }
+
+    const { data: updated, error: updateError } = await query.select("id");
+    const effectiveCount = updated?.length ?? 0;
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    if (effectiveCount === 0) {
+      return { success: false, error: genericError };
+    }
+
+    revalidatePath("/dashboard/tests");
+    revalidatePath("/test");
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error: unknown) {
+    console.error("archiveTest error:", error);
+    return { success: false, error: genericError };
+  }
+}
+
+/**
+ * Возвращает тест из архива. Те же права, что у archiveTest.
+ */
+export async function restoreTest(
+  testId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const genericError =
+    "Не удалось восстановить тест. Возможно, у вас недостаточно прав или возникла ошибка базы данных.";
+
+  try {
+    const idResult = testIdSchema.safeParse(testId);
+    if (!idResult.success) {
+      return {
+        success: false,
+        error:
+          idResult.error.issues[0]?.message ?? "Некорректный ID теста",
+      };
+    }
+
+    const { user, profile } = await verifyAccess([
+      "admin",
+      "teacher",
+      "head_teacher",
+    ]);
+
+    const isAdminOrHead =
+      profile.role === "admin" || profile.role === "head_teacher";
+
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      console.error("restoreTest: SUPABASE_SERVICE_ROLE_KEY is not configured");
+      return { success: false, error: genericError };
+    }
+
+    const tid = idResult.data;
+
+    let query = adminClient
+      .from("tests")
+      .update({ is_archived: false })
+      .eq("id", tid);
+
+    if (!isAdminOrHead) {
+      query = query.eq("user_id", user.id);
+    }
+
+    const { data: updated, error: updateError } = await query.select("id");
+    const effectiveCount = updated?.length ?? 0;
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    if (effectiveCount === 0) {
+      return { success: false, error: genericError };
+    }
+
+    revalidatePath("/dashboard/tests");
+    revalidatePath("/test");
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error: unknown) {
+    console.error("restoreTest error:", error);
+    return { success: false, error: genericError };
+  }
+}
+
+/**
+ * Передаёт тест другому автору. Только admin и head_teacher.
+ */
+export async function changeTestOwner(
+  testId: string,
+  newUserId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const genericError =
+    "Не удалось сменить автора теста. Возможно, у вас недостаточно прав или возникла ошибка базы данных.";
+
+  try {
+    const idResult = testIdSchema.safeParse(testId);
+    if (!idResult.success) {
+      return {
+        success: false,
+        error:
+          idResult.error.issues[0]?.message ?? "Некорректный ID теста",
+      };
+    }
+
+    const userIdResult = userIdSchema.safeParse(newUserId);
+    if (!userIdResult.success) {
+      return {
+        success: false,
+        error:
+          userIdResult.error.issues[0]?.message ??
+          "Некорректный ID пользователя",
+      };
+    }
+
+    await verifyAccess(["admin", "head_teacher"]);
+
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      console.error(
+        "changeTestOwner: SUPABASE_SERVICE_ROLE_KEY is not configured",
+      );
+      return { success: false, error: genericError };
+    }
+
+    const { data: newOwner, error: ownerError } = await adminClient
+      .from("profiles")
+      .select("id")
+      .eq("id", userIdResult.data)
+      .maybeSingle();
+
+    if (ownerError) {
+      throw new Error(ownerError.message);
+    }
+
+    if (!newOwner) {
+      return { success: false, error: "Новый автор не найден." };
+    }
+
+    const { data: updated, error: updateError } = await adminClient
+      .from("tests")
+      .update({ user_id: userIdResult.data })
+      .eq("id", idResult.data)
+      .select("id");
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+
+    if ((updated?.length ?? 0) === 0) {
+      return { success: false, error: "Тест не найден." };
+    }
+
+    revalidatePath("/dashboard/tests");
+    revalidatePath("/test");
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error: unknown) {
+    console.error("changeTestOwner error:", error);
+    return { success: false, error: genericError };
+  }
+}
+
+/**
+ * Жёсткое удаление теста. Только admin.
+ * Блокируется, если есть попытки учеников или legacy-привязка к урокам.
+ */
+export async function hardDeleteTest(
+  testId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const genericError =
     "Не удалось удалить тест. Возможно, у вас недостаточно прав или возникла ошибка базы данных.";
 
   try {
@@ -833,52 +1107,82 @@ export async function deleteTest(
       };
     }
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    await verifyAccess(["admin"]);
 
-    if (authError || !user) {
-      return { success: false, error: "Требуется вход в систему" };
+    const adminClient = createAdminClient();
+    if (!adminClient) {
+      console.error(
+        "hardDeleteTest: SUPABASE_SERVICE_ROLE_KEY is not configured",
+      );
+      return { success: false, error: genericError };
     }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    const isAdminOrHead =
-      profile?.role === "admin" || profile?.role === "head_teacher";
 
     const tid = idResult.data;
 
-    let query = supabase
+    const { data: testRow, error: testError } = await adminClient
       .from("tests")
-      .delete()
-      .eq("id", tid);
+      .select("id, user_id")
+      .eq("id", tid)
+      .maybeSingle();
 
-    if (!isAdminOrHead) {
-      query = query.eq("user_id", user.id);
+    if (testError) {
+      throw new Error(testError.message);
     }
 
-    const {
-      data: deleted,
-      error: deleteError,
-    } = await query.select("id");
+    if (!testRow) {
+      return { success: false, error: "Тест не найден." };
+    }
 
-    const effectiveCount = deleted?.length ?? 0;
+    let attemptsQuery = adminClient
+      .from("student_attempts")
+      .select("id", { count: "exact", head: true })
+      .eq("test_id", tid);
+
+    if (testRow.user_id) {
+      attemptsQuery = attemptsQuery.neq("student_id", testRow.user_id);
+    }
+
+    const { count: attemptCount, error: attemptsError } = await attemptsQuery;
+
+    if (attemptsError) {
+      throw new Error(attemptsError.message);
+    }
+
+    if ((attemptCount ?? 0) > 0) {
+      return {
+        success: false,
+        error: "Нельзя удалить: есть попытки учеников",
+      };
+    }
+
+    const { count: lessonCount, error: lessonsError } = await adminClient
+      .from("lessons")
+      .select("id", { count: "exact", head: true })
+      .eq("test_id", tid);
+
+    if (lessonsError) {
+      throw new Error(lessonsError.message);
+    }
+
+    if ((lessonCount ?? 0) > 0) {
+      return {
+        success: false,
+        error: "Нельзя удалить: привязан к старым урокам",
+      };
+    }
+
+    const { data: deleted, error: deleteError } = await adminClient
+      .from("tests")
+      .delete()
+      .eq("id", tid)
+      .select("id");
 
     if (deleteError) {
       throw new Error(deleteError.message);
     }
 
-    if (effectiveCount === 0) {
-      return {
-        success: false,
-        error: genericDeleteError,
-      };
+    if ((deleted?.length ?? 0) === 0) {
+      return { success: false, error: genericError };
     }
 
     revalidatePath("/dashboard/tests");
@@ -887,8 +1191,8 @@ export async function deleteTest(
 
     return { success: true };
   } catch (error: unknown) {
-    console.error("deleteTest error:", error);
-    return { success: false, error: genericDeleteError };
+    console.error("hardDeleteTest error:", error);
+    return { success: false, error: genericError };
   }
 }
 
@@ -1099,10 +1403,31 @@ async function fetchInProgressAttemptId(
   return { ok: false, error: "" };
 }
 
+/** Удаляет отклонённые попытки перед новой пересдачей (ответы — CASCADE). */
+export async function deleteRejectedAttemptsForStudentTest(
+  supabase: SupabaseClient<Database>,
+  studentId: string,
+  testId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { error } = await supabase
+    .from("student_attempts")
+    .delete()
+    .eq("student_id", studentId)
+    .eq("test_id", testId)
+    .eq("status", "rejected");
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
+}
+
 /**
  * Get-or-create: возвращает текущую попытку `in_progress`, если есть.
- * Если последняя попытка только `completed` (или попыток не было) — создаётся новая строка
- * (пересдача). При гонке вставок или duplicate key повторно читает `in_progress`.
+ * Перед новой попыткой удаляет строки `rejected` (жёсткая пересдача).
+ * Если активной попытки нет — создаётся новая строка. При гонке вставок или duplicate key
+ * повторно читает `in_progress`.
  */
 export async function getOrCreateAttempt(
   testId: string,
@@ -1144,6 +1469,15 @@ export async function getOrCreateAttempt(
   }
   if (existing.ok) {
     return { success: true, attemptId: existing.id };
+  }
+
+  const deletedRejected = await deleteRejectedAttemptsForStudentTest(
+    supabase,
+    user.id,
+    idResult.data,
+  );
+  if (!deletedRejected.ok) {
+    return { success: false, error: deletedRejected.error };
   }
 
   const { data: row, error: insertError } = await supabase
@@ -1564,6 +1898,13 @@ export async function cloneLibraryTestToInline(
 
   if (sourceError || !sourceTest) {
     return { success: false, error: "Тест не найден." };
+  }
+
+  if (sourceTest.is_archived) {
+    return {
+      success: false,
+      error: "Нельзя копировать в урок архивный тест. Сначала восстановите его.",
+    };
   }
 
   let sourceQuestions: CloneSourceQuestion[] = sourceTest.questions ?? [];
@@ -2614,6 +2955,75 @@ function buildAttemptResult(params: {
 }
 
 /**
+ * Сбрасывает кэш страниц урока, где стоит этот тест — иначе после сдачи
+ * «Вернуться к уроку» может показать старую кнопку «Пройти тест».
+ */
+async function revalidateLearnPagesForTest(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  testId: string,
+): Promise<void> {
+  revalidatePath("/learn", "layout");
+
+  const resolved = await resolveLessonIdsForTest(supabase, testId);
+  if (!resolved.ok || resolved.lessonIds.length === 0) {
+    return;
+  }
+
+  const { data: lessonRows } = await supabase
+    .from("lessons")
+    .select("id, module_id")
+    .in("id", resolved.lessonIds);
+
+  const moduleIds = [
+    ...new Set(
+      (lessonRows ?? [])
+        .map((row) => row.module_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (moduleIds.length === 0) {
+    return;
+  }
+
+  const { data: moduleRows } = await supabase
+    .from("modules")
+    .select("id, course_id")
+    .in("id", moduleIds);
+
+  const courseIds = [
+    ...new Set(
+      (moduleRows ?? [])
+        .map((row) => row.course_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (courseIds.length === 0) {
+    return;
+  }
+
+  const { data: courseRows } = await supabase
+    .from("courses")
+    .select("id, slug")
+    .in("id", courseIds);
+
+  const slugByCourseId = new Map(
+    (courseRows ?? []).map((row) => [row.id, row.slug]),
+  );
+  const courseIdByModuleId = new Map(
+    (moduleRows ?? []).map((row) => [row.id, row.course_id]),
+  );
+
+  for (const lesson of lessonRows ?? []) {
+    const courseId = courseIdByModuleId.get(lesson.module_id);
+    const slug = courseId ? slugByCourseId.get(courseId) : undefined;
+    if (!slug) continue;
+    const encodedSlug = encodeURIComponent(slug);
+    revalidatePath(`/learn/${encodedSlug}`, "layout");
+    revalidatePath(`/learn/${encodedSlug}/${lesson.id}`);
+  }
+}
+
+/**
  * Завершает попытку: статус `completed`, подсчёт баллов только на сервере.
  * Балл = процент 0–100 по весам `questions.points` (полностью верное задание).
  */
@@ -2763,6 +3173,8 @@ export async function completeAttempt(
       return { success: false, error: updateError.message };
     }
 
+    await revalidateLearnPagesForTest(supabase, attempt.test_id);
+
     return { success: true, data: zeroResult };
   }
 
@@ -2832,6 +3244,8 @@ export async function completeAttempt(
   if (updateError) {
     return { success: false, error: updateError.message };
   }
+
+  await revalidateLearnPagesForTest(supabase, attempt.test_id);
 
   return {
     success: true,

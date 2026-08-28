@@ -22,6 +22,8 @@ import {
 } from "@/lib/utils/scoring-utils";
 import { resolveGroupedFillBlanksPlayerView } from "@/lib/grouped-fill-blanks-utils";
 import { parseTestIdFromQuizBlockContent } from "@/lib/learn/quiz-block-test-id";
+import { resolveLessonIdsForTest } from "@/lib/learn/resolve-lesson-ids-for-test";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { fetchStudentEmailsByUserIds } from "@/lib/supabase/fetch-student-emails-admin";
 import type { ReviewAnswerRow } from "@/lib/learn/build-review-maps";
@@ -509,6 +511,161 @@ export async function overrideTestAttemptGrade(
   return { success: true };
 }
 
+const sendToRetakeSchema = z.object({
+  attemptId: uuidSchema,
+  testId: uuidSchema,
+  studentId: uuidSchema,
+  lessonId: uuidSchema.optional(),
+});
+
+export type SendTestToRetakeInput = {
+  attemptId: string;
+  testId: string;
+  studentId: string;
+  lessonId?: string;
+};
+
+/**
+ * Отправка на пересдачу: помечает попытку `rejected` (история ответов сохраняется)
+ * и снимает `lesson_completions`, чтобы ученик прошёл тест заново.
+ */
+export async function sendTestToRetake(
+  input: SendTestToRetakeInput,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const parsed = sendToRetakeSchema.safeParse({
+    attemptId: input.attemptId,
+    testId: input.testId,
+    studentId: input.studentId,
+    lessonId: input.lessonId || undefined,
+  });
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Некорректные данные",
+    };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Требуется вход в систему" };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return { success: false, error: "Профиль не найден" };
+  }
+
+  if (
+    profile.role !== "teacher" &&
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher"
+  ) {
+    return { success: false, error: "Недостаточно прав" };
+  }
+
+  const { data: attempt, error: attemptError } = await supabase
+    .from("student_attempts")
+    .select("id, test_id, student_id")
+    .eq("id", parsed.data.attemptId)
+    .maybeSingle();
+
+  if (attemptError || !attempt) {
+    return { success: false, error: "Попытка не найдена" };
+  }
+
+  if (
+    attempt.student_id !== parsed.data.studentId ||
+    attempt.test_id !== parsed.data.testId
+  ) {
+    return { success: false, error: "Попытка не совпадает с учеником или тестом" };
+  }
+
+  const { data: testRow, error: testError } = await supabase
+    .from("tests")
+    .select("id, user_id")
+    .eq("id", parsed.data.testId)
+    .maybeSingle();
+
+  if (testError || !testRow) {
+    return { success: false, error: "Тест не найден" };
+  }
+
+  if (
+    profile.role !== "admin" &&
+    profile.role !== "head_teacher" &&
+    testRow.user_id !== user.id
+  ) {
+    return { success: false, error: "Этот тест принадлежит другому преподавателю" };
+  }
+
+  const adminClient = createAdminClient();
+  if (!adminClient) {
+    return {
+      success: false,
+      error:
+        "Сервер не настроен для сброса попытки (отсутствует SUPABASE_SERVICE_ROLE_KEY).",
+    };
+  }
+
+  let lessonIds: string[];
+  if (parsed.data.lessonId) {
+    lessonIds = [parsed.data.lessonId];
+  } else {
+    const resolved = await resolveLessonIdsForTest(adminClient, parsed.data.testId);
+    if (!resolved.ok) {
+      return { success: false, error: resolved.error };
+    }
+    lessonIds = resolved.lessonIds;
+  }
+
+  if (lessonIds.length > 0) {
+    const { error: completionsError } = await adminClient
+      .from("lesson_completions")
+      .delete()
+      .eq("student_id", parsed.data.studentId)
+      .in("lesson_id", lessonIds);
+
+    if (completionsError) {
+      return { success: false, error: completionsError.message };
+    }
+  }
+
+  const { error: rejectAttemptError } = await adminClient
+    .from("student_attempts")
+    .update({
+      status: "rejected",
+      score: null,
+      completed_at: null,
+    })
+    .eq("id", parsed.data.attemptId);
+
+  if (rejectAttemptError) {
+    return { success: false, error: rejectAttemptError.message };
+  }
+
+  const { data: cohortRows } = await supabase
+    .from("cohort_assignments")
+    .select("cohort_id")
+    .eq("test_id", parsed.data.testId);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/cohorts");
+  for (const row of cohortRows ?? []) {
+    revalidatePath(`/dashboard/cohorts/${row.cohort_id}`, "page");
+  }
+  revalidatePath("/learn");
+  return { success: true };
+}
+
 export type MatrixGradebookColumn = {
   id: string;
   type: "test" | "assignment";
@@ -570,7 +727,7 @@ async function fillCourseGradebookMatrix(
   { success: true; data: MatrixGradebookData } | { success: false; error: string }
 > {
   const { courseId, students } = args;
-  const assignedLessonIds = args.assignedLessonIds ?? new Set<string>();
+  const assignedLessonIds = args.assignedLessonIds;
   const studentIds = students.map((student) => student.id);
 
   const { data: lessonRowsRaw, error: lessonsError } = await supabase
@@ -595,7 +752,7 @@ async function fillCourseGradebookMatrix(
   };
 
   const lessonsFiltered = ((lessonRowsRaw ?? []) as LessonRow[]).filter((lesson) => {
-    if (assignedLessonIds.size === 0) return true;
+    if (assignedLessonIds === undefined) return true;
     return assignedLessonIds.has(lesson.id);
   });
 
@@ -774,6 +931,7 @@ async function fillCourseGradebookMatrix(
     const bestCompleted = new Map<string, BestCompleted>();
     const inProgressKeys = new Set<string>();
     const pendingReviewByCell = new Map<string, string>();
+    const rejectedByCell = new Map<string, string>();
 
     for (const a of attemptRows ?? []) {
       const matchingCols = filteredColumns.filter(
@@ -798,6 +956,8 @@ async function fillCourseGradebookMatrix(
           inProgressKeys.add(cellKey);
         } else if (a.status === "pending_review") {
           pendingReviewByCell.set(cellKey, a.id);
+        } else if (a.status === "rejected") {
+          rejectedByCell.set(cellKey, a.id);
         }
       }
     }
@@ -815,6 +975,21 @@ async function fillCourseGradebookMatrix(
       const cell = cells[cellKey];
       if (!cell || cell.status === "completed") continue;
       cell.status = "in_progress";
+    }
+
+    for (const [cellKey, attemptId] of rejectedByCell) {
+      const cell = cells[cellKey];
+      if (
+        !cell ||
+        cell.status === "completed" ||
+        cell.status === "in_progress"
+      ) {
+        continue;
+      }
+      cell.status = "rejected";
+      cell.attemptId = attemptId;
+      cell.points = null;
+      cell.gradingVisuals = null;
     }
 
     for (const [cellKey, attemptId] of pendingReviewByCell) {

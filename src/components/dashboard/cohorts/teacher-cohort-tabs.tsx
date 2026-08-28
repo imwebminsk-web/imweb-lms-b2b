@@ -18,6 +18,8 @@ type TeacherCohortTabsProps = {
   chatNode: ReactNode;
   unreadCount: number;
   pendingReviewCount?: number;
+  /** Вкладка из URL (`?tab=journal`), чтобы «Назад к журналу» открывал матрицу. */
+  defaultTab?: "management" | "journal" | "chat";
 };
 
 export function TeacherCohortTabs({
@@ -26,8 +28,9 @@ export function TeacherCohortTabs({
   chatNode,
   unreadCount,
   pendingReviewCount = 0,
+  defaultTab = "management",
 }: TeacherCohortTabsProps) {
-  const [activeTab, setActiveTab] = useState("management");
+  const [activeTab, setActiveTab] = useState(defaultTab);
 
   return (
     <Tabs
