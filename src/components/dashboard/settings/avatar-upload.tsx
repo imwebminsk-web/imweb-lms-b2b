@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2Icon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { updateProfileAvatar } from "@/app/actions/profile-actions";
+import { uploadAvatar } from "@/app/actions/profile-actions";
 import { useLanguage } from "@/components/providers/language-provider";
 import {
   Avatar,
@@ -13,11 +13,9 @@ import {
   AvatarImage,
 } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
 import { compressImage } from "@/lib/utils/image-compression";
 import { cn } from "@/lib/utils";
 
-const BUCKET = "avatars";
 const MAX_COMPRESSED_BYTES = 150 * 1024;
 
 type AvatarUploadProps = {
@@ -34,7 +32,6 @@ function initialsFromName(name: string): string {
 }
 
 export function AvatarUpload({
-  userId,
   initialAvatarUrl,
   displayName,
 }: AvatarUploadProps) {
@@ -72,49 +69,21 @@ export function AvatarUpload({
         return;
       }
 
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const formData = new FormData();
+      formData.append("file", compressed);
 
-      if (!user || user.id !== userId) {
-        toast.error(t("settings.avatarAuthRequired"));
+      const res = await uploadAvatar(formData);
+      if (!res.ok) {
+        toast.error(res.error);
         return;
       }
 
-      const objectPath = `${userId}/avatar.webp`;
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET)
-        .upload(objectPath, compressed, {
-          cacheControl: "3600",
-          upsert: true,
-          contentType: compressed.type || "image/jpeg",
-        });
-
-      if (uploadError) {
-        toast.error(uploadError.message || t("settings.avatarUploadFailed"));
-        return;
-      }
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
-
-      const finalUrl = `${publicUrl}?v=${Date.now()}`;
-
-      const result = await updateProfileAvatar(finalUrl);
-      if (!result.success) {
-        toast.error(result.error || t("settings.avatarUploadFailed"));
-        return;
-      }
-
-      setAvatarUrl(finalUrl);
+      setAvatarUrl(res.url);
       toast.success(t("settings.avatarUploadSuccess"));
       router.refresh();
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : t("settings.avatarUploadFailed"),
-      );
+      console.error("[AvatarUpload]", err);
+      toast.error(t("settings.avatarUploadFailed"));
     } finally {
       setBusy(false);
     }

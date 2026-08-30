@@ -24,6 +24,7 @@ import type { Json } from "@/types/database.types";
 export type AttemptGradingDetails = GradebookBestAttemptDetails & {
   studentId: string;
   studentName: string;
+  studentAvatarUrl: string | null;
   testId: string;
 };
 
@@ -194,7 +195,7 @@ export async function getAttemptGradingDetails(
   const [studentProfileResult, emailsByUserId] = await Promise.all([
     supabase
       .from("profiles")
-      .select("full_name")
+      .select("full_name, avatar_url")
       .eq("id", attempt.student_id)
       .maybeSingle(),
     fetchStudentEmailsByUserIds([attempt.student_id]),
@@ -216,6 +217,7 @@ export async function getAttemptGradingDetails(
       ...detailsRes.data,
       studentId: attempt.student_id,
       studentName,
+      studentAvatarUrl: studentProfileResult.data?.avatar_url ?? null,
       testId: attempt.test_id,
     },
   };

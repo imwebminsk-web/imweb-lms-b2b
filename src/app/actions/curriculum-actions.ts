@@ -3,21 +3,38 @@
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { verifyAccess } from "@/lib/auth/rbac";
+import { verifyAccess, type Role } from "@/lib/auth/rbac";
 import {
   assertCourseDeleteAccess,
-  COURSE_MUTATION_SELECT,
-  getCourseOwnerRole,
+  assertCourseMutationAccess,
+  loadCourseForMutation,
 } from "@/lib/auth/course-access";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { createLessonSchema } from "@/lib/validations/curriculum-schema";
+import {
+  changeOwnerSchema,
+  type ChangeOwnerPayload,
+} from "@/lib/validations/course-schemas";
+import {
+  createLessonSchema,
+  createModuleSchema,
+  deleteLessonSchema,
+  deleteModuleSchema,
+  reorderLessonSchema,
+  reorderModuleSchema,
+  updateLessonSchema,
+  updateModuleSchema,
+  type CreateLessonPayload,
+  type CreateModulePayload,
+  type ReorderLessonPayload,
+  type ReorderModulePayload,
+  type UpdateLessonPayload,
+  type UpdateModulePayload,
+} from "@/lib/validations/curriculum-schema";
 import type { Database, Json } from "@/types/database.types";
 
-export type CurriculumActionState = {
-  success?: boolean;
-  error?: string;
-};
+export type CurriculumMutationResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
 type LessonType = Database["public"]["Enums"]["lesson_type"];
 
@@ -111,794 +128,747 @@ const defaultFirstLessonBlock: { type: "text"; content: Json } = {
   content: { html: "<p></p>" },
 };
 
-export async function createModule(
-  _prev: CurriculumActionState,
-  formData: FormData,
-): Promise<CurriculumActionState> {
-  const courseId = String(formData.get("course_id") ?? "").trim();
-  const title = String(formData.get("title") ?? "").trim();
+function firstIssue(error: { issues: { message: string }[] }): string {
+  return error.issues[0]?.message ?? "Проверьте введённые данные.";
+}
 
-  if (!courseId) {
-    return { error: "Не указан курс." };
-  }
-  if (!title) {
-    return { error: "Введите название модуля." };
-  }
+function callerRole(profile: unknown): Role {
+  return (profile as unknown as { role: Role }).role;
+}
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
-
-  const { data: course, error: courseError } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", courseId)
-    .maybeSingle();
-
-  if (courseError || !course || course.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав." };
+async function prepareCurriculumWrite(
+  userId: string,
+  role: Role,
+  courseId: string,
+): Promise<
+  | {
+      ok: true;
+      course: { id: string; teacher_id: string; slug: string };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      writer: any;
+    }
+  | { ok: false; error: string }
+> {
+  const loaded = await loadCourseForMutation(courseId);
+  if (!loaded.ok) {
+    return loaded;
   }
 
-  const { data: lastRow } = await supabase
-    .from("modules")
-    .select("order_index")
-    .eq("course_id", courseId)
-    .order("order_index", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const orderIndex = nextOrderIndex(lastRow?.order_index);
-
-  const { error: insertError } = await supabase.from("modules").insert({
-    course_id: courseId,
-    title,
-    order_index: orderIndex,
+  const userClient = await createClient();
+  const accessError = await assertCourseMutationAccess(userClient, {
+    userId,
+    role,
+    courseId: loaded.course.id,
+    teacherId: loaded.course.teacher_id,
+    courseOwnerRole: loaded.course.courseOwnerRole,
   });
-
-  if (insertError) {
-    console.error("[createModule]", insertError.message);
-    return { error: insertError.message || "Не удалось создать модуль." };
+  if (accessError) {
+    return { ok: false, error: accessError };
   }
 
-  revalidatePath(`/dashboard/courses/${course.slug}`);
+  return {
+    ok: true,
+    course: loaded.course,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    writer: userClient as any,
+  };
+}
+
+export async function createModule(
+  data: CreateModulePayload,
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
+  const parsed = createModuleSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false, error: firstIssue(parsed.error) };
+  }
+
+  const prepared = await prepareCurriculumWrite(
+    user.id,
+    callerRole(profile),
+    parsed.data.courseId,
+  );
+  if (!prepared.ok) {
+    return prepared;
+  }
+
+  try {
+    const { data: lastRow } = await prepared.writer
+      .from("modules")
+      .select("order_index")
+      .eq("course_id", parsed.data.courseId)
+      .order("order_index", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { error: insertError } = await prepared.writer.from("modules").insert({
+      course_id: parsed.data.courseId,
+      title: parsed.data.title,
+      order_index: nextOrderIndex(lastRow?.order_index),
+    });
+
+    if (insertError) {
+      console.error("[createModule]", insertError.message);
+      return { ok: false, error: "Не удалось создать модуль." };
+    }
+  } catch (err) {
+    console.error("[createModule]", err);
+    return { ok: false, error: "Не удалось создать модуль." };
+  }
+
+  revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
   revalidatePath("/dashboard/courses");
-  return { success: true };
+  return { ok: true };
 }
 
 export async function updateModule(
-  moduleId: string,
-  title: string,
-): Promise<CurriculumActionState> {
-  const id = moduleId.trim();
-  const newTitle = title.trim();
+  data: UpdateModulePayload,
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
-  if (!id) {
-    return { error: "Не указан модуль." };
-  }
-  if (!newTitle) {
-    return { error: "Введите название модуля." };
+  const parsed = updateModuleSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { error: "Нужна авторизация." };
+  try {
+    const { data: moduleRow, error: moduleErr } = await supabase
+      .from("modules")
+      .select("id, course_id")
+      .eq("id", parsed.data.moduleId)
+      .maybeSingle();
+
+    if (moduleErr || !moduleRow) {
+      if (moduleErr) {
+        console.error("[updateModule]", moduleErr.message);
+      }
+      return { ok: false, error: "Модуль не найден." };
+    }
+
+    const prepared = await prepareCurriculumWrite(
+      user.id,
+      callerRole(profile),
+      moduleRow.course_id,
+    );
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    const { error: updateError } = await prepared.writer
+      .from("modules")
+      .update({ title: parsed.data.title })
+      .eq("id", parsed.data.moduleId);
+
+    if (updateError) {
+      console.error("[updateModule]", updateError.message);
+      return { ok: false, error: "Не удалось сохранить модуль." };
+    }
+
+    revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
+    revalidatePath("/dashboard/courses");
+    return { ok: true };
+  } catch (err) {
+    console.error("[updateModule]", err);
+    return { ok: false, error: "Не удалось сохранить модуль." };
   }
-
-  const { data: module, error: moduleErr } = await supabase
-    .from("modules")
-    .select("id, course_id")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (moduleErr || !module) {
-    return { error: "Модуль не найден." };
-  }
-
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Нет прав на изменение этого модуля." };
-  }
-
-  const { error: updateError } = await supabase
-    .from("modules")
-    .update({ title: newTitle })
-    .eq("id", id);
-
-  if (updateError) {
-    console.error("[updateModule]", updateError.message);
-    return { error: updateError.message || "Не удалось сохранить модуль." };
-  }
-
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
 }
 
 export async function createLesson(
-  _prev: CurriculumActionState,
-  formData: FormData,
-): Promise<CurriculumActionState> {
-  const parsed = createLessonSchema.safeParse({
-    module_id: String(formData.get("module_id") ?? "").trim(),
-    course_id: String(formData.get("course_id") ?? "").trim(),
-    title: String(formData.get("title") ?? "").trim(),
-  });
+  data: CreateLessonPayload,
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
+  const parsed = createLessonSchema.safeParse(data);
   if (!parsed.success) {
-    const first =
-      parsed.error.flatten().fieldErrors.module_id?.[0] ??
-      parsed.error.flatten().fieldErrors.course_id?.[0] ??
-      parsed.error.flatten().fieldErrors.title?.[0] ??
-      "Некорректные данные.";
-    return { error: first };
+    return { ok: false, error: firstIssue(parsed.error) };
   }
-
-  const { module_id: moduleId, course_id: courseIdFromForm, title } =
-    parsed.data;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { error: "Нужна авторизация." };
+  try {
+    const { data: moduleRow, error: moduleError } = await supabase
+      .from("modules")
+      .select("id, course_id")
+      .eq("id", parsed.data.moduleId)
+      .maybeSingle();
+
+    if (moduleError || !moduleRow) {
+      if (moduleError) {
+        console.error("[createLesson]", moduleError.message);
+      }
+      return { ok: false, error: "Модуль не найден." };
+    }
+
+    const prepared = await prepareCurriculumWrite(
+      user.id,
+      callerRole(profile),
+      moduleRow.course_id,
+    );
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    const { data: lastLesson } = await prepared.writer
+      .from("lessons")
+      .select("order_index")
+      .eq("module_id", parsed.data.moduleId)
+      .order("order_index", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: insertedLesson, error: insertError } = await prepared.writer
+      .from("lessons")
+      .insert({
+        module_id: parsed.data.moduleId,
+        title: parsed.data.title,
+        type: "text",
+        order_index: nextOrderIndex(lastLesson?.order_index),
+        content: {},
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !insertedLesson) {
+      console.error("[createLesson]", insertError?.message);
+      return { ok: false, error: "Не удалось создать урок." };
+    }
+
+    const { error: blockErr } = await prepared.writer.from("lesson_blocks").insert({
+      lesson_id: insertedLesson.id,
+      type: defaultFirstLessonBlock.type,
+      content: defaultFirstLessonBlock.content,
+      order_index: 0,
+    });
+
+    if (blockErr) {
+      console.error("[createLesson] lesson_blocks", blockErr.message);
+      await prepared.writer.from("lessons").delete().eq("id", insertedLesson.id);
+      return { ok: false, error: "Не удалось создать урок." };
+    }
+
+    revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
+    revalidatePath("/dashboard/courses");
+    return { ok: true };
+  } catch (err) {
+    console.error("[createLesson]", err);
+    return { ok: false, error: "Не удалось создать урок." };
   }
-
-  const { data: module, error: moduleError } = await supabase
-    .from("modules")
-    .select("id, course_id")
-    .eq("id", moduleId)
-    .maybeSingle();
-
-  if (moduleError || !module) {
-    return { error: "Модуль не найден." };
-  }
-
-  if (module.course_id !== courseIdFromForm) {
-    return { error: "Модуль не принадлежит этому курсу." };
-  }
-
-  const { data: course, error: courseError } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (
-    courseError ||
-    !course ||
-    course.id !== courseIdFromForm ||
-    course.teacher_id !== user.id
-  ) {
-    return { error: "Нет прав на добавление урока в этот модуль." };
-  }
-
-  const { data: lastLesson } = await supabase
-    .from("lessons")
-    .select("order_index")
-    .eq("module_id", moduleId)
-    .order("order_index", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const orderIndex = nextOrderIndex(lastLesson?.order_index);
-
-  const { data: insertedLesson, error: insertError } = await supabase
-    .from("lessons")
-    .insert({
-      module_id: moduleId,
-      title,
-      type: "text",
-      order_index: orderIndex,
-      content: {},
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !insertedLesson) {
-    console.error("[createLesson]", insertError?.message);
-    return { error: insertError?.message || "Не удалось создать урок." };
-  }
-
-  const { error: blockErr } = await supabase.from("lesson_blocks").insert({
-    lesson_id: insertedLesson.id,
-    type: defaultFirstLessonBlock.type,
-    content: defaultFirstLessonBlock.content,
-    order_index: 0,
-  });
-
-  if (blockErr) {
-    console.error("[createLesson] lesson_blocks", blockErr.message);
-    await supabase.from("lessons").delete().eq("id", insertedLesson.id);
-    return {
-      error: blockErr.message || "Не удалось создать первый блок урока.",
-    };
-  }
-
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
 }
-
-const lessonTypesForEditor: LessonType[] = ["text", "video", "quiz", "test"];
 
 export async function updateLesson(
-  _prev: CurriculumActionState,
-  formData: FormData,
-): Promise<CurriculumActionState> {
-  const lessonId = String(formData.get("lesson_id") ?? "").trim();
-  const title = String(formData.get("title") ?? "").trim();
-  const typeRaw = String(formData.get("type") ?? "").trim() as LessonType;
-  const isPublishedRaw = String(formData.get("is_published") ?? "").trim();
+  data: UpdateLessonPayload,
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
-  if (!lessonId) {
-    return { error: "Не указан урок." };
+  const parsed = updateLessonSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false, error: firstIssue(parsed.error) };
   }
-  if (!title) {
-    return { error: "Введите название урока." };
-  }
-  if (!lessonTypesForEditor.includes(typeRaw)) {
-    return { error: "Некорректный тип урока." };
-  }
-
-  const is_published = isPublishedRaw === "true";
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
+  try {
+    const { data: lessonRow, error: lessonErr } = await supabase
+      .from("lessons")
+      .select("id, module_id")
+      .eq("id", parsed.data.lessonId)
+      .maybeSingle();
 
-  const { data: lessonRow, error: lessonErr } = await supabase
-    .from("lessons")
-    .select("id, module_id")
-    .eq("id", lessonId)
-    .maybeSingle();
-
-  if (lessonErr || !lessonRow) {
-    return { error: "Урок не найден." };
-  }
-
-  const { data: module, error: moduleErr } = await supabase
-    .from("modules")
-    .select("id, course_id")
-    .eq("id", lessonRow.module_id)
-    .maybeSingle();
-
-  if (moduleErr || !module) {
-    return { error: "Модуль не найден." };
-  }
-
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Нет прав на изменение этого урока." };
-  }
-
-  let content: Json = {};
-  let test_id: string | null = null;
-
-  if (typeRaw === "video") {
-    const videoUrl = String(formData.get("video_url") ?? "").trim();
-    content = { videoUrl };
-  } else if (typeRaw === "text") {
-    const body = String(formData.get("body") ?? "");
-    content = { body };
-  } else if (typeRaw === "quiz" || typeRaw === "test") {
-    test_id = String(formData.get("test_id") ?? "").trim() || null;
-    if (!test_id) {
-      return {
-        error: "Выберите тест для урока с типом «тест / квиз».",
-      };
+    if (lessonErr || !lessonRow) {
+      if (lessonErr) {
+        console.error("[updateLesson]", lessonErr.message);
+      }
+      return { ok: false, error: "Урок не найден." };
     }
-    content = {};
+
+    const { data: moduleRow, error: moduleErr } = await supabase
+      .from("modules")
+      .select("id, course_id")
+      .eq("id", lessonRow.module_id)
+      .maybeSingle();
+
+    if (moduleErr || !moduleRow) {
+      if (moduleErr) {
+        console.error("[updateLesson]", moduleErr.message);
+      }
+      return { ok: false, error: "Модуль не найден." };
+    }
+
+    const prepared = await prepareCurriculumWrite(
+      user.id,
+      callerRole(profile),
+      moduleRow.course_id,
+    );
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    let content: Json = {};
+    let test_id: string | null = null;
+    const typeRaw = parsed.data.type;
+
+    if (typeRaw === "video") {
+      content = { videoUrl: (parsed.data.videoUrl ?? "").trim() };
+    } else if (typeRaw === "text") {
+      content = { body: parsed.data.body ?? "" };
+    } else {
+      test_id = parsed.data.testId?.trim() || null;
+      if (!test_id) {
+        return {
+          ok: false,
+          error: "Выберите тест для урока с типом «тест / квиз».",
+        };
+      }
+      content = {};
+    }
+
+    const { error: updateError } = await prepared.writer
+      .from("lessons")
+      .update({
+        title: parsed.data.title,
+        type: typeRaw,
+        content,
+        is_published: parsed.data.isPublished === true,
+        test_id: typeRaw === "text" || typeRaw === "video" ? null : test_id,
+      })
+      .eq("id", parsed.data.lessonId);
+
+    if (updateError) {
+      console.error("[updateLesson]", updateError.message);
+      return { ok: false, error: "Не удалось сохранить урок." };
+    }
+
+    revalidatePath(
+      `/dashboard/courses/${prepared.course.slug}/lessons/${parsed.data.lessonId}`,
+    );
+    revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
+    revalidatePath("/dashboard/courses");
+    return { ok: true };
+  } catch (err) {
+    console.error("[updateLesson]", err);
+    return { ok: false, error: "Не удалось сохранить урок." };
   }
-
-  const { error: updateError } = await supabase
-    .from("lessons")
-    .update({
-      title,
-      type: typeRaw,
-      content,
-      is_published,
-      test_id: typeRaw === "text" || typeRaw === "video" ? null : test_id,
-    })
-    .eq("id", lessonId);
-
-  if (updateError) {
-    console.error("[updateLesson]", updateError.message);
-    return { error: updateError.message || "Не удалось сохранить урок." };
-  }
-
-  const slug = course.slug;
-  revalidatePath(`/dashboard/courses/${slug}/lessons/${lessonId}`);
-  revalidatePath(`/dashboard/courses/${slug}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
 }
 
-export type DeleteCurriculumState = {
-  success?: boolean;
-  error?: string;
-};
-
 export async function reorderModule(
-  courseId: string,
-  moduleId: string,
-  direction: "up" | "down",
-): Promise<DeleteCurriculumState> {
-  const cid = courseId.trim();
-  const mid = moduleId.trim();
-  if (!cid || !mid) {
-    return { error: "Некорректные параметры." };
-  }
-  if (direction !== "up" && direction !== "down") {
-    return { error: "Некорректное направление." };
+  data: ReorderModulePayload,
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
+  const parsed = reorderModuleSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
+  const prepared = await prepareCurriculumWrite(
+    user.id,
+    callerRole(profile),
+    parsed.data.courseId,
+  );
+  if (!prepared.ok) {
+    return prepared;
   }
 
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", cid)
-    .maybeSingle();
+  try {
+    const { data: rows, error: listErr } = await prepared.writer
+      .from("modules")
+      .select("id, order_index")
+      .eq("course_id", parsed.data.courseId)
+      .order("order_index", { ascending: true });
 
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Курс не найден или нет прав." };
+    if (listErr || !rows?.length) {
+      if (listErr) {
+        console.error("[reorderModule]", listErr.message);
+      }
+      return { ok: false, error: "Модули не найдены." };
+    }
+
+    const sorted = [...rows].sort((a, b) => a.order_index - b.order_index);
+    const i = sorted.findIndex((r) => r.id === parsed.data.moduleId);
+    if (i === -1) {
+      return { ok: false, error: "Модуль не найден в этом курсе." };
+    }
+    const j = parsed.data.direction === "up" ? i - 1 : i + 1;
+    if (j < 0 || j >= sorted.length) {
+      return { ok: true };
+    }
+
+    const a = sorted[i]!;
+    const b = sorted[j]!;
+
+    const { error: e1 } = await prepared.writer
+      .from("modules")
+      .update({ order_index: b.order_index })
+      .eq("id", a.id);
+    if (e1) {
+      console.error("[reorderModule] update a", e1.message);
+      return { ok: false, error: "Не удалось изменить порядок." };
+    }
+
+    const { error: e2 } = await prepared.writer
+      .from("modules")
+      .update({ order_index: a.order_index })
+      .eq("id", b.id);
+    if (e2) {
+      console.error("[reorderModule] update b", e2.message);
+      return { ok: false, error: "Не удалось изменить порядок." };
+    }
+
+    revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
+    revalidatePath("/dashboard/courses");
+    return { ok: true };
+  } catch (err) {
+    console.error("[reorderModule]", err);
+    return { ok: false, error: "Не удалось изменить порядок." };
   }
-
-  const { data: rows, error: listErr } = await supabase
-    .from("modules")
-    .select("id, order_index")
-    .eq("course_id", cid)
-    .order("order_index", { ascending: true });
-
-  if (listErr || !rows?.length) {
-    return { error: "Модули не найдены." };
-  }
-
-  const sorted = [...rows].sort((a, b) => a.order_index - b.order_index);
-  const i = sorted.findIndex((r) => r.id === mid);
-  if (i === -1) {
-    return { error: "Модуль не найден в этом курсе." };
-  }
-  const j = direction === "up" ? i - 1 : i + 1;
-  if (j < 0 || j >= sorted.length) {
-    return { success: true };
-  }
-
-  const a = sorted[i]!;
-  const b = sorted[j]!;
-  const oa = a.order_index;
-  const ob = b.order_index;
-
-  const { error: e1 } = await supabase
-    .from("modules")
-    .update({ order_index: ob })
-    .eq("id", a.id);
-  if (e1) {
-    console.error("[reorderModule] update a", e1.message);
-    return { error: e1.message || "Не удалось изменить порядок." };
-  }
-
-  const { error: e2 } = await supabase
-    .from("modules")
-    .update({ order_index: oa })
-    .eq("id", b.id);
-  if (e2) {
-    console.error("[reorderModule] update b", e2.message);
-    return { error: e2.message || "Не удалось изменить порядок." };
-  }
-
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
 }
 
 export async function reorderLesson(
-  moduleId: string,
-  lessonId: string,
-  direction: "up" | "down",
-): Promise<DeleteCurriculumState> {
-  const modId = moduleId.trim();
-  const lid = lessonId.trim();
-  if (!modId || !lid) {
-    return { error: "Некорректные параметры." };
-  }
-  if (direction !== "up" && direction !== "down") {
-    return { error: "Некорректное направление." };
+  data: ReorderLessonPayload,
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
+  const parsed = reorderLessonSchema.safeParse(data);
+  if (!parsed.success) {
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { error: "Нужна авторизация." };
+  try {
+    const { data: moduleRow, error: moduleErr } = await supabase
+      .from("modules")
+      .select("id, course_id")
+      .eq("id", parsed.data.moduleId)
+      .maybeSingle();
+
+    if (moduleErr || !moduleRow) {
+      if (moduleErr) {
+        console.error("[reorderLesson]", moduleErr.message);
+      }
+      return { ok: false, error: "Модуль не найден." };
+    }
+
+    const prepared = await prepareCurriculumWrite(
+      user.id,
+      callerRole(profile),
+      moduleRow.course_id,
+    );
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    const { data: rows, error: listErr } = await prepared.writer
+      .from("lessons")
+      .select("id, order_index")
+      .eq("module_id", parsed.data.moduleId)
+      .order("order_index", { ascending: true });
+
+    if (listErr || !rows?.length) {
+      if (listErr) {
+        console.error("[reorderLesson]", listErr.message);
+      }
+      return { ok: false, error: "Уроки не найдены." };
+    }
+
+    const sorted = [...rows].sort((a, b) => a.order_index - b.order_index);
+    const i = sorted.findIndex((r) => r.id === parsed.data.lessonId);
+    if (i === -1) {
+      return { ok: false, error: "Урок не найден в этом модуле." };
+    }
+    const j = parsed.data.direction === "up" ? i - 1 : i + 1;
+    if (j < 0 || j >= sorted.length) {
+      return { ok: true };
+    }
+
+    const a = sorted[i]!;
+    const b = sorted[j]!;
+
+    const { error: e1 } = await prepared.writer
+      .from("lessons")
+      .update({ order_index: b.order_index })
+      .eq("id", a.id);
+    if (e1) {
+      console.error("[reorderLesson] update a", e1.message);
+      return { ok: false, error: "Не удалось изменить порядок." };
+    }
+
+    const { error: e2 } = await prepared.writer
+      .from("lessons")
+      .update({ order_index: a.order_index })
+      .eq("id", b.id);
+    if (e2) {
+      console.error("[reorderLesson] update b", e2.message);
+      return { ok: false, error: "Не удалось изменить порядок." };
+    }
+
+    revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
+    revalidatePath("/dashboard/courses");
+    return { ok: true };
+  } catch (err) {
+    console.error("[reorderLesson]", err);
+    return { ok: false, error: "Не удалось изменить порядок." };
   }
-
-  const { data: module, error: moduleErr } = await supabase
-    .from("modules")
-    .select("id, course_id")
-    .eq("id", modId)
-    .maybeSingle();
-
-  if (moduleErr || !module) {
-    return { error: "Модуль не найден." };
-  }
-
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Нет прав на изменение этого модуля." };
-  }
-
-  const { data: rows, error: listErr } = await supabase
-    .from("lessons")
-    .select("id, order_index")
-    .eq("module_id", modId)
-    .order("order_index", { ascending: true });
-
-  if (listErr || !rows?.length) {
-    return { error: "Уроки не найдены." };
-  }
-
-  const sorted = [...rows].sort((a, b) => a.order_index - b.order_index);
-  const i = sorted.findIndex((r) => r.id === lid);
-  if (i === -1) {
-    return { error: "Урок не найден в этом модуле." };
-  }
-  const j = direction === "up" ? i - 1 : i + 1;
-  if (j < 0 || j >= sorted.length) {
-    return { success: true };
-  }
-
-  const a = sorted[i]!;
-  const b = sorted[j]!;
-  const oa = a.order_index;
-  const ob = b.order_index;
-
-  const { error: e1 } = await supabase
-    .from("lessons")
-    .update({ order_index: ob })
-    .eq("id", a.id);
-  if (e1) {
-    console.error("[reorderLesson] update a", e1.message);
-    return { error: e1.message || "Не удалось изменить порядок." };
-  }
-
-  const { error: e2 } = await supabase
-    .from("lessons")
-    .update({ order_index: oa })
-    .eq("id", b.id);
-  if (e2) {
-    console.error("[reorderLesson] update b", e2.message);
-    return { error: e2.message || "Не удалось изменить порядок." };
-  }
-
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
 }
 
 export async function deleteModule(
   moduleId: string,
-): Promise<DeleteCurriculumState> {
-  const id = moduleId.trim();
-  if (!id) {
-    return { error: "Не указан модуль." };
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
+  const parsed = deleteModuleSchema.safeParse({ moduleId });
+  if (!parsed.success) {
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
+  try {
+    const { data: moduleRow, error: moduleErr } = await supabase
+      .from("modules")
+      .select("id, course_id")
+      .eq("id", parsed.data.moduleId)
+      .maybeSingle();
 
-  const { data: module, error: moduleErr } = await supabase
-    .from("modules")
-    .select("id, course_id")
-    .eq("id", id)
-    .maybeSingle();
+    if (moduleErr || !moduleRow) {
+      if (moduleErr) {
+        console.error("[deleteModule]", moduleErr.message);
+      }
+      return { ok: false, error: "Модуль не найден." };
+    }
 
-  if (moduleErr || !module) {
-    return { error: "Модуль не найден." };
-  }
-
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Нет прав на удаление этого модуля." };
-  }
-
-  const { data: moduleLessons, error: lessonsListErr } = await supabase
-    .from("lessons")
-    .select("id, type, content")
-    .eq("module_id", id);
-
-  if (lessonsListErr) {
-    console.error("[deleteModule] list lessons", lessonsListErr.message);
-    return {
-      error: lessonsListErr.message || "Не удалось подготовить удаление.",
-    };
-  }
-
-  const lessonIdsForModule = (moduleLessons ?? []).map((l) => l.id);
-  await removeImageBlocksForLessons(supabase, lessonIdsForModule);
-
-  for (const row of moduleLessons ?? []) {
-    await removeSelfHostedLessonVideoFromStorage(
-      supabase,
-      row.type as LessonType,
-      row.content as Json,
+    const prepared = await prepareCurriculumWrite(
+      user.id,
+      callerRole(profile),
+      moduleRow.course_id,
     );
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    const { data: moduleLessons, error: lessonsListErr } = await prepared.writer
+      .from("lessons")
+      .select("id, type, content")
+      .eq("module_id", parsed.data.moduleId);
+
+    if (lessonsListErr) {
+      console.error("[deleteModule] list lessons", lessonsListErr.message);
+      return { ok: false, error: "Не удалось удалить модуль." };
+    }
+
+    const lessonIdsForModule = (moduleLessons ?? []).map((l: { id: string }) => l.id);
+    await removeImageBlocksForLessons(prepared.writer, lessonIdsForModule);
+
+    for (const row of moduleLessons ?? []) {
+      await removeSelfHostedLessonVideoFromStorage(
+        prepared.writer,
+        row.type as LessonType,
+        row.content as Json,
+      );
+    }
+
+    const { error: delErr } = await prepared.writer
+      .from("modules")
+      .delete()
+      .eq("id", parsed.data.moduleId);
+
+    if (delErr) {
+      console.error("[deleteModule]", delErr.message);
+      return { ok: false, error: "Не удалось удалить модуль." };
+    }
+
+    revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
+    revalidatePath("/dashboard/courses");
+    return { ok: true };
+  } catch (err) {
+    console.error("[deleteModule]", err);
+    return { ok: false, error: "Не удалось удалить модуль." };
   }
-
-  const { error: delErr } = await supabase.from("modules").delete().eq("id", id);
-
-  if (delErr) {
-    console.error("[deleteModule]", delErr.message);
-    return { error: delErr.message || "Не удалось удалить модуль." };
-  }
-
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
 }
 
 export async function deleteLesson(
   lessonId: string,
-): Promise<DeleteCurriculumState> {
-  const id = lessonId.trim();
-  if (!id) {
-    return { error: "Не указан урок." };
+): Promise<CurriculumMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
+  const parsed = deleteLessonSchema.safeParse({ lessonId });
+  if (!parsed.success) {
+    return { ok: false, error: firstIssue(parsed.error) };
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return { error: "Нужна авторизация." };
+  try {
+    const { data: lesson, error: lessonErr } = await supabase
+      .from("lessons")
+      .select("id, module_id, type, content")
+      .eq("id", parsed.data.lessonId)
+      .maybeSingle();
+
+    if (lessonErr || !lesson) {
+      if (lessonErr) {
+        console.error("[deleteLesson]", lessonErr.message);
+      }
+      return { ok: false, error: "Урок не найден." };
+    }
+
+    const { data: moduleRow, error: moduleErr } = await supabase
+      .from("modules")
+      .select("id, course_id")
+      .eq("id", lesson.module_id)
+      .maybeSingle();
+
+    if (moduleErr || !moduleRow) {
+      if (moduleErr) {
+        console.error("[deleteLesson]", moduleErr.message);
+      }
+      return { ok: false, error: "Модуль не найден." };
+    }
+
+    const prepared = await prepareCurriculumWrite(
+      user.id,
+      callerRole(profile),
+      moduleRow.course_id,
+    );
+    if (!prepared.ok) {
+      return prepared;
+    }
+
+    await removeImageBlocksForLessons(prepared.writer, [parsed.data.lessonId]);
+    await removeSelfHostedLessonVideoFromStorage(
+      prepared.writer,
+      lesson.type as LessonType,
+      lesson.content as Json,
+    );
+
+    const { error: delErr } = await prepared.writer
+      .from("lessons")
+      .delete()
+      .eq("id", parsed.data.lessonId);
+
+    if (delErr) {
+      console.error("[deleteLesson]", delErr.message);
+      return { ok: false, error: "Не удалось удалить урок." };
+    }
+
+    revalidatePath(`/dashboard/courses/${prepared.course.slug}`);
+    revalidatePath(
+      `/dashboard/courses/${prepared.course.slug}/lessons/${parsed.data.lessonId}`,
+    );
+    revalidatePath("/dashboard/courses");
+    return { ok: true };
+  } catch (err) {
+    console.error("[deleteLesson]", err);
+    return { ok: false, error: "Не удалось удалить урок." };
   }
-
-  const { data: lesson, error: lessonErr } = await supabase
-    .from("lessons")
-    .select("id, module_id, type, content")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (lessonErr || !lesson) {
-    return { error: "Урок не найден." };
-  }
-
-  const { data: module, error: moduleErr } = await supabase
-    .from("modules")
-    .select("id, course_id")
-    .eq("id", lesson.module_id)
-    .maybeSingle();
-
-  if (moduleErr || !module) {
-    return { error: "Модуль не найден." };
-  }
-
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, teacher_id, slug")
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseErr || !course || course.teacher_id !== user.id) {
-    return { error: "Нет прав на удаление этого урока." };
-  }
-
-  await removeImageBlocksForLessons(supabase, [id]);
-
-  await removeSelfHostedLessonVideoFromStorage(
-    supabase,
-    lesson.type as LessonType,
-    lesson.content as Json,
-  );
-
-  const { error: delErr } = await supabase.from("lessons").delete().eq("id", id);
-
-  if (delErr) {
-    console.error("[deleteLesson]", delErr.message);
-    return { error: delErr.message || "Не удалось удалить урок." };
-  }
-
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  revalidatePath(`/dashboard/courses/${course.slug}/lessons/${id}`);
-  revalidatePath("/dashboard/courses");
-  return { success: true };
 }
 
-export async function deleteCourse(
+export async function archiveCourse(
   courseId: string,
-): Promise<DeleteCurriculumState> {
+): Promise<CurriculumMutationResult> {
   const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   const cid = courseId.trim();
   if (!cid) {
-    return { error: "Не указан курс." };
+    return { ok: false, error: "Не указан курс." };
+  }
+
+  const loaded = await loadCourseForMutation(cid);
+  if (!loaded.ok) {
+    return loaded;
   }
 
   const supabase = await createClient();
-
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    // @ts-expect-error owner alias is not in generated Database types yet
-    .select(COURSE_MUTATION_SELECT)
-    .eq("id", cid)
-    .maybeSingle();
-
-  if (courseErr || !course) {
-    return { error: "Курс не найден." };
-  }
-
   const accessError = await assertCourseDeleteAccess(supabase, {
     userId: user.id,
     role: profile.role,
-    courseId: course.id,
-    teacherId: course.teacher_id,
-    courseOwnerRole: getCourseOwnerRole(course),
+    courseId: loaded.course.id,
+    teacherId: loaded.course.teacher_id,
+    courseOwnerRole: loaded.course.courseOwnerRole,
   });
   if (accessError) {
-    return { error: accessError };
+    return { ok: false, error: accessError };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: delErr } = await (supabase as any)
+  const { error: archiveErr } = await supabase
     .from("courses")
     .update({ is_archived: true })
     .eq("id", cid);
 
-  if (delErr) {
-    console.error("[deleteCourse]", delErr.message);
-    return { error: delErr.message || "Не удалось архивировать курс." };
+  if (archiveErr) {
+    console.error("[archiveCourse]", archiveErr.message);
+    return {
+      ok: false,
+      error: archiveErr.message || "Не удалось архивировать курс.",
+    };
   }
 
   revalidatePath("/dashboard/courses");
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  return { success: true };
+  revalidatePath(`/dashboard/courses/${loaded.course.slug}`);
+  return { ok: true };
 }
 
 export async function restoreCourse(
   courseId: string,
-  newTeacherId: string,
-): Promise<DeleteCurriculumState> {
+  newTeacherId?: string | null,
+): Promise<CurriculumMutationResult> {
   await verifyAccess(["admin"]);
 
   const cid = courseId.trim();
-  const teacherId = newTeacherId.trim();
+  const teacherId = newTeacherId?.trim() ?? "";
 
   if (!cid) {
-    return { error: "Не указан курс." };
+    return { ok: false, error: "Не указан курс." };
   }
 
-  if (!teacherId) {
-    return { error: "Не указан новый владелец курса." };
+  const loaded = await loadCourseForMutation(cid);
+  if (!loaded.ok) {
+    return loaded;
   }
 
   const supabase = await createClient();
 
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, slug")
-    .eq("id", cid)
-    .maybeSingle();
-
-  if (courseErr || !course) {
-    return { error: "Курс не найден." };
-  }
-
-  const { data: teacher, error: teacherErr } = await supabase
-    .from("profiles")
-    .select("id, role")
-    .eq("id", teacherId)
-    .maybeSingle();
-
-  if (teacherErr || !teacher) {
-    return { error: "Пользователь не найден." };
-  }
-
-  if (teacher.role !== "teacher" && teacher.role !== "head_teacher") {
-    return { error: "Владельцем может быть только преподаватель или завуч." };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: updateErr } = await (supabase as any)
-    .from("courses")
-    .update({ is_archived: false, teacher_id: teacherId })
-    .eq("id", cid);
-
-  if (updateErr) {
-    console.error("[restoreCourse]", updateErr.message);
-    return { error: updateErr.message || "Не удалось восстановить курс." };
-  }
-
-  revalidatePath("/dashboard/courses");
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  return { success: true };
-}
-
-export async function reassignCourseOwner(
-  courseId: string,
-  newTeacherId: string,
-): Promise<DeleteCurriculumState> {
-  await verifyAccess(["admin"]);
-
-  const cid = courseId.trim();
-  const teacherId = newTeacherId.trim();
-
-  if (!cid) {
-    return { error: "Не указан курс." };
-  }
-
   if (!teacherId) {
-    return { error: "Не указан новый владелец курса." };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: currentOwner, error: ownerErr } = await (supabase as any)
+      .from("profiles")
+      .select("id, is_active")
+      .eq("id", loaded.course.teacher_id)
+      .maybeSingle();
+
+    if (ownerErr || !currentOwner) {
+      return { ok: false, error: "Текущий владелец курса не найден." };
+    }
+
+    if (currentOwner.is_active === false) {
+      return {
+        ok: false,
+        error:
+          "Текущий создатель деактивирован. Назначьте нового активного владельца.",
+      };
+    }
+
+    const { error: updateErr } = await supabase
+      .from("courses")
+      .update({ is_archived: false })
+      .eq("id", cid);
+
+    if (updateErr) {
+      console.error("[restoreCourse]", updateErr.message);
+      return {
+        ok: false,
+        error: updateErr.message || "Не удалось восстановить курс.",
+      };
+    }
+
+    revalidatePath("/dashboard/courses");
+    revalidatePath(`/dashboard/courses/${loaded.course.slug}`);
+    return { ok: true };
   }
 
-  const supabase = await createClient();
-
-  const { data: course, error: courseErr } = await supabase
-    .from("courses")
-    .select("id, slug, teacher_id")
-    .eq("id", cid)
-    .maybeSingle();
-
-  if (courseErr || !course) {
-    return { error: "Курс не найден." };
-  }
-
-  if (course.teacher_id === teacherId) {
-    return { error: "Этот пользователь уже владелец курса." };
-  }
-
-  // is_active ещё нет в generated Database types.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: teacher, error: teacherErr } = await (supabase as any)
     .from("profiles")
@@ -907,33 +877,157 @@ export async function reassignCourseOwner(
     .maybeSingle();
 
   if (teacherErr || !teacher) {
-    return { error: "Пользователь не найден." };
-  }
-
-  if (teacher.role !== "teacher" && teacher.role !== "head_teacher") {
-    return { error: "Владельцем может быть только преподаватель или завуч." };
+    return { ok: false, error: "Пользователь не найден." };
   }
 
   if (teacher.is_active === false) {
-    return { error: "Нельзя назначить деактивированного сотрудника." };
+    return {
+      ok: false,
+      error: "Нельзя назначить деактивированного пользователя.",
+    };
   }
 
-  // RLS на courses не даёт admin менять teacher_id (политика courses_update_own).
-  // После verifyAccess(['admin']) пишем через service role.
-  const writer = createAdminClient() ?? supabase;
-  const { data: updated, error: updateErr } = await writer
-    .from("courses")
-    .update({ teacher_id: teacherId })
-    .eq("id", cid)
-    .select("id")
-    .maybeSingle();
+  if (
+    teacher.role !== "teacher" &&
+    teacher.role !== "head_teacher" &&
+    teacher.role !== "admin"
+  ) {
+    return {
+      ok: false,
+      error:
+        "Владельцем может быть только преподаватель, завуч или администратор.",
+    };
+  }
 
-  if (updateErr || !updated) {
-    console.error("[reassignCourseOwner]", updateErr?.message);
-    return { error: updateErr?.message || "Не удалось сменить владельца." };
+  const { error: updateErr } = await supabase
+    .from("courses")
+    .update({ is_archived: false, teacher_id: teacherId })
+    .eq("id", cid);
+
+  if (updateErr) {
+    console.error("[restoreCourse]", updateErr.message);
+    return {
+      ok: false,
+      error: updateErr.message || "Не удалось восстановить курс.",
+    };
   }
 
   revalidatePath("/dashboard/courses");
-  revalidatePath(`/dashboard/courses/${course.slug}`);
-  return { success: true };
+  revalidatePath(`/dashboard/courses/${loaded.course.slug}`);
+  return { ok: true };
+}
+
+export async function hardDeleteCourse(
+  courseId: string,
+): Promise<CurriculumMutationResult> {
+  await verifyAccess(["admin"]);
+
+  const cid = courseId.trim();
+  if (!cid) {
+    return { ok: false, error: "Не указан курс." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: deleted, error: deleteErr } = await supabase
+    .from("courses")
+    .delete()
+    .eq("id", cid)
+    .eq("is_archived", true)
+    .select("id");
+
+  if (deleteErr) {
+    console.error("[hardDeleteCourse]", deleteErr.message);
+    return {
+      ok: false,
+      error: deleteErr.message || "Не удалось удалить курс.",
+    };
+  }
+
+  if (!deleted?.length) {
+    return {
+      ok: false,
+      error: "Курс не найден в архиве или уже удалён.",
+    };
+  }
+
+  revalidatePath("/dashboard/courses");
+  return { ok: true };
+}
+
+export type ReassignCourseOwnerResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function reassignCourseOwner(
+  data: ChangeOwnerPayload,
+): Promise<ReassignCourseOwnerResult> {
+  await verifyAccess(["admin"]);
+
+  const parsed = changeOwnerSchema.safeParse(data);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Проверьте введённые данные.",
+    };
+  }
+
+  const { courseId: cid, newOwnerId: teacherId } = parsed.data;
+
+  try {
+    const supabase = await createClient();
+
+    const { data: course, error: courseErr } = await supabase
+      .from("courses")
+      .select("id, slug, teacher_id")
+      .eq("id", cid)
+      .maybeSingle();
+
+    if (courseErr || !course) {
+      return { ok: false, error: "Курс не найден." };
+    }
+
+    if (course.teacher_id === teacherId) {
+      return { ok: false, error: "Этот пользователь уже владелец курса." };
+    }
+
+    // is_active ещё нет в generated Database types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: teacher, error: teacherErr } = await (supabase as any)
+      .from("profiles")
+      .select("id, role, is_active")
+      .eq("id", teacherId)
+      .maybeSingle();
+
+    if (teacherErr || !teacher) {
+      return { ok: false, error: "Пользователь не найден." };
+    }
+
+    if (teacher.role !== "teacher" && teacher.role !== "head_teacher") {
+      return { ok: false, error: "Владельцем может быть только преподаватель или завуч." };
+    }
+
+    if (teacher.is_active === false) {
+      return { ok: false, error: "Нельзя назначить деактивированного сотрудника." };
+    }
+
+    const { data: updated, error: updateErr } = await supabase
+      .from("courses")
+      .update({ teacher_id: teacherId })
+      .eq("id", cid)
+      .select("id")
+      .maybeSingle();
+
+    if (updateErr || !updated) {
+      console.error("[reassignCourseOwner]", updateErr?.message);
+      return { ok: false, error: "Не удалось сменить владельца курса" };
+    }
+
+    revalidatePath("/dashboard/courses");
+    revalidatePath(`/dashboard/courses/${course.slug}`);
+    return { ok: true };
+  } catch (err) {
+    console.error("[reassignCourseOwner] Unexpected error:", err);
+    return { ok: false, error: "Не удалось сменить владельца курса" };
+  }
 }

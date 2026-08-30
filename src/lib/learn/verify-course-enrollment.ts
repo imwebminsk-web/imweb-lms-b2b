@@ -12,7 +12,8 @@ export const NOT_ENROLLED_IN_COURSE_ERROR =
 export type CourseEnrollmentDeniedReason =
   | "not_enrolled"
   | "pending"
-  | "suspended";
+  | "suspended"
+  | "archived";
 
 export type CourseEnrollmentResult =
   | { ok: true; cohortId: string | null }
@@ -35,6 +36,13 @@ function denyEnrollment(
       error: "Enrollment suspended",
     };
   }
+  if (reason === "archived") {
+    return {
+      ok: false,
+      reason,
+      error: "Course or cohort is archived",
+    };
+  }
   return {
     ok: false,
     reason: "not_enrolled",
@@ -42,10 +50,26 @@ function denyEnrollment(
   };
 }
 
+function relIsArchived(rel: unknown): boolean {
+  if (!rel) {
+    return false;
+  }
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+  return (row as { is_archived?: unknown }).is_archived === true;
+}
+
 function resultFromEnrollmentStatus(
   cohortId: string | null,
   status: string,
+  courseIsArchived: boolean,
+  cohortIsArchived: boolean,
 ): CourseEnrollmentResult {
+  if (courseIsArchived || cohortIsArchived) {
+    return denyEnrollment("archived");
+  }
   if (status === "active") {
     return { ok: true, cohortId };
   }
@@ -166,12 +190,20 @@ async function readEnrollment(
   userId: string,
   courseId: string,
 ): Promise<
-  | { found: true; cohortId: string | null; status: string }
+  | {
+      found: true;
+      cohortId: string | null;
+      status: string;
+      courseIsArchived: boolean;
+      cohortIsArchived: boolean;
+    }
   | { found: false }
 > {
+  // Курс всегда есть у записи — inner. Группа может быть null (B2B без PIN) —
+  // обычный join, иначе такие записи пропадут из выборки.
   const { data, error } = await client
     .from("enrollments")
-    .select("cohort_id, status")
+    .select("cohort_id, status, cohorts(is_archived), courses!inner(is_archived)")
     .eq("user_id", userId)
     .eq("course_id", courseId)
     .maybeSingle();
@@ -189,6 +221,8 @@ async function readEnrollment(
     found: true,
     cohortId: data.cohort_id ?? null,
     status: data.status,
+    courseIsArchived: relIsArchived(data.courses),
+    cohortIsArchived: relIsArchived(data.cohorts),
   };
 }
 
@@ -239,7 +273,12 @@ export async function ensureCourseEnrollment(
   const supabase = await createClient();
   const existing = await readEnrollment(supabase, userId, courseId);
   if (existing.found) {
-    return resultFromEnrollmentStatus(existing.cohortId, existing.status);
+    return resultFromEnrollmentStatus(
+      existing.cohortId,
+      existing.status,
+      existing.courseIsArchived,
+      existing.cohortIsArchived,
+    );
   }
 
   const provisioned = await provisionB2BEnrollment(userId, courseId);
@@ -253,13 +292,23 @@ export async function ensureCourseEnrollment(
     if (adminClient) {
       const adminRead = await readEnrollment(adminClient, userId, courseId);
       if (adminRead.found) {
-        return resultFromEnrollmentStatus(adminRead.cohortId, adminRead.status);
+        return resultFromEnrollmentStatus(
+          adminRead.cohortId,
+          adminRead.status,
+          adminRead.courseIsArchived,
+          adminRead.cohortIsArchived,
+        );
       }
     }
     return denyEnrollment("not_enrolled");
   }
 
-  return resultFromEnrollmentStatus(again.cohortId, again.status);
+  return resultFromEnrollmentStatus(
+    again.cohortId,
+    again.status,
+    again.courseIsArchived,
+    again.cohortIsArchived,
+  );
 }
 
 async function privilegedReadClient(): Promise<DbClient> {

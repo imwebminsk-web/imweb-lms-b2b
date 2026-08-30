@@ -41,8 +41,8 @@ import {
   resolveOrderingPlayerView,
   sumOrderingItemPoints,
 } from "@/lib/ordering-utils";
-import { verifyAccess } from "@/lib/auth/rbac";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { verifyAccess, type Role } from "@/lib/auth/rbac";
+import { prepareLessonWrite } from "@/app/actions/lesson-block-actions";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentFacingTestTitle } from "@/lib/learn/student-test-title";
 import { assertStudentEnrolledForTest } from "@/lib/learn/verify-course-enrollment";
@@ -100,7 +100,66 @@ import { z } from "zod";
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
 
 const testIdSchema = z.string().uuid("Некорректный ID теста");
-const userIdSchema = z.string().uuid("Некорректный ID пользователя");
+
+export type InlineTestMutationResult =
+  | { ok: true; testId: string }
+  | { ok: false; error: string };
+
+function callerRole(profile: unknown): Role {
+  return (profile as { role: Role }).role;
+}
+
+async function prepareLessonQuizBlockWrite(
+  userId: string,
+  role: Role,
+  blockId: string,
+): Promise<
+  | {
+      ok: true;
+      blockId: string;
+      lessonId: string;
+      writer: Awaited<ReturnType<typeof createClient>>;
+    }
+  | { ok: false; error: string }
+> {
+  const bid = blockId.trim();
+  if (!bid) {
+    return { ok: false, error: "Блок не найден." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: block, error: blockErr } = await supabase
+    .from("lesson_blocks")
+    .select("id, lesson_id, type")
+    .eq("id", bid)
+    .maybeSingle();
+
+  if (blockErr) {
+    console.error("[prepareLessonQuizBlockWrite]", blockErr.message);
+    return { ok: false, error: "Блок не найден." };
+  }
+
+  if (!block) {
+    return { ok: false, error: "Блок не найден." };
+  }
+
+  if (block.type !== "quiz") {
+    return { ok: false, error: "Этот блок не предназначен для теста." };
+  }
+
+  const prepared = await prepareLessonWrite(userId, role, block.lesson_id);
+  if (!prepared.ok) {
+    return prepared;
+  }
+
+  return {
+    ok: true,
+    blockId: block.id,
+    lessonId: prepared.lessonId,
+    writer: prepared.writer,
+  };
+}
 
 type TestAccessContext = {
   userId: string | null;
@@ -140,6 +199,7 @@ type RawTestWithQuestionsRow = {
   folder_name: string | null;
   created_at: string | null;
   is_published: boolean | null;
+  is_archived: boolean;
   is_for_kids: boolean;
   time_limit: number;
   test_type: string;
@@ -156,6 +216,7 @@ const TEST_WITH_QUESTIONS_SELECT = `
   folder_name,
   created_at,
   is_published,
+  is_archived,
   is_for_kids,
   time_limit,
   test_type,
@@ -291,6 +352,7 @@ function buildTestWithQuestionsPayload(
     folder_name: data.folder_name,
     created_at: data.created_at,
     is_published: data.is_published,
+    is_archived: data.is_archived === true,
     is_for_kids: data.is_for_kids ?? false,
     time_limit: data.time_limit ?? 0,
     test_type: data.test_type ?? "final",
@@ -602,14 +664,13 @@ export type TestWithQuestionsPayload = Pick<
   | "folder_name"
   | "created_at"
   | "is_published"
+  | "is_archived"
   | "is_for_kids"
   | "time_limit"
   | "test_type"
 > & {
   questions: SafeTestQuestion[];
 };
-
-export type SafeTestForClientPayload = TestWithQuestionsPayload;
 
 export type TestListItem = Pick<
   Tables<"tests">,
@@ -902,15 +963,11 @@ export async function archiveTest(
     const isAdminOrHead =
       profile.role === "admin" || profile.role === "head_teacher";
 
-    const adminClient = createAdminClient();
-    if (!adminClient) {
-      console.error("archiveTest: SUPABASE_SERVICE_ROLE_KEY is not configured");
-      return { success: false, error: genericError };
-    }
+    const supabase = await createClient();
 
     const tid = idResult.data;
 
-    let query = adminClient
+    let query = supabase
       .from("tests")
       .update({ is_archived: true })
       .eq("id", tid);
@@ -969,15 +1026,11 @@ export async function restoreTest(
     const isAdminOrHead =
       profile.role === "admin" || profile.role === "head_teacher";
 
-    const adminClient = createAdminClient();
-    if (!adminClient) {
-      console.error("restoreTest: SUPABASE_SERVICE_ROLE_KEY is not configured");
-      return { success: false, error: genericError };
-    }
+    const supabase = await createClient();
 
     const tid = idResult.data;
 
-    let query = adminClient
+    let query = supabase
       .from("tests")
       .update({ is_archived: false })
       .eq("id", tid);
@@ -1009,85 +1062,6 @@ export async function restoreTest(
 }
 
 /**
- * Передаёт тест другому автору. Только admin и head_teacher.
- */
-export async function changeTestOwner(
-  testId: string,
-  newUserId: string,
-): Promise<{ success: true } | { success: false; error: string }> {
-  const genericError =
-    "Не удалось сменить автора теста. Возможно, у вас недостаточно прав или возникла ошибка базы данных.";
-
-  try {
-    const idResult = testIdSchema.safeParse(testId);
-    if (!idResult.success) {
-      return {
-        success: false,
-        error:
-          idResult.error.issues[0]?.message ?? "Некорректный ID теста",
-      };
-    }
-
-    const userIdResult = userIdSchema.safeParse(newUserId);
-    if (!userIdResult.success) {
-      return {
-        success: false,
-        error:
-          userIdResult.error.issues[0]?.message ??
-          "Некорректный ID пользователя",
-      };
-    }
-
-    await verifyAccess(["admin", "head_teacher"]);
-
-    const adminClient = createAdminClient();
-    if (!adminClient) {
-      console.error(
-        "changeTestOwner: SUPABASE_SERVICE_ROLE_KEY is not configured",
-      );
-      return { success: false, error: genericError };
-    }
-
-    const { data: newOwner, error: ownerError } = await adminClient
-      .from("profiles")
-      .select("id")
-      .eq("id", userIdResult.data)
-      .maybeSingle();
-
-    if (ownerError) {
-      throw new Error(ownerError.message);
-    }
-
-    if (!newOwner) {
-      return { success: false, error: "Новый автор не найден." };
-    }
-
-    const { data: updated, error: updateError } = await adminClient
-      .from("tests")
-      .update({ user_id: userIdResult.data })
-      .eq("id", idResult.data)
-      .select("id");
-
-    if (updateError) {
-      throw new Error(updateError.message);
-    }
-
-    if ((updated?.length ?? 0) === 0) {
-      return { success: false, error: "Тест не найден." };
-    }
-
-    revalidatePath("/dashboard/tests");
-    revalidatePath("/test");
-    revalidatePath("/");
-
-    return { success: true };
-  } catch (error: unknown) {
-    console.error("changeTestOwner error:", error);
-    return { success: false, error: genericError };
-  }
-}
-
-/**
  * Жёсткое удаление теста. Только admin.
  * Блокируется, если есть попытки учеников или legacy-привязка к урокам.
  */
@@ -1109,17 +1083,11 @@ export async function hardDeleteTest(
 
     await verifyAccess(["admin"]);
 
-    const adminClient = createAdminClient();
-    if (!adminClient) {
-      console.error(
-        "hardDeleteTest: SUPABASE_SERVICE_ROLE_KEY is not configured",
-      );
-      return { success: false, error: genericError };
-    }
+    const supabase = await createClient();
 
     const tid = idResult.data;
 
-    const { data: testRow, error: testError } = await adminClient
+    const { data: testRow, error: testError } = await supabase
       .from("tests")
       .select("id, user_id")
       .eq("id", tid)
@@ -1133,7 +1101,7 @@ export async function hardDeleteTest(
       return { success: false, error: "Тест не найден." };
     }
 
-    let attemptsQuery = adminClient
+    let attemptsQuery = supabase
       .from("student_attempts")
       .select("id", { count: "exact", head: true })
       .eq("test_id", tid);
@@ -1155,7 +1123,7 @@ export async function hardDeleteTest(
       };
     }
 
-    const { count: lessonCount, error: lessonsError } = await adminClient
+    const { count: lessonCount, error: lessonsError } = await supabase
       .from("lessons")
       .select("id", { count: "exact", head: true })
       .eq("test_id", tid);
@@ -1171,7 +1139,7 @@ export async function hardDeleteTest(
       };
     }
 
-    const { data: deleted, error: deleteError } = await adminClient
+    const { data: deleted, error: deleteError } = await supabase
       .from("tests")
       .delete()
       .eq("id", tid)
@@ -1351,31 +1319,6 @@ export async function getTestWithQuestions(
   };
 }
 
-/**
- * Безопасная версия для клиентского раннера:
- * те же правила доступа, но `is_correct` и ответы в контенте никогда не возвращаются.
- */
-export async function getSafeTestForClient(
-  testId: string,
-): Promise<
-  | { success: true; data: SafeTestForClientPayload }
-  | {
-      success: false;
-      error: string;
-      kind?: "not_found" | "supabase" | "validation";
-    }
-> {
-  const result = await fetchTestWithQuestionsSecure(testId);
-  if (!result.success) {
-    return result;
-  }
-
-  return {
-    success: true,
-    data: buildTestWithQuestionsPayload(result.data, false),
-  };
-}
-
 async function fetchInProgressAttemptId(
   supabase: SupabaseClient<Database>,
   studentId: string,
@@ -1457,6 +1400,23 @@ export async function getOrCreateAttempt(
   const enrollment = await assertStudentEnrolledForTest(user.id, idResult.data);
   if (!enrollment.ok) {
     return { success: false, error: enrollment.error };
+  }
+
+  const { data: testRow, error: testError } = await supabase
+    .from("tests")
+    .select("is_archived")
+    .eq("id", idResult.data)
+    .maybeSingle();
+
+  if (testError || !testRow) {
+    return {
+      success: false,
+      error: testError?.message ?? "Тест не найден",
+    };
+  }
+
+  if (testRow.is_archived) {
+    return { success: false, error: "Тест находится в архиве" };
   }
 
   const existing = await fetchInProgressAttemptId(
@@ -1750,66 +1710,51 @@ function resolveOptionAndAnswerData(
 export async function createInlineTest(
   lessonBlockId: string,
   title: string,
-): Promise<{ success: true; testId: string } | { success: false; error: string }> {
+): Promise<InlineTestMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+
   const blockId = lessonBlockId.trim();
   const testTitle = title.trim();
 
   if (!blockId) {
-    return { success: false, error: "Не указан ID блока урока" };
+    return { ok: false, error: "Не указан блок урока." };
   }
   if (!testTitle) {
-    return { success: false, error: "Не указано название теста" };
+    return { ok: false, error: "Не указано название теста." };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { success: false, error: "Требуется вход в систему" };
+  const prepared = await prepareLessonQuizBlockWrite(
+    user.id,
+    callerRole(profile),
+    blockId,
+  );
+  if (!prepared.ok) {
+    return prepared;
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  try {
+    const { data: testRow, error: testErr } = await prepared.writer
+      .from("tests")
+      .insert({
+        title: testTitle,
+        user_id: user.id,
+        scope: "inline",
+        lesson_block_id: prepared.blockId,
+        is_published: true,
+      })
+      .select("id")
+      .single();
 
-  if (
-    !profile ||
-    (profile.role !== "teacher" &&
-      profile.role !== "head_teacher" &&
-      profile.role !== "admin")
-  ) {
-    return {
-      success: false,
-      error: "Создавать тесты могут только преподаватели или администраторы.",
-    };
+    if (testErr || !testRow) {
+      console.error("[createInlineTest]", testErr?.message);
+      return { ok: false, error: "Не удалось создать встроенный тест." };
+    }
+
+    return { ok: true, testId: testRow.id };
+  } catch (err) {
+    console.error("[createInlineTest]", err);
+    return { ok: false, error: "Не удалось создать встроенный тест." };
   }
-
-  const { data: testRow, error: testErr } = await supabase
-    .from("tests")
-    .insert({
-      title: testTitle,
-      user_id: user.id,
-      scope: "inline",
-      lesson_block_id: blockId,
-      // RLS questions_select_visible / options_select_visible отдают строки
-      // ученику только при is_published = true.
-      is_published: true,
-    })
-    .select("id")
-    .single();
-
-  if (testErr || !testRow) {
-    return {
-      success: false,
-      error: testErr?.message ?? "Не удалось создать inline-тест",
-    };
-  }
-
-  return { success: true, testId: testRow.id };
 }
 
 /**
@@ -1819,14 +1764,14 @@ export async function createInlineTest(
 export async function cloneLibraryTestToInline(
   libraryTestId: string,
   lessonBlockId: string,
-): Promise<{ success: true; testId: string } | { success: false; error: string }> {
-  const forbiddenMessage =
-    "Копировать тесты в урок могут только преподаватели или администраторы.";
+): Promise<InlineTestMutationResult> {
+  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+  const role = callerRole(profile);
 
   const testIdResult = testIdSchema.safeParse(libraryTestId);
   if (!testIdResult.success) {
     return {
-      success: false,
+      ok: false,
       error: testIdResult.error.issues[0]?.message ?? "Некорректный ID теста",
     };
   }
@@ -1837,50 +1782,26 @@ export async function cloneLibraryTestToInline(
     .safeParse(lessonBlockId.trim());
   if (!blockIdResult.success) {
     return {
-      success: false,
+      ok: false,
       error:
         blockIdResult.error.issues[0]?.message ?? "Некорректный ID блока урока",
     };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return { success: false, error: "Требуется вход в систему" };
+  const prepared = await prepareLessonQuizBlockWrite(
+    user.id,
+    role,
+    blockIdResult.data,
+  );
+  if (!prepared.ok) {
+    return prepared;
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (
-    profileError ||
-    !profile ||
-    (profile.role !== "teacher" &&
-      profile.role !== "head_teacher" &&
-      profile.role !== "admin")
-  ) {
-    return { success: false, error: forbiddenMessage };
-  }
-
-  const { data: block, error: blockError } = await supabase
-    .from("lesson_blocks")
-    .select("id")
-    .eq("id", blockIdResult.data)
-    .maybeSingle();
-
-  if (blockError || !block) {
-    return { success: false, error: "Блок урока не найден." };
-  }
-
-  const { data: sourceTest, error: sourceError } = await supabase
-    .from("tests")
-    .select(
-      `
+  try {
+    const { data: sourceTest, error: sourceError } = await prepared.writer
+      .from("tests")
+      .select(
+        `
       *,
       questions (
         id,
@@ -1892,96 +1813,101 @@ export async function cloneLibraryTestToInline(
         options ( id, content, order_index, is_correct )
       )
     `,
-    )
-    .eq("id", testIdResult.data)
-    .maybeSingle();
+      )
+      .eq("id", testIdResult.data)
+      .maybeSingle();
 
-  if (sourceError || !sourceTest) {
-    return { success: false, error: "Тест не найден." };
-  }
-
-  if (sourceTest.is_archived) {
-    return {
-      success: false,
-      error: "Нельзя копировать в урок архивный тест. Сначала восстановите его.",
-    };
-  }
-
-  let sourceQuestions: CloneSourceQuestion[] = sourceTest.questions ?? [];
-  if (sourceQuestions.length === 0) {
-    const { data: fallbackQuestions, error: fallbackQuestionsError } =
-      await supabase
-        .from("questions")
-        .select(
-          "id, content, order_index, type, points, media_play_limit, options ( id, content, order_index, is_correct )",
-        )
-        .eq("test_id", testIdResult.data)
-        .order("order_index", { ascending: true });
-
-    if (fallbackQuestionsError) {
-      return { success: false, error: fallbackQuestionsError.message };
+    if (sourceError || !sourceTest) {
+      console.error("[cloneLibraryTestToInline]", sourceError?.message);
+      return { ok: false, error: "Тест не найден." };
     }
-    sourceQuestions = fallbackQuestions ?? [];
+
+    if (sourceTest.is_archived) {
+      return {
+        ok: false,
+        error: "Нельзя копировать в урок архивный тест. Сначала восстановите его.",
+      };
+    }
+
+    let sourceQuestions: CloneSourceQuestion[] = sourceTest.questions ?? [];
+    if (sourceQuestions.length === 0) {
+      const { data: fallbackQuestions, error: fallbackQuestionsError } =
+        await prepared.writer
+          .from("questions")
+          .select(
+            "id, content, order_index, type, points, media_play_limit, options ( id, content, order_index, is_correct )",
+          )
+          .eq("test_id", testIdResult.data)
+          .order("order_index", { ascending: true });
+
+      if (fallbackQuestionsError) {
+        console.error(
+          "[cloneLibraryTestToInline]",
+          fallbackQuestionsError.message,
+        );
+        return { ok: false, error: "Не удалось загрузить вопросы теста." };
+      }
+      sourceQuestions = fallbackQuestions ?? [];
+    }
+
+    if (sourceTest.scope !== "library") {
+      return {
+        ok: false,
+        error: "В урок можно копировать только тесты из библиотеки.",
+      };
+    }
+
+    if (
+      role === "teacher" &&
+      sourceTest.user_id !== user.id &&
+      sourceTest.is_published !== true
+    ) {
+      return { ok: false, error: "Этот тест нельзя использовать в уроке." };
+    }
+
+    const { data: insertedTest, error: insertTestError } = await prepared.writer
+      .from("tests")
+      .insert({
+        title: sourceTest.title,
+        description: sourceTest.description ?? null,
+        title_student: sourceTest.title_student ?? null,
+        title_teacher: sourceTest.title_teacher ?? null,
+        test_type: sourceTest.test_type,
+        auto_check: sourceTest.auto_check,
+        save_to_journal: sourceTest.save_to_journal,
+        max_score: sourceTest.max_score,
+        is_for_kids: sourceTest.is_for_kids,
+        time_limit: sourceTest.time_limit,
+        is_published: true,
+        user_id: user.id,
+        scope: "inline",
+        lesson_block_id: prepared.blockId,
+        folder_name: null,
+      })
+      .select("id")
+      .single();
+
+    if (insertTestError || !insertedTest) {
+      console.error("[cloneLibraryTestToInline]", insertTestError?.message);
+      return { ok: false, error: "Не удалось скопировать тест в урок." };
+    }
+
+    const clonedQuestions = await cloneQuestionsAndOptionsForTest(
+      prepared.writer,
+      insertedTest.id,
+      user.id,
+      sourceQuestions,
+    );
+
+    if (!clonedQuestions.success) {
+      return { ok: false, error: clonedQuestions.error };
+    }
+
+    return { ok: true, testId: insertedTest.id };
+  } catch (err) {
+    console.error("[cloneLibraryTestToInline]", err);
+    return { ok: false, error: "Не удалось скопировать тест в урок." };
   }
-
-  if (sourceTest.scope !== "library") {
-    return {
-      success: false,
-      error: "В урок можно копировать только тесты из библиотеки.",
-    };
-  }
-
-  if (
-    profile.role === "teacher" &&
-    sourceTest.user_id !== user.id &&
-    sourceTest.is_published !== true
-  ) {
-    return { success: false, error: "Этот тест нельзя использовать в уроке." };
-  }
-
-  const { data: insertedTest, error: insertTestError } = await supabase
-    .from("tests")
-    .insert({
-      title: sourceTest.title,
-      description: sourceTest.description ?? null,
-      title_student: sourceTest.title_student ?? null,
-      title_teacher: sourceTest.title_teacher ?? null,
-      test_type: sourceTest.test_type,
-      auto_check: sourceTest.auto_check,
-      save_to_journal: sourceTest.save_to_journal,
-      max_score: sourceTest.max_score,
-      is_for_kids: sourceTest.is_for_kids,
-      time_limit: sourceTest.time_limit,
-      // RLS скрывает questions/options от ученика, если тест не опубликован.
-      is_published: true,
-      user_id: user.id,
-      scope: "inline",
-      lesson_block_id: block.id,
-      folder_name: null,
-    })
-    .select("id")
-    .single();
-
-  if (insertTestError || !insertedTest) {
-    console.error("[cloneLibraryTestToInline]", insertTestError?.message);
-    return {
-      success: false,
-      error: insertTestError?.message ?? "Не удалось скопировать тест в урок.",
-    };
-  }
-
-  const clonedQuestions = await cloneQuestionsAndOptionsForTest(
-    supabase,
-    insertedTest.id,
-    user.id,
-    sourceQuestions,
-  );
-
-  if (!clonedQuestions.success) {
-    return { success: false, error: clonedQuestions.error };
-  }
-
-  return { success: true, testId: insertedTest.id };
 }
 
 export type AttemptResult = {
@@ -2063,6 +1989,26 @@ export async function submitAnswer(
   const enrollment = await assertStudentEnrolledForTest(user.id, attempt.test_id);
   if (!enrollment.ok) {
     return { success: false, error: enrollment.error };
+  }
+
+  const { data: testRow, error: testArchiveError } = await supabase
+    .from("tests")
+    .select("is_archived")
+    .eq("id", attempt.test_id)
+    .maybeSingle();
+
+  if (testArchiveError || !testRow) {
+    return {
+      success: false,
+      error: testArchiveError?.message ?? "Тест не найден",
+    };
+  }
+
+  if (testRow.is_archived) {
+    return {
+      success: false,
+      error: "Тест в архиве, ответы больше не принимаются",
+    };
   }
 
   if (attempt.status !== "in_progress") {
@@ -3067,12 +3013,19 @@ export async function completeAttempt(
 
   const { data: testRow, error: testError } = await supabase
     .from("tests")
-    .select("is_for_kids")
+    .select("is_for_kids, is_archived")
     .eq("id", attempt.test_id)
     .single();
 
   if (testError || !testRow) {
     return { success: false, error: testError?.message ?? "Тест не найден" };
+  }
+
+  if (testRow.is_archived) {
+    return {
+      success: false,
+      error: "Тест в архиве, ответы больше не принимаются",
+    };
   }
 
   const { data: questionRows, error: questionsFetchError } = await supabase

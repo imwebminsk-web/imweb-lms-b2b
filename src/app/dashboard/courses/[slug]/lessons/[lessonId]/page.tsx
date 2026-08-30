@@ -1,18 +1,15 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { getLessonForEdit } from "@/app/actions/lessons";
 import {
   LessonBlockEditor,
   type LessonEditorBlockRow,
 } from "@/components/dashboard/teacher/lesson-block-editor";
+import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
 import { createClient } from "@/lib/supabase/server";
-import type { Json } from "@/types/database.types";
-
-import {
-  assertCourseMutationAccess,
-  getCourseOwnerRole,
-} from "@/lib/auth/course-access";
 import { verifyAccess } from "@/lib/auth/rbac";
 
 type PageProps = {
@@ -41,81 +38,45 @@ export async function generateMetadata({
 export default async function LessonEditorPage({ params }: PageProps) {
   const { slug: slugParam, lessonId } = await params;
   const decodedSlug = decodeSlugParam(slugParam);
-  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
+  const { user, profile } = await verifyAccess([
+    "admin",
+    "head_teacher",
+    "teacher",
+  ]);
+
+  const result = await getLessonForEdit(lessonId, decodedSlug);
+
+  if (!result.ok && result.reason === "not_found") {
+    redirect("/dashboard/courses");
+  }
+
+  if (!result.ok) {
+    const displayName =
+      profile.full_name?.trim() ||
+      user.email?.split("@")[0] ||
+      "Пользователь";
+
+    return (
+      <>
+        <SiteHeader fullName={displayName} />
+        <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6 px-4 py-6">
+          <Button variant="link" size="sm" asChild>
+            <Link href="/dashboard/courses">← Назад</Link>
+          </Button>
+          <div
+            className="border-destructive/40 bg-destructive/5 text-destructive rounded-lg border px-4 py-6 text-sm"
+            role="alert"
+          >
+            <p className="font-medium">Нет доступа к этому курсу.</p>
+            <p className="mt-2 text-sm opacity-90">{result.error}</p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  const { lesson, course, blocks } = result.data;
   const supabase = await createClient();
-
-  const { data: lesson, error: lessonError } = await supabase
-    .from("lessons")
-    .select(
-      "id, title, type, content, is_published, test_id, module_id, order_index",
-    )
-    .eq("id", lessonId)
-    .maybeSingle();
-
-  if (lessonError || !lesson) {
-    redirect("/dashboard/courses");
-  }
-
-  const { data: module, error: moduleError } = await supabase
-    .from("modules")
-    .select("id, title, course_id")
-    .eq("id", lesson.module_id)
-    .maybeSingle();
-
-  if (moduleError || !module) {
-    redirect("/dashboard/courses");
-  }
-
-  const { data: course, error: courseError } = await supabase
-    .from("courses")
-    // @ts-expect-error creator/curators aliases are not in generated Database types yet
-    .select(
-      `
-      id,
-      slug,
-      teacher_id,
-      title,
-      creator:profiles!courses_teacher_id_fkey(role),
-      curators:course_curators(user_id)
-    `,
-    )
-    .eq("id", module.course_id)
-    .maybeSingle();
-
-  if (courseError || !course || course.slug !== decodedSlug) {
-    redirect("/dashboard/courses");
-  }
-
-  const accessError = await assertCourseMutationAccess(supabase, {
-    userId: user.id,
-    role: profile.role,
-    courseId: course.id,
-    teacherId: course.teacher_id,
-    courseOwnerRole: getCourseOwnerRole({
-      owner: (course as { creator?: unknown }).creator,
-    }),
-  });
-
-  if (accessError) {
-    redirect("/dashboard/courses");
-  }
-
-  const { data: blockRows, error: blocksError } = await supabase
-    .from("lesson_blocks")
-    .select("id, type, content, order_index")
-    .eq("lesson_id", lessonId)
-    .order("order_index", { ascending: true });
-
-  if (blocksError) {
-    throw new Error(blocksError.message);
-  }
-
-  const blocks: LessonEditorBlockRow[] = (blockRows ?? []).map((b) => ({
-    id: b.id,
-    type: b.type,
-    content: b.content as Json,
-    order_index: b.order_index,
-  }));
 
   const { data: testsRows, error: testsError } = await supabase
     .from("tests")
@@ -132,6 +93,13 @@ export default async function LessonEditorPage({ params }: PageProps) {
     id: t.id,
     title: t.title,
     folder_name: t.folder_name,
+  }));
+
+  const editorBlocks: LessonEditorBlockRow[] = blocks.map((block) => ({
+    id: block.id,
+    type: block.type,
+    content: block.content,
+    order_index: block.order_index,
   }));
 
   const displayName =
@@ -152,7 +120,7 @@ export default async function LessonEditorPage({ params }: PageProps) {
             type: lesson.type,
             is_published: lesson.is_published,
           }}
-          blocks={blocks}
+          blocks={editorBlocks}
           tests={tests}
         />
       </div>

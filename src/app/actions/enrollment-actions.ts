@@ -1,15 +1,29 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
+import { verifyAccess } from "@/lib/auth/rbac";
 import { createClient } from "@/lib/supabase/server";
 
-export type JoinCohortByPinState = {
-  error?: string;
-  success?: boolean;
-  isPending?: boolean;
-  redirectUrl?: string;
-};
+const GENERIC_PIN_ERROR = "Неверный PIN-код или группа недоступна";
+
+export type JoinCohortByPinResult =
+  | { ok: true; redirectUrl: string }
+  | { ok: false; error: string };
+
+const pinSchema = z
+  .string()
+  .transform((value) => value.toUpperCase().trim().replace(/\s+/g, ""))
+  .pipe(
+    z
+      .string()
+      .min(1, "Введите PIN-код группы.")
+      .regex(
+        /^[A-Z0-9]{6}$/,
+        "PIN должен быть 6 символов (латиница A–Z и цифры).",
+      ),
+  );
 
 type RpcPayload = {
   ok?: boolean;
@@ -29,98 +43,81 @@ function parseRpcPayload(raw: unknown): RpcPayload {
   };
 }
 
+function mapRpcBusinessError(code: string | undefined): string {
+  switch (code) {
+    case "invalid_pin":
+    case "not_found":
+    case "course_not_published":
+      return GENERIC_PIN_ERROR;
+    case "already_same":
+      return "Вы уже состоите в этой группе";
+    case "already_other_cohort":
+      return "Вы уже записаны на этот курс в другой группе. Обратитесь к преподавателю.";
+    case "unauthorized":
+      return "Нужна авторизация.";
+    case "suspended":
+      return "Доступ приостановлен";
+    default:
+      return GENERIC_PIN_ERROR;
+  }
+}
+
 /**
  * Запись студента в курс по PIN когорты (логика в RPC `join_cohort_by_pin` из‑за RLS).
  */
 export async function joinCohortByPin(
-  _prev: JoinCohortByPinState,
-  formData: FormData,
-): Promise<JoinCohortByPinState> {
+  pin: string,
+): Promise<JoinCohortByPinResult> {
+  await verifyAccess(["student"]);
+
+  const parsed = pinSchema.safeParse(pin);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Введите PIN-код группы.",
+    };
+  }
+
   // Замедляет перебор PIN: каждая попытка занимает минимум 1 секунду.
   await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  const pinRaw = String(formData.get("pin") ?? "");
-  const pin = pinRaw.toUpperCase().trim().replace(/\s+/g, "");
+  try {
+    const supabase = await createClient();
+    const { data: rpcRaw, error: rpcError } = await supabase.rpc(
+      "join_cohort_by_pin",
+      { p_pin: parsed.data },
+    );
 
-  if (!pin) {
-    return { error: "Введите PIN-код группы." };
-  }
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: "Нужна авторизация." };
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError || !profile) {
-    return { error: "Профиль не найден." };
-  }
-
-  if (profile.role !== "student") {
-    return { error: "Присоединение по PIN доступно только ученикам." };
-  }
-
-  const { data: rpcRaw, error: rpcError } = await supabase.rpc(
-    "join_cohort_by_pin",
-    { p_pin: pin },
-  );
-
-  if (rpcError) {
-    console.error("[joinCohortByPin]", rpcError.message);
-    return { error: rpcError.message || "Не удалось выполнить запись." };
-  }
-
-  const payload = parseRpcPayload(rpcRaw);
-
-  if (payload.code === "pending_approval") {
-    revalidatePath("/dashboard");
-    return { success: true, isPending: true };
-  }
-
-  if (!payload.ok) {
-    switch (payload.code) {
-      case "invalid_pin":
-        return { error: "PIN должен быть 6 символов (латиница A–Z и цифры)." };
-      case "not_found":
-        return { error: "Неверный или неактивный код доступа" };
-      case "already_same":
-        return { error: "Вы уже состоите в этой группе" };
-      case "already_other_cohort":
-        return {
-          error:
-            "Вы уже записаны на этот курс в другой группе. Обратитесь к преподавателю.",
-        };
-      case "unauthorized":
-        return { error: "Нужна авторизация." };
-      case "suspended":
-        return { error: "Доступ приостановлен" };
-      case "course_not_published":
-        // Старый код RPC: не раскрываем, что PIN существует.
-        return { error: "Неверный или неактивный код доступа" };
-      default:
-        return { error: "Не удалось присоединиться к группе." };
+    if (rpcError) {
+      console.error("[joinCohortByPin]", rpcError.message);
+      return { ok: false, error: GENERIC_PIN_ERROR };
     }
+
+    const payload = parseRpcPayload(rpcRaw);
+
+    if (payload.code === "pending_approval") {
+      revalidatePath("/dashboard");
+      return { ok: true, redirectUrl: "/dashboard" };
+    }
+
+    if (!payload.ok) {
+      return { ok: false, error: mapRpcBusinessError(payload.code) };
+    }
+
+    const slug = payload.slug?.trim();
+    if (!slug) {
+      return { ok: false, error: GENERIC_PIN_ERROR };
+    }
+
+    const redirectUrl = `/learn/${encodeURIComponent(slug)}`;
+
+    revalidatePath("/dashboard");
+    revalidatePath(redirectUrl);
+    revalidatePath(`/learn/${encodeURIComponent(slug)}`);
+
+    return { ok: true, redirectUrl };
+  } catch (err) {
+    console.error("[joinCohortByPin]", err);
+    return { ok: false, error: GENERIC_PIN_ERROR };
   }
-
-  const slug = payload.slug?.trim();
-  if (!slug) {
-    return { error: "Курс не найден после записи." };
-  }
-
-  const redirectUrl = `/learn/${encodeURIComponent(slug)}`;
-
-  revalidatePath("/dashboard");
-  revalidatePath(redirectUrl);
-  revalidatePath(`/learn/${encodeURIComponent(slug)}`);
-
-  return { success: true, redirectUrl };
 }

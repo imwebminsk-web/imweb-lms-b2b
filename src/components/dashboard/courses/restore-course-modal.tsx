@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { restoreCourse } from "@/app/actions/curriculum-actions";
 import {
-  getAvailableCurators,
+  getRestoreOwnerCandidates,
   type CuratorCandidate,
 } from "@/app/actions/curator-actions";
 import type { Role } from "@/lib/auth/rbac";
@@ -27,18 +27,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const KEEP_CURRENT_OWNER_VALUE = "__keep_current_owner__";
+
 function roleLabel(role: Role | null): string {
   if (role === "head_teacher") return "Завуч";
   if (role === "teacher") return "Преподаватель";
+  if (role === "admin") return "Администратор";
   return role ?? "—";
 }
 
 export function RestoreCourseModal({
   courseId,
+  currentOwnerIsActive,
   isOpen,
   onClose,
 }: {
   courseId: string;
+  currentOwnerIsActive: boolean;
   isOpen: boolean;
   onClose: () => void;
 }) {
@@ -46,16 +51,22 @@ export function RestoreCourseModal({
   const [isLoading, startLoadTransition] = useTransition();
   const [isPending, startRestoreTransition] = useTransition();
   const [candidates, setCandidates] = useState<CuratorCandidate[]>([]);
-  const [selectedTeacherId, setSelectedTeacherId] = useState("");
+  const [selectedOwnerValue, setSelectedOwnerValue] = useState("");
 
   useEffect(() => {
     if (!isOpen) {
-      setSelectedTeacherId("");
+      setSelectedOwnerValue("");
       return;
     }
 
+    if (currentOwnerIsActive) {
+      setSelectedOwnerValue(KEEP_CURRENT_OWNER_VALUE);
+    } else {
+      setSelectedOwnerValue("");
+    }
+
     startLoadTransition(async () => {
-      const result = await getAvailableCurators();
+      const result = await getRestoreOwnerCandidates();
       if (result.error) {
         toast.error(result.error);
         setCandidates([]);
@@ -63,16 +74,28 @@ export function RestoreCourseModal({
       }
       setCandidates(result.data ?? []);
     });
-  }, [isOpen]);
+  }, [isOpen, currentOwnerIsActive]);
 
   function handleRestore() {
-    if (!selectedTeacherId || isPending) {
+    if (isPending) {
+      return;
+    }
+
+    const keepCurrentOwner =
+      currentOwnerIsActive &&
+      (selectedOwnerValue === "" ||
+        selectedOwnerValue === KEEP_CURRENT_OWNER_VALUE);
+
+    if (!keepCurrentOwner && !selectedOwnerValue) {
       return;
     }
 
     startRestoreTransition(async () => {
-      const result = await restoreCourse(courseId, selectedTeacherId);
-      if (result.error) {
+      const result = await restoreCourse(
+        courseId,
+        keepCurrentOwner ? undefined : selectedOwnerValue,
+      );
+      if (!result.ok) {
         toast.error(result.error);
         return;
       }
@@ -83,6 +106,9 @@ export function RestoreCourseModal({
   }
 
   const busy = isLoading || isPending;
+  const canSubmit =
+    currentOwnerIsActive ||
+    Boolean(selectedOwnerValue && selectedOwnerValue !== KEEP_CURRENT_OWNER_VALUE);
 
   return (
     <Dialog
@@ -97,23 +123,45 @@ export function RestoreCourseModal({
         <DialogHeader>
           <DialogTitle>Восстановить курс</DialogTitle>
           <DialogDescription>
-            Назначьте нового владельца. Курс снова появится в рабочих вкладках.
+            {currentOwnerIsActive
+              ? "Курс снова появится в рабочих вкладках. Можно оставить текущего владельца или назначить нового."
+              : "Назначьте нового активного владельца, чтобы восстановить курс."}
           </DialogDescription>
         </DialogHeader>
 
+        {!currentOwnerIsActive ? (
+          <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            Внимание: текущий создатель курса деактивирован. Для восстановления
+            обязательно назначьте нового активного преподавателя.
+          </p>
+        ) : null}
+
         <div className="space-y-2">
-          <p className="text-sm font-medium">Новый владелец</p>
+          <p className="text-sm font-medium">
+            {currentOwnerIsActive ? "Владелец курса" : "Новый владелец"}
+          </p>
           <Select
-            value={selectedTeacherId || undefined}
-            onValueChange={setSelectedTeacherId}
+            value={selectedOwnerValue || undefined}
+            onValueChange={setSelectedOwnerValue}
             disabled={busy || candidates.length === 0}
           >
             <SelectTrigger className="w-full">
               <SelectValue
-                placeholder={isLoading ? "Загрузка…" : "Выберите преподавателя"}
+                placeholder={
+                  isLoading
+                    ? "Загрузка…"
+                    : currentOwnerIsActive
+                      ? "Оставить текущего владельца"
+                      : "Выберите преподавателя"
+                }
               />
             </SelectTrigger>
             <SelectContent>
+              {currentOwnerIsActive ? (
+                <SelectItem value={KEEP_CURRENT_OWNER_VALUE}>
+                  Оставить текущего владельца
+                </SelectItem>
+              ) : null}
               {candidates.map((candidate) => (
                 <SelectItem key={candidate.id} value={candidate.id}>
                   {(candidate.fullName?.trim() || "Без имени") +
@@ -131,7 +179,7 @@ export function RestoreCourseModal({
           <Button
             type="button"
             onClick={handleRestore}
-            disabled={busy || !selectedTeacherId}
+            disabled={busy || !canSubmit}
           >
             {isPending ? "Восстановление…" : "Восстановить"}
           </Button>

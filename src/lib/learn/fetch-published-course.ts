@@ -16,7 +16,8 @@ export type LearnCourseFetchError =
   | "not_found"
   | "not_enrolled"
   | "pending"
-  | "suspended";
+  | "suspended"
+  | "archived";
 
 export type LearnCourseFetchResult =
   | {
@@ -39,7 +40,7 @@ export const fetchPublishedCourseForLearn = cache(
 
     const { data: courseMeta, error: metaError } = await supabase
       .from("courses")
-      .select("id, title, slug, teacher_id")
+      .select("id, title, slug, teacher_id, is_archived")
       .eq("slug", decodedSlug)
       .eq("status", "published")
       .maybeSingle();
@@ -51,6 +52,10 @@ export const fetchPublishedCourseForLearn = cache(
 
     if (!courseMeta) {
       return { ok: false, reason: "not_found" };
+    }
+
+    if (courseMeta.is_archived) {
+      return { ok: false, reason: "archived" };
     }
 
     const enrollment = await ensureCourseEnrollment(studentId, courseMeta.id);

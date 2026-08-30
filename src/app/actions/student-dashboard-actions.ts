@@ -45,7 +45,24 @@ export type StudentProgressItem = {
   testType?: "training" | "final" | null;
 };
 
-type CourseRef = { id: string; slug: string; title: string };
+type CourseRef = {
+  id: string;
+  slug: string;
+  title: string;
+  courseIsArchived: boolean;
+  cohortIsArchived: boolean;
+};
+
+function relIsArchived(rel: unknown): boolean {
+  if (!rel) {
+    return false;
+  }
+  const row = Array.isArray(rel) ? rel[0] : rel;
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+  return (row as { is_archived?: unknown }).is_archived === true;
+}
 
 /** Опубликованный урок курса студента с учётом когорты (как в getStudentProgress). */
 type EnrolledLessonRow = {
@@ -65,6 +82,8 @@ export type StudentDashboardCourseSummary = {
   title: string;
   totalLessons: number;
   completedLessons: number;
+  courseIsArchived: boolean;
+  cohortIsArchived: boolean;
 };
 
 async function loadEnrolledPublishedLessonsForStudent(
@@ -76,7 +95,9 @@ async function loadEnrolledPublishedLessonsForStudent(
 > {
   const { data: enrollRows, error: enrollError } = await supabase
     .from("enrollments")
-    .select("course_id, cohort_id, courses(id, slug, title)")
+    .select(
+      "course_id, cohort_id, courses(id, slug, title, is_archived), cohorts(is_archived)",
+    )
     .eq("user_id", studentUserId)
     .eq("status", "active");
 
@@ -86,13 +107,18 @@ async function loadEnrolledPublishedLessonsForStudent(
 
   const courseById = new Map<string, CourseRef>();
   for (const row of enrollRows ?? []) {
-    const c = row.courses as CourseRef | CourseRef[] | null;
+    const c = row.courses as
+      | { id: string; slug: string; title: string; is_archived?: boolean }
+      | { id: string; slug: string; title: string; is_archived?: boolean }[]
+      | null;
     const course = Array.isArray(c) ? c[0] : c;
     if (course?.id) {
       courseById.set(course.id, {
         id: course.id,
         slug: course.slug,
         title: course.title,
+        courseIsArchived: course.is_archived === true,
+        cohortIsArchived: relIsArchived(row.cohorts),
       });
     }
   }
@@ -799,6 +825,8 @@ export async function getStudentDashboardCourses(
       title: ref.title,
       totalLessons,
       completedLessons,
+      courseIsArchived: ref.courseIsArchived,
+      cohortIsArchived: ref.cohortIsArchived,
     });
   }
 

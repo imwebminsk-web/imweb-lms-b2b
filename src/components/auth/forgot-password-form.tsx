@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { requestPasswordReset } from "@/app/actions/auth-actions";
 import { Button } from "@/components/ui/button";
@@ -32,10 +33,12 @@ export function ForgotPasswordForm() {
     setIsPending(false);
 
     if (!result.ok) {
+      toast.error(result.error);
       setError(result.error);
       return;
     }
 
+    toast.success("Ссылка отправлена. Проверьте почту.");
     setIsSubmitted(true);
   }
 

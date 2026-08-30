@@ -1,7 +1,12 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import {
+  assertCourseMutationAccess,
+  getCourseOwnerRole,
+} from "@/lib/auth/course-access";
 import { verifyAccess, type Role } from "@/lib/auth/rbac";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 
 export type CourseTableCurrentUser = {
   id: string;
@@ -47,13 +52,14 @@ export type CourseArchived = {
   creatorEmail: string | null;
   creatorAvatarUrl: string | null;
   creatorRole: Role | null;
+  creatorIsActive: boolean;
   isCurator: boolean;
   tags: string[];
 };
 
 const COURSE_ACCESS_SELECT = `
   teacher_id,
-  creator:profiles!courses_teacher_id_fkey(full_name, role, avatar_url, profile_secrets(email)),
+  creator:profiles!courses_teacher_id_fkey(full_name, role, avatar_url, is_active, profile_secrets(email)),
   curators:course_curators(user_id),
   taxonomies:course_taxonomies(taxonomies(label)),
   course_tags(tags(name))
@@ -64,13 +70,18 @@ function unwrapRel<T>(rel: T | T[] | null | undefined): T | null {
   return Array.isArray(rel) ? (rel[0] ?? null) : rel;
 }
 
-function mapAccessFields(course: Record<string, unknown>, currentUserId: string) {
+function mapAccessFields(
+  course: Record<string, unknown>,
+  currentUserId: string,
+  curatedCourseIds: string[] = [],
+) {
   const creator = unwrapRel(
     course.creator as
       | {
           full_name: string | null;
           role: Role | null;
           avatar_url: string | null;
+          is_active?: boolean | null;
           profile_secrets:
             | { email: string | null }
             | { email: string | null }[]
@@ -80,6 +91,7 @@ function mapAccessFields(course: Record<string, unknown>, currentUserId: string)
           full_name: string | null;
           role: Role | null;
           avatar_url: string | null;
+          is_active?: boolean | null;
           profile_secrets:
             | { email: string | null }
             | { email: string | null }[]
@@ -113,7 +125,10 @@ function mapAccessFields(course: Record<string, unknown>, currentUserId: string)
     creatorEmail: emailSecret?.email ?? null,
     creatorAvatarUrl: creator?.avatar_url ?? null,
     creatorRole: creator?.role ?? null,
-    isCurator: curators.some((c) => c.user_id === currentUserId),
+    creatorIsActive: creator?.is_active !== false,
+    isCurator:
+      curatedCourseIds.includes(String(course.id ?? "")) ||
+      curators.some((c) => c.user_id === currentUserId),
     tags: Array.from(new Set(tagNames.length > 0 ? tagNames : taxonomyLabels)),
   };
 }
@@ -149,15 +164,34 @@ function applyOwnerOrCuratorFilter(
   return query.or(`teacher_id.eq.${userId}${curatedPart}`);
 }
 
+async function resolveCoursesReader(bypassRls: boolean) {
+  const userClient = await createClient();
+  if (!bypassRls) {
+    return userClient;
+  }
+
+  const adminClient = createAdminClient();
+  if (!adminClient) {
+    console.error(
+      "[courses] SUPABASE_SERVICE_ROLE_KEY is missing; RLS will hide other teachers' courses.",
+    );
+    return userClient;
+  }
+
+  return adminClient;
+}
+
 export async function getB2BCourses(
   currentUserId: string,
 ): Promise<{ data: CourseB2B[] | null; error: string | null }> {
   const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   try {
-    const supabase = await createClient();
+    const seesAllUnarchived =
+      profile.role === "admin" || profile.role === "head_teacher";
+    const supabase = await resolveCoursesReader(seesAllUnarchived);
 
-    // course_curators / tags / is_archived ещё нет в generated Database types.
+    // course_curators / tags ещё нет в generated Database types.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase.from("courses") as any).select(`
         id,
@@ -175,8 +209,9 @@ export async function getB2BCourses(
 
     query = query.eq("is_archived", false);
 
-    if (profile.role !== "admin") {
-      const curatedIds = await getCuratedCourseIds(supabase, user.id);
+    let curatedIds: string[] = [];
+    if (!seesAllUnarchived) {
+      curatedIds = await getCuratedCourseIds(supabase, user.id);
       query = applyOwnerOrCuratorFilter(query, user.id, curatedIds);
     }
 
@@ -205,7 +240,7 @@ export async function getB2BCourses(
         departments: Array.from(new Set(departments)),
         roles: Array.from(new Set(roles)),
         status: course.status === "published" ? "active" : "draft",
-        ...mapAccessFields(course, currentUserId),
+        ...mapAccessFields(course, currentUserId, curatedIds),
       };
     });
 
@@ -222,7 +257,9 @@ export async function getB2CCourses(
   const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   try {
-    const supabase = await createClient();
+    const seesAllUnarchived =
+      profile.role === "admin" || profile.role === "head_teacher";
+    const supabase = await resolveCoursesReader(seesAllUnarchived);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabase.from("courses") as any).select(`
@@ -236,8 +273,9 @@ export async function getB2CCourses(
 
     query = query.eq("is_archived", false);
 
-    if (profile.role !== "admin") {
-      const curatedIds = await getCuratedCourseIds(supabase, user.id);
+    let curatedIds: string[] = [];
+    if (!seesAllUnarchived) {
+      curatedIds = await getCuratedCourseIds(supabase, user.id);
       query = applyOwnerOrCuratorFilter(query, user.id, curatedIds);
     }
 
@@ -255,7 +293,7 @@ export async function getB2CCourses(
         title: String(course.title ?? ""),
         price: parseFloat(String(course.price ?? "0")) || 0,
         status: course.status === "published" ? "published" : "draft",
-        ...mapAccessFields(course, currentUserId),
+        ...mapAccessFields(course, currentUserId, curatedIds),
       };
     });
 
@@ -277,7 +315,7 @@ export async function getArchivedCourses(): Promise<{
   }
 
   try {
-    const supabase = await createClient();
+    const supabase = await resolveCoursesReader(true);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase.from("courses") as any)
@@ -297,11 +335,15 @@ export async function getArchivedCourses(): Promise<{
     }
 
     const mappedData: CourseArchived[] = (data || []).map(
-      (course: Record<string, unknown>) => ({
-        id: String(course.id),
-        title: String(course.title ?? ""),
-        ...mapAccessFields(course, user.id),
-      }),
+      (course: Record<string, unknown>) => {
+        const access = mapAccessFields(course, user.id);
+        return {
+          id: String(course.id),
+          title: String(course.title ?? ""),
+          ...access,
+          creatorIsActive: access.creatorIsActive,
+        };
+      },
     );
 
     return { data: mappedData, error: null };
@@ -309,4 +351,138 @@ export async function getArchivedCourses(): Promise<{
     console.error("[getArchivedCourses] Unexpected error:", err);
     return { data: null, error: "Внутренняя ошибка сервера" };
   }
+}
+
+const COURSE_EDITOR_SELECT = `
+  id,
+  title,
+  description,
+  detailed_description,
+  price,
+  status,
+  slug,
+  image_url,
+  video_url,
+  youtube_url,
+  vimeo_url,
+  category,
+  has_certificate,
+  is_global,
+  teacher_id,
+  creator:profiles!courses_teacher_id_fkey(role),
+  curators:course_curators(user_id),
+  course_taxonomies (
+    taxonomy_id
+  ),
+  promotional_images,
+  duration_value,
+  duration_unit,
+  start_date,
+  modules (
+    id,
+    title,
+    order_index,
+    lessons (
+      id,
+      title,
+      type,
+      is_published,
+      order_index
+    )
+  )
+`;
+
+export type CourseEditorLessonRow = {
+  id: string;
+  title: string;
+  type: string;
+  is_published: boolean;
+  order_index: number;
+};
+
+export type CourseEditorModuleRow = {
+  id: string;
+  title: string;
+  order_index: number;
+  lessons: CourseEditorLessonRow[] | null;
+};
+
+export type CourseEditorQueryRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  detailed_description: string | null;
+  price: number | string | null;
+  status: string;
+  slug: string;
+  image_url: string | null;
+  video_url: string | null;
+  youtube_url: string | null;
+  vimeo_url: string | null;
+  category: string | null;
+  has_certificate: boolean | null;
+  is_global: boolean | null;
+  teacher_id: string;
+  creator: { role: Role | null } | { role: Role | null }[] | null;
+  course_taxonomies: Array<{ taxonomy_id: string | null }> | null;
+  promotional_images: string[] | null;
+  duration_value: number | null;
+  duration_unit: string | null;
+  start_date: string | null;
+  modules: CourseEditorModuleRow[] | null;
+};
+
+export type GetCourseForEditBySlugResult =
+  | { ok: true; course: CourseEditorQueryRow }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "forbidden"; error: string };
+
+export async function getCourseForEditBySlug(
+  slug: string,
+): Promise<GetCourseForEditBySlugResult> {
+  const { user, profile } = await verifyAccess([
+    "admin",
+    "head_teacher",
+    "teacher",
+  ]);
+
+  const decodedSlug = slug.trim();
+  if (!decodedSlug) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const reader = await resolveCoursesReader(true);
+  const userClient = await createClient();
+
+  // Nested editor fields are not all in generated Database types yet.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: course, error } = await (reader.from("courses") as any)
+    .select(COURSE_EDITOR_SELECT)
+    .eq("slug", decodedSlug)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[getCourseForEditBySlug]", error.message);
+    return { ok: false, reason: "not_found" };
+  }
+
+  if (!course) {
+    return { ok: false, reason: "not_found" };
+  }
+
+  const accessError = await assertCourseMutationAccess(userClient, {
+    userId: user.id,
+    role: profile.role,
+    courseId: String(course.id),
+    teacherId: String(course.teacher_id),
+    courseOwnerRole: getCourseOwnerRole({
+      owner: (course as { creator?: unknown }).creator,
+    }),
+  });
+
+  if (accessError) {
+    return { ok: false, reason: "forbidden", error: accessError };
+  }
+
+  return { ok: true, course: course as CourseEditorQueryRow };
 }

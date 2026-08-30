@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import {
@@ -12,7 +14,6 @@ import {
   type CourseCurator,
   type CuratorCandidate,
 } from "@/app/actions/curator-actions";
-import type { Role } from "@/lib/auth/rbac";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -30,13 +32,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-function roleLabel(role: Role | null): string {
-  if (role === "head_teacher") return "Завуч";
-  if (role === "teacher") return "Преподаватель";
-  if (role === "admin") return "Админ";
-  return role ?? "—";
-}
+import { getRoleTranslation } from "@/lib/utils/role-utils";
+import {
+  manageCuratorSchema,
+  type ManageCuratorPayload,
+} from "@/lib/validations/course-schemas";
 
 export function ManageCuratorsModal({
   courseId,
@@ -49,10 +49,23 @@ export function ManageCuratorsModal({
 }) {
   const router = useRouter();
   const [isLoading, startLoadTransition] = useTransition();
-  const [isMutating, startMutateTransition] = useTransition();
+  const [isRemoving, startRemoveTransition] = useTransition();
   const [curators, setCurators] = useState<CourseCurator[]>([]);
   const [candidates, setCandidates] = useState<CuratorCandidate[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string>("");
+
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<ManageCuratorPayload>({
+    resolver: zodResolver(manageCuratorSchema),
+    defaultValues: {
+      courseId,
+      userId: "",
+    },
+  });
 
   function loadLists() {
     if (!courseId) {
@@ -78,46 +91,42 @@ export function ManageCuratorsModal({
   }
 
   useEffect(() => {
+    reset({ courseId, userId: "" });
+
     if (!isOpen) {
-      setSelectedUserId("");
       return;
     }
+
     loadLists();
     // Загружаем только при открытии модалки и смене курса.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, courseId]);
+  }, [isOpen, courseId, reset]);
 
   const assignable = useMemo(() => {
     const assignedIds = new Set(curators.map((c) => c.userId));
     return candidates.filter((c) => !assignedIds.has(c.id));
   }, [candidates, curators]);
 
-  function handleAdd() {
-    if (!selectedUserId || isMutating) {
+  async function onSubmit(values: ManageCuratorPayload) {
+    const result = await addCourseCurator(values);
+    if (!result.ok) {
+      toast.error(result.error);
       return;
     }
-
-    startMutateTransition(async () => {
-      const result = await addCourseCurator(courseId, selectedUserId);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("Куратор назначен");
-      setSelectedUserId("");
-      loadLists();
-      router.refresh();
-    });
+    toast.success("Куратор назначен");
+    reset({ courseId: values.courseId, userId: "" });
+    loadLists();
+    router.refresh();
   }
 
   function handleRemove(userId: string) {
-    if (isMutating) {
+    if (isRemoving || isSubmitting) {
       return;
     }
 
-    startMutateTransition(async () => {
-      const result = await removeCourseCurator(courseId, userId);
-      if (result.error) {
+    startRemoveTransition(async () => {
+      const result = await removeCourseCurator({ courseId, userId });
+      if (!result.ok) {
         toast.error(result.error);
         return;
       }
@@ -127,7 +136,7 @@ export function ManageCuratorsModal({
     });
   }
 
-  const busy = isLoading || isMutating;
+  const busy = isLoading || isSubmitting || isRemoving;
 
   return (
     <Dialog
@@ -168,7 +177,7 @@ export function ManageCuratorsModal({
                         {curator.fullName?.trim() || "Без имени"}
                       </p>
                       <Badge variant="secondary" className="mt-1 text-xs">
-                        {roleLabel(curator.role)}
+                        {getRoleTranslation(curator.role)}
                       </Badge>
                     </div>
                     <Button
@@ -186,40 +195,52 @@ export function ManageCuratorsModal({
             )}
           </div>
 
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Добавить куратора</p>
+          <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-2">
+            <Label htmlFor="manage-curator-select">Добавить куратора</Label>
+            <input type="hidden" {...register("courseId")} />
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Select
-                value={selectedUserId || undefined}
-                onValueChange={setSelectedUserId}
-                disabled={busy || assignable.length === 0}
-              >
-                <SelectTrigger className="w-full min-w-0 flex-1">
-                  <SelectValue placeholder="Выберите пользователя" />
-                </SelectTrigger>
-                <SelectContent>
-                  {assignable.map((candidate) => (
-                    <SelectItem key={candidate.id} value={candidate.id}>
-                      {(candidate.fullName?.trim() || "Без имени") +
-                        ` · ${roleLabel(candidate.role)}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                type="button"
-                onClick={handleAdd}
-                disabled={busy || !selectedUserId}
-              >
-                {isMutating ? "Сохранение…" : "Добавить"}
+              <Controller
+                name="userId"
+                control={control}
+                render={({ field }) => (
+                  <Select
+                    value={field.value || undefined}
+                    onValueChange={field.onChange}
+                    disabled={busy || assignable.length === 0}
+                  >
+                    <SelectTrigger
+                      id="manage-curator-select"
+                      className="w-full min-w-0 flex-1"
+                      aria-invalid={Boolean(errors.userId)}
+                    >
+                      <SelectValue placeholder="Выберите пользователя" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {assignable.map((candidate) => (
+                        <SelectItem key={candidate.id} value={candidate.id}>
+                          {(candidate.fullName?.trim() || "Без имени") +
+                            ` · ${getRoleTranslation(candidate.role)}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <Button type="submit" disabled={busy}>
+                {isSubmitting ? "Сохранение…" : "Добавить"}
               </Button>
             </div>
+            {errors.userId?.message ? (
+              <p className="text-destructive text-sm" role="alert">
+                {errors.userId.message}
+              </p>
+            ) : null}
             {!isLoading && assignable.length === 0 ? (
               <p className="text-muted-foreground text-xs">
                 Нет доступных пользователей для назначения.
               </p>
             ) : null}
-          </div>
+          </form>
         </div>
 
         <DialogFooter>

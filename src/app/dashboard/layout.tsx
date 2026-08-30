@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getSupportUnreadCount } from "@/app/actions/support-actions";
 import { getUnreadCounts } from "@/app/actions/chat-receipt-actions";
 import { getPendingReviewCounts } from "@/app/actions/grading-actions";
+import { getPlatformSettings } from "@/app/actions/settings-actions";
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { GlobalChatListener } from "@/components/providers/global-chat-listener";
 import { GlobalSupportListener } from "@/components/providers/global-support-listener";
@@ -31,11 +32,14 @@ export default async function DashboardLayout({
     redirect("/");
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("full_name, avatar_url, role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, settings] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name, avatar_url, role")
+      .eq("id", user.id)
+      .maybeSingle(),
+    getPlatformSettings(),
+  ]);
 
   if (profileError || !profile) {
     redirect("/");
@@ -107,6 +111,8 @@ export default async function DashboardLayout({
           role={profile.role}
           navBadges={navBadges}
           navPendingBadges={navPendingBadges}
+          logoUrl={settings?.logo_url}
+          orgName={settings?.organization_name}
           user={{
             name: displayName,
             email: user.email ?? "",

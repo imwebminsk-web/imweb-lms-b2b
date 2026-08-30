@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { MoreHorizontal, PencilIcon, Trash2Icon } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   createTaxonomy,
@@ -111,6 +113,12 @@ export function TaxonomiesAdminClient({
   const [groupSuccess, setGroupSuccess] = useState<string | null>(null);
   const [isDeletingGroup, setIsDeletingGroup] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
+
+  useEffect(() => {
+    setGroups(initialGroups);
+    setTaxonomies(initialTaxonomies);
+  }, [initialGroups, initialTaxonomies]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, TaxonomyWithGroup[]>();
@@ -154,18 +162,18 @@ export function TaxonomiesAdminClient({
       setGroupError(null);
       setGroupSuccess(null);
       const result = await createTaxonomyGroup(groupForm);
-      if (!result.success) {
+      if (!result.ok) {
+        toast.error(result.error);
         setGroupError(result.error);
         return;
       }
 
-      setGroups((prev) =>
-        [...prev, result.data].sort((a, b) => a.slug.localeCompare(b.slug)),
-      );
-      setActiveTab(result.data.slug);
+      toast.success("Категория создана");
+      setActiveTab(groupForm.slug);
       setGroupFormOpen(false);
       setGroupForm(emptyGroupForm());
       setGroupSlugManual(false);
+      router.refresh();
     });
   }
 
@@ -214,21 +222,16 @@ export function TaxonomiesAdminClient({
         ? await updateTaxonomy(editing.id, payload)
         : await createTaxonomy(payload);
 
-      if (!result.success) {
+      if (!result.ok) {
+        toast.error(result.error);
         setError(result.error);
         return;
       }
 
-      setTaxonomies((prev) => {
-        if (editing) {
-          return prev.map((row) =>
-            row.id === result.data.id ? result.data : row,
-          );
-        }
-        return [...prev, result.data];
-      });
+      toast.success(editing ? "Запись сохранена" : "Значение добавлено");
       setFormOpen(false);
       setEditing(null);
+      router.refresh();
     });
   }
 
@@ -236,13 +239,13 @@ export function TaxonomiesAdminClient({
     startTransition(async () => {
       setError(null);
       const result = await toggleTaxonomyActive(row.id, row.is_active);
-      if (!result.success) {
+      if (!result.ok) {
+        toast.error(result.error);
         setError(result.error);
         return;
       }
-      setTaxonomies((prev) =>
-        prev.map((item) => (item.id === row.id ? result.data : item)),
-      );
+      toast.success(row.is_active ? "Значение скрыто" : "Значение включено");
+      router.refresh();
     });
   }
 
@@ -264,14 +267,14 @@ export function TaxonomiesAdminClient({
     startTransition(async () => {
       setError(null);
       const result = await deleteTaxonomy(valueToDelete.id);
-      if (!result.success) {
+      if (!result.ok) {
+        toast.error(result.error);
         setError(result.error);
         return;
       }
-      setTaxonomies((prev) =>
-        prev.filter((row) => row.id !== valueToDelete.id),
-      );
+      toast.success("Значение удалено");
       closeValueDeleteDialog();
+      router.refresh();
     });
   }
 
@@ -295,22 +298,21 @@ export function TaxonomiesAdminClient({
 
       setIsDeletingGroup(null);
 
-      if (!result.success) {
+      if (!result.ok) {
+        toast.error(result.error);
         setGroupError(result.error);
         return;
       }
 
-      const remainingGroups = groups.filter((item) => item.id !== groupId);
-      setGroups(remainingGroups);
-      setTaxonomies((prev) => prev.filter((row) => row.group_id !== groupId));
-
-      if (activeTab === group.slug) {
-        setActiveTab(remainingGroups[0]?.slug ?? "");
-      }
-
+      toast.success(`Категория «${group.name}» и все её теги удалены.`);
       setGroupSuccess(`Категория «${group.name}» и все её теги удалены.`);
+      if (activeTab === group.slug) {
+        const remaining = groups.filter((item) => item.id !== groupId);
+        setActiveTab(remaining[0]?.slug ?? "");
+      }
       setDeleteGroupTarget(null);
       setDeleteConfirmText("");
+      router.refresh();
     });
   }
 

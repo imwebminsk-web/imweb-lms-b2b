@@ -8,6 +8,7 @@ import {
   resolveLessonCompletionGate,
   type LessonCompletionGate,
 } from "@/lib/learn/lesson-final-test-gate";
+import { verifyAccess } from "@/lib/auth/rbac";
 import { assertEnrolledForLesson } from "@/lib/learn/verify-course-enrollment";
 import { createClient } from "@/lib/supabase/server";
 
@@ -18,6 +19,7 @@ const userIdSchema = z.string().uuid("Некорректный ID пользов
 
 const LESSON_COMPLETION_GATE_ERROR =
   "Cannot complete lesson: required tests or assignments are not finished.";
+const GENERIC_PROGRESS_ERROR = "Не удалось обновить прогресс урока";
 
 /**
  * Есть ли у текущего пользователя отметка «урок завершён» для этого урока.
@@ -88,6 +90,13 @@ export async function toggleLessonCompletion(
   lessonId: string,
   pathname: string,
 ): Promise<ToggleLessonCompletionResult> {
+  const { user } = await verifyAccess([
+    "admin",
+    "head_teacher",
+    "teacher",
+    "student",
+  ]);
+
   const parsedLesson = lessonIdSchema.safeParse(lessonId);
   if (!parsedLesson.success) {
     return {
@@ -96,60 +105,60 @@ export async function toggleLessonCompletion(
     };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { ok: false, error: "Требуется вход в систему" };
-  }
-
   const enrollment = await assertEnrolledForLesson(user.id, parsedLesson.data);
   if (!enrollment.ok) {
     return { ok: false, error: enrollment.error };
   }
 
-  const { data: existing, error: selectError } = await supabase
-    .from("lesson_completions")
-    .select("id")
-    .eq("lesson_id", parsedLesson.data)
-    .eq("student_id", user.id)
-    .maybeSingle();
-
-  if (selectError) {
-    return { ok: false, error: selectError.message };
-  }
-
-  if (existing) {
-    const { error } = await supabase
+  try {
+    const supabase = await createClient();
+    const { data: existing, error: selectError } = await supabase
       .from("lesson_completions")
-      .delete()
-      .eq("id", existing.id);
+      .select("id")
+      .eq("lesson_id", parsedLesson.data)
+      .eq("student_id", user.id)
+      .maybeSingle();
 
-    if (error) {
-      return { ok: false, error: error.message };
-    }
-  } else {
-    const gateState = await resolveLessonCompletionGate(
-      supabase,
-      parsedLesson.data,
-      user.id,
-    );
-    if (isLessonCompletionBlocked(gateState)) {
-      return { ok: false, error: LESSON_COMPLETION_GATE_ERROR };
+    if (selectError) {
+      console.error("[toggleLessonCompletion]", selectError.message);
+      return { ok: false, error: GENERIC_PROGRESS_ERROR };
     }
 
-    const { error } = await supabase.from("lesson_completions").insert({
-      lesson_id: parsedLesson.data,
-      student_id: user.id,
-    });
+    if (existing) {
+      const { error } = await supabase
+        .from("lesson_completions")
+        .delete()
+        .eq("id", existing.id);
 
-    if (error) {
-      return { ok: false, error: error.message };
+      if (error) {
+        console.error("[toggleLessonCompletion]", error.message);
+        return { ok: false, error: GENERIC_PROGRESS_ERROR };
+      }
+    } else {
+      const gateState = await resolveLessonCompletionGate(
+        supabase,
+        parsedLesson.data,
+        user.id,
+      );
+      if (isLessonCompletionBlocked(gateState)) {
+        return { ok: false, error: LESSON_COMPLETION_GATE_ERROR };
+      }
+
+      const { error } = await supabase.from("lesson_completions").insert({
+        lesson_id: parsedLesson.data,
+        student_id: user.id,
+      });
+
+      if (error) {
+        console.error("[toggleLessonCompletion]", error.message);
+        return { ok: false, error: GENERIC_PROGRESS_ERROR };
+      }
     }
+
+    revalidatePath(pathname);
+    return { ok: true };
+  } catch (err) {
+    console.error("[toggleLessonCompletion]", err);
+    return { ok: false, error: GENERIC_PROGRESS_ERROR };
   }
-
-  revalidatePath(pathname);
-  return { ok: true };
 }

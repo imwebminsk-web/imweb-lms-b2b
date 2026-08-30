@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import {
   ChevronDownIcon,
@@ -26,10 +26,7 @@ import {
   updateLessonMeta,
 } from "@/app/actions/lesson-block-actions";
 import { createInlineTest, cloneLibraryTestToInline } from "@/app/actions/test-actions";
-import type {
-  LessonBlockActionState,
-  LessonBlockType,
-} from "@/lib/lesson-blocks/lesson-block-types";
+import type { LessonBlockType } from "@/lib/lesson-blocks/lesson-block-types";
 import { LessonBlockImageUpload } from "@/components/dashboard/teacher/lesson-block-image-upload";
 import { InlineTestEditor } from "@/components/dashboard/teacher/inline-test-editor";
 import {
@@ -68,8 +65,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { Database, Json } from "@/types/database.types";
-
-const initialMeta: LessonBlockActionState = {};
 
 type LessonType = Database["public"]["Enums"]["lesson_type"];
 
@@ -213,7 +208,7 @@ function TextBlockEditor({
     setSaving(true);
     const res = await updateBlock(blockId, { html });
     setSaving(false);
-    if (res.error) {
+    if (!res.ok) {
       toast.error(res.error);
       return;
     }
@@ -280,12 +275,9 @@ export function LessonBlockEditor({
     }));
   }, [tests]);
 
-  const [metaState, metaAction, metaPending] = useActionState(
-    updateLessonMeta,
-    initialMeta,
-  );
-  const [metaKey, setMetaKey] = useState(0);
+  const [title, setTitle] = useState(lesson.title);
   const [isPublished, setIsPublished] = useState(lesson.is_published);
+  const [isMetaPending, startMetaTransition] = useTransition();
   const [adding, setAdding] = useState<LessonBlockType | null>(null);
   const [deleteBlockId, setDeleteBlockId] = useState<string | null>(null);
   const [detachQuizBlockId, setDetachQuizBlockId] = useState<string | null>(
@@ -297,26 +289,37 @@ export function LessonBlockEditor({
   const [isClonePending, startCloneTransition] = useTransition();
 
   useEffect(() => {
-    if (metaState.success) {
-      setMetaKey((k) => k + 1);
-      router.refresh();
-    }
-  }, [metaState.success, router]);
-
-  useEffect(() => {
+    setTitle(lesson.title);
     setIsPublished(lesson.is_published);
-  }, [lesson.id, lesson.is_published]);
+  }, [lesson.id, lesson.title, lesson.is_published]);
 
   const courseHref = `/dashboard/courses/${encodeURIComponent(courseSlug)}`;
+
+  function handleSaveMeta(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startMetaTransition(async () => {
+      const result = await updateLessonMeta(lesson.id, {
+        title,
+        is_published: isPublished,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Название и статус сохранены");
+      router.refresh();
+    });
+  }
 
   async function handleAdd(type: LessonBlockType) {
     setAdding(type);
     const res = await addBlock(lesson.id, type);
     setAdding(null);
-    if (res.error) {
+    if (!res.ok) {
       toast.error(res.error);
       return;
     }
+    toast.success("Блок добавлен");
     router.refresh();
   }
 
@@ -328,7 +331,7 @@ export function LessonBlockEditor({
     setCloningBlockId(blockId);
     startCloneTransition(async () => {
       const cloneRes = await cloneLibraryTestToInline(libraryTestId, blockId);
-      if (!cloneRes.success) {
+      if (!cloneRes.ok) {
         toast.error(cloneRes.error);
         setCloningBlockId(null);
         return;
@@ -336,7 +339,7 @@ export function LessonBlockEditor({
 
       const updateRes = await updateBlock(blockId, { test_id: cloneRes.testId });
       setCloningBlockId(null);
-      if (updateRes.error) {
+      if (!updateRes.ok) {
         toast.error(updateRes.error);
         return;
       }
@@ -348,23 +351,23 @@ export function LessonBlockEditor({
   async function handleCreateInlineTest() {
     setAdding("quiz");
     const blockRes = await addBlock(lesson.id, "quiz");
-    if (blockRes.error || !blockRes.blockId) {
+    if (!blockRes.ok) {
       setAdding(null);
-      toast.error(blockRes.error || "Не удалось создать блок");
+      toast.error(blockRes.error);
       return;
     }
 
     const testRes = await createInlineTest(blockRes.blockId, "Встроенный тест");
-    if (!testRes.success) {
+    if (!testRes.ok) {
       setAdding(null);
-      toast.error(testRes.error || "Не удалось создать тест");
+      toast.error(testRes.error);
       return;
     }
 
     const updateRes = await updateBlock(blockRes.blockId, { test_id: testRes.testId });
     setAdding(null);
-    
-    if (updateRes.error) {
+
+    if (!updateRes.ok) {
       toast.error(updateRes.error);
       return;
     }
@@ -377,7 +380,7 @@ export function LessonBlockEditor({
     if (!deleteBlockId) return;
     startDeleteTransition(async () => {
       const res = await deleteBlock(deleteBlockId);
-      if (res.error) {
+      if (!res.ok) {
         toast.error(res.error);
         return;
       }
@@ -392,7 +395,7 @@ export function LessonBlockEditor({
     direction: "up" | "down",
   ) {
     const res = await reorderBlock(lesson.id, blockId, direction);
-    if (res.error) {
+    if (!res.ok) {
       toast.error(res.error);
       return;
     }
@@ -403,7 +406,7 @@ export function LessonBlockEditor({
     if (!detachQuizBlockId) return;
     startDetachTransition(async () => {
       const res = await updateBlock(detachQuizBlockId, { test_id: "" });
-      if (res.error) {
+      if (!res.ok) {
         toast.error(res.error);
         return;
       }
@@ -429,16 +432,9 @@ export function LessonBlockEditor({
       </div>
 
       <Form
-        key={metaKey}
-        action={metaAction}
+        onSubmit={handleSaveMeta}
         className="border-border bg-card space-y-4 rounded-xl border p-6 shadow-sm"
       >
-        <input type="hidden" name="lesson_id" value={lesson.id} />
-        <input
-          type="hidden"
-          name="is_published"
-          value={isPublished ? "true" : "false"}
-        />
         <div className="grid gap-2">
           <Label htmlFor="lesson-title-meta">Название урока</Label>
           <Input
@@ -446,8 +442,9 @@ export function LessonBlockEditor({
             name="title"
             required
             maxLength={200}
-            defaultValue={lesson.title}
-            disabled={metaPending}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            disabled={isMetaPending}
           />
         </div>
         <div className="flex items-center gap-2">
@@ -455,19 +452,14 @@ export function LessonBlockEditor({
             id="lesson-published-meta"
             checked={isPublished}
             onCheckedChange={(v) => setIsPublished(v === true)}
-            disabled={metaPending}
+            disabled={isMetaPending}
           />
           <Label htmlFor="lesson-published-meta" className="font-normal">
             Опубликован (виден при опубликованном курсе)
           </Label>
         </div>
-        {metaState.error ? (
-          <p className="text-destructive text-sm" role="alert">
-            {metaState.error}
-          </p>
-        ) : null}
-        <Button type="submit" disabled={metaPending}>
-          {metaPending ? "Сохранение…" : "Сохранить название и статус"}
+        <Button type="submit" disabled={isMetaPending}>
+          {isMetaPending ? "Сохранение…" : "Сохранить название и статус"}
         </Button>
       </Form>
 
@@ -582,6 +574,7 @@ export function LessonBlockEditor({
                 ) : null}
                 {block.type === "image" ? (
                   <LessonBlockImageUpload
+                    lessonId={lesson.id}
                     blockId={block.id}
                     imageUrl={readImageUrl(block.content)}
                   />
@@ -603,7 +596,7 @@ export function LessonBlockEditor({
                         onBlur={async (e) => {
                           const url = e.target.value.trim();
                           const res = await updateBlock(block.id, { url });
-                          if (res.error) toast.error(res.error);
+                          if (!res.ok) toast.error(res.error);
                           else router.refresh();
                         }}
                       />
@@ -629,7 +622,7 @@ export function LessonBlockEditor({
                             block.id,
                             buildAssignmentContent(block.content, { instructions }),
                           );
-                          if (res.error) toast.error(res.error);
+                          if (!res.ok) toast.error(res.error);
                           else router.refresh();
                         }}
                       />
@@ -653,7 +646,7 @@ export function LessonBlockEditor({
                               save_to_journal: checked,
                             }),
                           );
-                          if (res.error) toast.error(res.error);
+                          if (!res.ok) toast.error(res.error);
                           else router.refresh();
                         }}
                       />

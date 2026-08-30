@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -24,6 +25,7 @@ export function LessonCompletionButton({
   pathname,
 }: LessonCompletionButtonProps) {
   const { t } = useLanguage();
+  const router = useRouter();
   const [gate, setGate] = useState<LessonCompletionGate>(initialGate);
   const [isPending, startTransition] = useTransition();
 
@@ -47,8 +49,9 @@ export function LessonCompletionButton({
       if (!res.ok) {
         setGate(previous);
         toast.error(res.error);
-        console.error("[LessonCompletionButton]", res.error);
+        return;
       }
+      router.refresh();
     });
   }
 

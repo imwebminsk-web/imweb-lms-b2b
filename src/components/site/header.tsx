@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { getPlatformSettings } from "@/app/actions/settings-actions";
 import { createClient } from "@/lib/supabase/server";
 import { buttonVariants } from "@/components/ui/button";
 import { Logo } from "@/components/ui/logo";
@@ -9,17 +10,22 @@ import { LogoutButton } from "@/components/site/logout-button";
 export async function SiteHeader() {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const [{ data: { user } }, settings] = await Promise.all([
+    supabase.auth.getUser(),
+    getPlatformSettings(),
+  ]);
   const isAuthed = Boolean(user);
+  const orgName = settings?.organization_name?.trim() || "Логотип платформы";
 
   return (
     <header className="border-b bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-4">
         <Link href="/" className="flex items-center">
-          <Logo className="h-12" />
+          <Logo
+            src={settings?.logo_url}
+            alt={orgName}
+            className="h-12"
+          />
         </Link>
 
         <nav className="flex items-center gap-2">

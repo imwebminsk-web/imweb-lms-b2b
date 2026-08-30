@@ -88,6 +88,9 @@ export async function initStudentQuiz(
   if (!data.is_published) {
     return { success: false, error: "Тест недоступен" };
   }
+  if (data.is_archived) {
+    return { success: false, error: "Тест находится в архиве" };
+  }
 
   const testType = resolveStudentTestType(data.test_type);
   const isTrainingTest = testType === "training";

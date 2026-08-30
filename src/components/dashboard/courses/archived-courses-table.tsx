@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   flexRender,
   getCoreRowModel,
@@ -15,23 +16,37 @@ import {
   ChevronsRight,
   MoreHorizontal,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import type {
   CourseArchived,
   CourseTableCurrentUser,
 } from "@/app/actions/courses";
+import { hardDeleteCourse } from "@/app/actions/curriculum-actions";
 import { RestoreCourseModal } from "@/components/dashboard/courses/restore-course-modal";
 import {
   CreatorCell,
   TagsCell,
 } from "@/components/dashboard/courses/course-table-shared";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -51,7 +66,8 @@ import {
 } from "@/components/ui/table";
 
 function getArchivedColumns(
-  onRestore: (courseId: string) => void,
+  onRestore: (course: CourseArchived) => void,
+  onHardDelete: (courseId: string) => void,
 ): ColumnDef<CourseArchived>[] {
   return [
     {
@@ -87,9 +103,17 @@ function getArchivedColumns(
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Действия</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => onRestore(row.original.id)}>
+            <DropdownMenuItem onClick={() => onRestore(row.original)}>
               <RotateCcw className="mr-2 h-4 w-4" />
               Восстановить
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => onHardDelete(row.original.id)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Удалить навсегда
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -105,17 +129,46 @@ export function ArchivedCoursesTable({
   data: CourseArchived[];
   currentUser: CourseTableCurrentUser;
 }) {
+  const router = useRouter();
   const [isRestoreOpen, setIsRestoreOpen] = useState(false);
-  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [selectedCourse, setSelectedCourse] = useState<CourseArchived | null>(
+    null,
+  );
+  const [courseToHardDelete, setCourseToHardDelete] = useState<string | null>(
+    null,
+  );
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isPending, startTransition] = useTransition();
 
   const columns = useMemo(
     () =>
-      getArchivedColumns((courseId) => {
-        setSelectedCourseId(courseId);
-        setIsRestoreOpen(true);
-      }),
+      getArchivedColumns(
+        (course) => {
+          setSelectedCourse(course);
+          setIsRestoreOpen(true);
+        },
+        (courseId) => setCourseToHardDelete(courseId),
+      ),
     [],
   );
+
+  function handleHardDeleteConfirm() {
+    if (!courseToHardDelete || isPending) {
+      return;
+    }
+
+    startTransition(async () => {
+      const result = await hardDeleteCourse(courseToHardDelete);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Курс удалён навсегда");
+      setCourseToHardDelete(null);
+      setDeleteConfirmText("");
+      router.refresh();
+    });
+  }
 
   const table = useReactTable({
     data,
@@ -244,13 +297,57 @@ export function ArchivedCoursesTable({
         </div>
 
       <RestoreCourseModal
-        courseId={selectedCourseId ?? ""}
+        courseId={selectedCourse?.id ?? ""}
+        currentOwnerIsActive={selectedCourse?.creatorIsActive ?? true}
         isOpen={isRestoreOpen}
         onClose={() => {
           setIsRestoreOpen(false);
-          setSelectedCourseId(null);
+          setSelectedCourse(null);
         }}
       />
+
+      <AlertDialog
+        open={courseToHardDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !isPending) {
+            setCourseToHardDelete(null);
+            setDeleteConfirmText("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить курс навсегда?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы собираетесь удалить курс навсегда. Это необратимо удалит все привязанные к нему группы, уроки,
+              тесты и прогресс учеников. Введите слово{" "}
+              <span className="font-bold text-foreground">Удалить</span> для
+              подтверждения:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            value={deleteConfirmText}
+            onChange={(event) => setDeleteConfirmText(event.target.value)}
+            autoComplete="off"
+            aria-label="Подтверждение удаления курса"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button type="button" variant="outline" disabled={isPending}>
+                Отмена
+              </Button>
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive-outline"
+              disabled={isPending || deleteConfirmText.trim() !== "Удалить"}
+              onClick={handleHardDeleteConfirm}
+            >
+              {isPending ? "Удаление…" : "Удалить навсегда"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

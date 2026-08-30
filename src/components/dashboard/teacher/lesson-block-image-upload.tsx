@@ -5,7 +5,10 @@ import { useRef, useState, useTransition } from "react";
 import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { updateBlock } from "@/app/actions/lesson-block-actions";
+import {
+  updateBlock,
+  uploadBlockImage,
+} from "@/app/actions/lesson-block-actions";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,9 +20,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
 
-const BUCKET = "course-covers";
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED = new Set([
   "image/jpeg",
@@ -28,24 +29,18 @@ const ALLOWED = new Set([
   "image/gif",
 ]);
 
-function extFromMime(mime: string): string {
-  if (mime === "image/jpeg") return "jpg";
-  if (mime === "image/png") return "png";
-  if (mime === "image/webp") return "webp";
-  if (mime === "image/gif") return "gif";
-  return "bin";
-}
-
 export function LessonBlockImageUpload({
+  lessonId,
   blockId,
   imageUrl,
 }: {
+  lessonId: string;
   blockId: string;
   imageUrl: string | null;
 }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [isClearPending, startClearTransition] = useTransition();
@@ -68,67 +63,31 @@ export function LessonBlockImageUpload({
       return;
     }
 
-    setBusy(true);
+    setIsUploading(true);
     try {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("blockId", blockId);
 
-      if (!user) {
-        setError("Нужна авторизация.");
-        return;
-      }
-
-      const ext = extFromMime(file.type);
-      const path = `${user.id}/lesson-blocks/${blockId}/${crypto.randomUUID()}.${ext}`;
-
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(path, file, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: file.type,
-        });
-
-      if (upErr) {
-        setError(upErr.message || "Не удалось загрузить изображение.");
-        return;
-      }
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from(BUCKET).getPublicUrl(path);
-
-      const res = await updateBlock(blockId, { imageUrl: publicUrl });
-      if (res.error) {
+      const res = await uploadBlockImage(lessonId, formData);
+      if (!res.ok) {
+        toast.error(res.error);
         setError(res.error);
         return;
       }
 
+      toast.success("Изображение загружено");
       router.refresh();
     } finally {
-      setBusy(false);
+      setIsUploading(false);
     }
   };
 
   function handleClearImageConfirm() {
     startClearTransition(async () => {
       setError(null);
-      const supabase = createClient();
-      const url = imageUrl?.trim();
-      if (url) {
-        const marker = `/object/public/${BUCKET}/`;
-        const idx = url.indexOf(marker);
-        if (idx !== -1) {
-          const objectPath = decodeURIComponent(
-            url.slice(idx + marker.length),
-          );
-          await supabase.storage.from(BUCKET).remove([objectPath]);
-        }
-      }
       const res = await updateBlock(blockId, {});
-      if (res.error) {
+      if (!res.ok) {
         toast.error(res.error);
         setError(res.error);
         return;
@@ -168,9 +127,9 @@ export function LessonBlockImageUpload({
               variant="outline"
               size="sm"
               onClick={pickFile}
-              disabled={busy}
+              disabled={isUploading}
             >
-              {busy ? (
+              {isUploading ? (
                 <Loader2Icon className="size-4 animate-spin" />
               ) : (
                 <UploadIcon className="size-4" />
@@ -182,7 +141,7 @@ export function LessonBlockImageUpload({
               variant="ghost"
               size="sm"
               onClick={() => setConfirmClearOpen(true)}
-              disabled={busy || isClearPending}
+              disabled={isUploading || isClearPending}
             >
               Убрать
             </Button>
@@ -194,9 +153,9 @@ export function LessonBlockImageUpload({
           variant="outline"
           className="w-full"
           onClick={pickFile}
-          disabled={busy}
+          disabled={isUploading}
         >
-          {busy ? (
+          {isUploading ? (
             <Loader2Icon className="size-4 animate-spin" />
           ) : (
             <ImageIcon className="size-4" />

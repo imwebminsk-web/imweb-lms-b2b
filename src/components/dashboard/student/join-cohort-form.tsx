@@ -1,13 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import {
-  joinCohortByPin,
-  type JoinCohortByPinState,
-} from "@/app/actions/enrollment-actions";
+import { joinCohortByPin } from "@/app/actions/enrollment-actions";
 import { useLanguage } from "@/components/providers/language-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,47 +19,29 @@ import { Form } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const initialState: JoinCohortByPinState = {};
-
 export function JoinCohortForm() {
   const router = useRouter();
   const { t } = useLanguage();
   const [pin, setPin] = useState("");
-  const [state, formAction, isPending] = useActionState(
-    joinCohortByPin,
-    initialState,
-  );
-  const lastErrorToast = useRef<string | undefined>(undefined);
-  const successHandled = useRef(false);
+  const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    successHandled.current = false;
-    lastErrorToast.current = undefined;
-  }, [pin]);
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startTransition(async () => {
+      const res = await joinCohortByPin(pin);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
 
-  useEffect(() => {
-    if (!state.error) return;
-    if (lastErrorToast.current === state.error) return;
-    lastErrorToast.current = state.error;
-    toast.error(state.error);
-  }, [state.error]);
-
-  useEffect(() => {
-    if (!state.success) return;
-    if (successHandled.current) return;
-    successHandled.current = true;
-
-    if (state.isPending) {
-      toast.success(
-        "Заявка отправлена. Ожидайте одобрения преподавателя.",
-      );
-      return;
-    }
-
-    if (!state.redirectUrl) return;
-    toast.success(t("dashboard.enrollSuccess"));
-    router.push(state.redirectUrl);
-  }, [state.success, state.isPending, state.redirectUrl, router, t]);
+      if (res.redirectUrl === "/dashboard") {
+        toast.success("Заявка отправлена. Ожидайте одобрения преподавателя.");
+      } else {
+        toast.success(t("dashboard.enrollSuccess"));
+      }
+      router.push(res.redirectUrl);
+    });
+  }
 
   return (
     <Card className="border-border/80 shadow-sm">
@@ -70,13 +49,8 @@ export function JoinCohortForm() {
         <CardTitle>{t("dashboard.joinGroup")}</CardTitle>
         <CardDescription>{t("dashboard.joinGroupDescription")}</CardDescription>
       </CardHeader>
-      <Form action={formAction} className="flex flex-col">
+      <Form onSubmit={handleSubmit} className="flex flex-col">
         <CardContent className="space-y-4">
-          {state.error ? (
-            <p className="text-destructive text-sm" role="alert">
-              {state.error}
-            </p>
-          ) : null}
           <div className="grid gap-2">
             <Label htmlFor="cohort-pin">{t("dashboard.groupPin")}</Label>
             <Input
@@ -96,7 +70,6 @@ export function JoinCohortForm() {
               maxLength={6}
               className="font-mono tracking-widest"
               disabled={isPending}
-              aria-invalid={Boolean(state.error)}
             />
           </div>
         </CardContent>

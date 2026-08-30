@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   Facebook,
   Globe,
@@ -282,7 +283,21 @@ export default async function AuthLayout({
         </div>
 
         <div className="mt-auto pt-8 text-center text-xs text-slate-500">
-          © 2026 Разработано на базе BelSkills.by. Все права защищены.
+          © 2026 Разработано на базе {settings?.organization_name || "Платформа"}. Все права защищены.
+          <nav
+            aria-label="Юридические документы"
+            className="mt-4 mb-2 flex flex-wrap justify-center gap-4 text-xs text-slate-500"
+          >
+            <Link href="/privacy" className="hover:underline">
+              Политика конфиденциальности
+            </Link>
+            <Link href="/terms" className="hover:underline">
+              Пользовательское соглашение
+            </Link>
+            <Link href="/offer" className="hover:underline">
+              Публичная оферта
+            </Link>
+          </nav>
         </div>
       </div>
     </div>

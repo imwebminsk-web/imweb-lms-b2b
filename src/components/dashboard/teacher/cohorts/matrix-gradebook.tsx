@@ -2,7 +2,6 @@
 
 import { CheckSquare, Download, FileText, Target } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import type {
@@ -20,6 +19,7 @@ import {
   type GradebookCellVisual,
 } from "@/components/dashboard/gradebook/progress-status-visuals";
 import { AssignmentReviewSheet } from "@/components/dashboard/teacher/cohorts/AssignmentReviewSheet";
+import { TestGradingSheet } from "@/components/dashboard/teacher/TestGradingSheet";
 import { TestResultSheet } from "@/components/dashboard/teacher/TestResultSheet";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +53,7 @@ function cellKey(studentId: string, columnId: string): string {
 function matrixCellAriaLabel(visual: GradebookCellVisual): string | undefined {
   if (visual.kind === "status") {
     if (visual.key === "pending") {
-      return "На проверке — открыть страницу проверки";
+      return "На проверке — открыть проверку";
     }
     if (visual.key === "approved_pass") {
       return "Зачёт без оценки — открыть";
@@ -103,6 +103,7 @@ function MatrixCell({
     studentId: string;
     blockId: string;
     studentName: string;
+    studentAvatarUrl: string | null;
   }) => void;
   onOpenGrading: (attemptId: string) => void;
 }) {
@@ -146,6 +147,7 @@ function MatrixCell({
         studentId: cell.studentId,
         blockId: cell.blockId,
         studentName,
+        studentAvatarUrl,
       });
     }
   }
@@ -192,7 +194,6 @@ export function MatrixGradebook({
   emptyColumnsText?: string;
   emptyStudentsText?: string;
 }) {
-  const router = useRouter();
   const { students, columns, cells } = data;
 
   const [selectedTest, setSelectedTest] = useState<{
@@ -208,7 +209,9 @@ export function MatrixGradebook({
     studentId: string;
     blockId: string;
     studentName: string;
+    studentAvatarUrl: string | null;
   } | null>(null);
+  const [gradingAttemptId, setGradingAttemptId] = useState<string | null>(null);
   const [showTraining, setShowTraining] = useState(false);
 
   const visibleColumns = useMemo(
@@ -392,15 +395,7 @@ export function MatrixGradebook({
                             studentAvatarUrl={student.avatarUrl}
                             onOpenTest={setSelectedTest}
                             onOpenAssignment={setSelectedAssignment}
-                            onOpenGrading={(attemptId) => {
-                              const returnTo = cohortId
-                                ? `/dashboard/cohorts/${cohortId}?tab=journal`
-                                : null;
-                              const gradeUrl = returnTo
-                                ? `/dashboard/gradebook/attempts/${attemptId}/grade?returnTo=${encodeURIComponent(returnTo)}`
-                                : `/dashboard/gradebook/attempts/${attemptId}/grade`;
-                              router.push(gradeUrl);
-                            }}
+                            onOpenGrading={setGradingAttemptId}
                           />
                         </TableCell>
                       );
@@ -424,6 +419,18 @@ export function MatrixGradebook({
         testTitle={selectedTest?.testTitle ?? ""}
         lessonId={selectedTest?.lessonId}
         isTeacher
+        onOpenGrading={(attemptId) => {
+          setSelectedTest(null);
+          setGradingAttemptId(attemptId);
+        }}
+      />
+
+      <TestGradingSheet
+        isOpen={gradingAttemptId != null}
+        onOpenChange={(open) => {
+          if (!open) setGradingAttemptId(null);
+        }}
+        attemptId={gradingAttemptId}
       />
 
       {selectedAssignment ? (
@@ -436,6 +443,7 @@ export function MatrixGradebook({
           lessonBlockId={selectedAssignment.blockId}
           studentId={selectedAssignment.studentId}
           studentName={selectedAssignment.studentName}
+          studentAvatarUrl={selectedAssignment.studentAvatarUrl}
           isTeacher
         />
       ) : null}

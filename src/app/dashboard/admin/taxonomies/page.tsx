@@ -4,8 +4,6 @@ import { redirect } from "next/navigation";
 import { getTaxonomies, getTaxonomyGroups } from "@/app/actions/taxonomy-actions";
 import { TaxonomiesAdminClient } from "@/components/admin/taxonomies/taxonomies-admin-client";
 import { SiteHeader } from "@/components/site-header";
-import { createClient } from "@/lib/supabase/server";
-
 import { verifyAccess } from "@/lib/auth/rbac";
 
 export const metadata: Metadata = {
@@ -26,11 +24,11 @@ export default async function AdminTaxonomiesPage() {
     getTaxonomyGroups(),
   ]);
 
-  if (!taxonomiesResult.success) {
+  if (!taxonomiesResult.ok) {
     throw new Error(taxonomiesResult.error);
   }
 
-  if (!groupsResult.success) {
+  if (!groupsResult.ok) {
     throw new Error(groupsResult.error);
   }
 

@@ -24,6 +24,8 @@ export type DashboardShellProps = {
   role: ProfileRole;
   navBadges?: Record<string, number>;
   navPendingBadges?: Record<string, number>;
+  logoUrl?: string | null;
+  orgName?: string | null;
 };
 
 export function DashboardShell({
@@ -32,6 +34,8 @@ export function DashboardShell({
   role,
   navBadges,
   navPendingBadges,
+  logoUrl,
+  orgName,
 }: DashboardShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -45,6 +49,8 @@ export function DashboardShell({
           isCollapsed={!isSidebarOpen}
           navBadges={navBadges}
           navPendingBadges={navPendingBadges}
+          logoUrl={logoUrl}
+          orgName={orgName}
           className="hidden lg:flex"
         />
 
@@ -61,6 +67,8 @@ export function DashboardShell({
               isCollapsed={false}
               navBadges={navBadges}
               navPendingBadges={navPendingBadges}
+              logoUrl={logoUrl}
+              orgName={orgName}
               onNavigate={() => setIsMobileNavOpen(false)}
             />
           </SheetContent>

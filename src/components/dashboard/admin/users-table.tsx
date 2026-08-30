@@ -18,6 +18,7 @@ import {
   updateUserRole,
 } from "@/app/actions/admin-actions";
 import type { AdminUserRow } from "@/app/dashboard/fetch-dashboard-data";
+import { CreateUserDialog } from "@/components/dashboard/admin/users/create-user-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,6 +63,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { initialsFromDisplayName } from "@/lib/utils/user-utils";
+import { getRoleTranslation } from "@/lib/utils/role-utils";
 import type { Database } from "@/types/database.types";
 
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
@@ -72,12 +74,12 @@ type UsersTableProps = {
   currentUserId: string;
 };
 
-const ROLE_LABELS: Record<ProfileRole, string> = {
-  student: "Студент",
-  teacher: "Преподаватель",
-  admin: "Администратор",
-  head_teacher: "Руководитель",
-};
+const ROLE_ORDER: ProfileRole[] = [
+  "admin",
+  "head_teacher",
+  "teacher",
+  "student",
+];
 
 const PASSWORD_CHARS =
   "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$";
@@ -96,6 +98,17 @@ function formatRegisteredAt(iso: string | null): string {
   }).format(date);
 }
 
+function createdAtTimestamp(iso: string | null): number | null {
+  if (!iso) {
+    return null;
+  }
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) {
+    return null;
+  }
+  return time;
+}
+
 function displayName(user: AdminUserRow): string {
   return (
     user.fullName?.trim() ||
@@ -105,7 +118,7 @@ function displayName(user: AdminUserRow): string {
 }
 
 function RoleBadge({ role }: { role: ProfileRole }) {
-  const label = ROLE_LABELS[role];
+  const label = getRoleTranslation(role);
   const className =
     role === "student"
       ? "border-blue-500/40 bg-blue-500/10 font-medium text-blue-800 dark:text-blue-200"
@@ -144,14 +157,13 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
     useState<AdminUserRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortField, setSortField] = useState<"name" | "createdAt">("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc" | null>(null);
   const [roleFilter, setRoleFilter] = useState<ProfileRole | "all">("all");
 
   const uniqueRoles = useMemo(() => {
     const roles = new Set(users.map((user) => user.role));
-    return (Object.keys(ROLE_LABELS) as ProfileRole[]).filter((role) =>
-      roles.has(role),
-    );
+    return ROLE_ORDER.filter((role) => roles.has(role));
   }, [users]);
 
   const filteredUsers = useMemo(() => {
@@ -172,13 +184,29 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
 
     if (sortOrder) {
       result = [...result].sort((a, b) => {
+        if (sortField === "createdAt") {
+          const aTime = createdAtTimestamp(a.createdAt);
+          const bTime = createdAtTimestamp(b.createdAt);
+          if (aTime === null && bTime === null) {
+            return 0;
+          }
+          if (aTime === null) {
+            return 1;
+          }
+          if (bTime === null) {
+            return -1;
+          }
+          const comparison = aTime - bTime;
+          return sortOrder === "asc" ? comparison : -comparison;
+        }
+
         const comparison = displayName(a).localeCompare(displayName(b), "ru");
         return sortOrder === "asc" ? comparison : -comparison;
       });
     }
 
     return result;
-  }, [users, searchQuery, roleFilter, sortOrder]);
+  }, [users, searchQuery, roleFilter, sortField, sortOrder]);
 
   const columns = useMemo(() => [{ accessorKey: "id" as const }], []);
 
@@ -317,7 +345,7 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
 
   return (
     <>
-      <div className="flex items-center justify-end gap-4 border-b px-6 py-4">
+      <div className="flex flex-col gap-3 border-b px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <Input
           type="search"
           placeholder="Поиск по имени или email…"
@@ -326,6 +354,7 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
           className="w-full sm:max-w-sm"
           aria-label="Поиск по имени или email пользователя"
         />
+        <CreateUserDialog />
       </div>
 
       <div className="custom-scrollbar w-full overflow-x-auto">
@@ -346,13 +375,28 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start">
-                    <DropdownMenuItem onClick={() => setSortOrder(null)}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSortField("name");
+                        setSortOrder(null);
+                      }}
+                    >
                       По умолчанию
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setSortOrder("asc")}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSortField("name");
+                        setSortOrder("asc");
+                      }}
+                    >
                       А → Я
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setSortOrder("desc")}>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSortField("name");
+                        setSortOrder("desc");
+                      }}
+                    >
                       Я → А
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -380,13 +424,53 @@ export function UsersTable({ users, currentUserId }: UsersTableProps) {
                         key={role}
                         onClick={() => setRoleFilter(role)}
                       >
-                        {ROLE_LABELS[role]}
+                        {getRoleTranslation(role)}
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableHead>
-              <TableHead>Дата регистрации</TableHead>
+              <TableHead>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 h-8 font-medium"
+                    >
+                      Дата регистрации
+                      <ArrowUpDown className="ml-2 size-4" aria-hidden />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSortField("createdAt");
+                        setSortOrder(null);
+                      }}
+                    >
+                      По умолчанию
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSortField("createdAt");
+                        setSortOrder("asc");
+                      }}
+                    >
+                      Ранние → Новые
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setSortField("createdAt");
+                        setSortOrder("desc");
+                      }}
+                    >
+                      Новые → Ранние
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableHead>
               <TableHead className="w-12 text-right">Действия</TableHead>
             </TableRow>
           </TableHeader>

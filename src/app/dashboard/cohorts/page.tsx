@@ -6,6 +6,7 @@ import { getStaffCohortsDashboard } from "@/app/actions/cohort-actions";
 import { CohortsList } from "@/components/dashboard/teacher/cohorts/cohorts-list";
 import { CreateCohortDialog } from "@/components/dashboard/teacher/cohorts/create-cohort-dialog";
 import { SiteHeader } from "@/components/site-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { verifyAccess } from "@/lib/auth/rbac";
 
@@ -16,8 +17,17 @@ export const metadata: Metadata = {
 
 export default async function DashboardCohortsPage() {
   const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
-  const { courses: courseOptions, cohorts: cohortRows } =
-    await getStaffCohortsDashboard();
+  const isAdmin = profile.role === "admin";
+
+  const [{ courses: courseOptions, cohorts: activeCohorts }, archivedDashboard] =
+    await Promise.all([
+      getStaffCohortsDashboard({ archived: false }),
+      isAdmin
+        ? getStaffCohortsDashboard({ archived: true })
+        : Promise.resolve({ courses: [], cohorts: [] }),
+    ]);
+
+  const archivedCohorts = archivedDashboard.cohorts;
 
   const [unreadRes, pendingRes] = await Promise.all([
     getUnreadCounts(),
@@ -50,16 +60,39 @@ export default async function DashboardCohortsPage() {
             </p>
           ) : null}
 
-          <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
-            <div className="flex flex-col justify-between gap-4 border-b px-6 py-4 sm:flex-row sm:items-center sm:justify-end">
-              <CreateCohortDialog courses={courseOptions} />
-            </div>
-            <CohortsList
-              cohorts={cohortRows}
-              unreadMap={unreadMap}
-              pendingMap={pendingMap}
-            />
-          </section>
+          <Tabs defaultValue="active" className="w-full">
+            <TabsList variant="line" className="mb-4 w-full justify-start">
+              <TabsTrigger value="active">Открытые</TabsTrigger>
+              {isAdmin ? <TabsTrigger value="archived">Архив</TabsTrigger> : null}
+            </TabsList>
+
+            <TabsContent value="active" className="mt-0">
+              <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+                <div className="flex flex-col justify-between gap-4 border-b px-6 py-4 sm:flex-row sm:items-center sm:justify-end">
+                  <CreateCohortDialog courses={courseOptions} />
+                </div>
+                <CohortsList
+                  cohorts={activeCohorts}
+                  mode="active"
+                  unreadMap={unreadMap}
+                  pendingMap={pendingMap}
+                />
+              </section>
+            </TabsContent>
+
+            {isAdmin ? (
+              <TabsContent value="archived" className="mt-0">
+                <section className="overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+                  <CohortsList
+                    cohorts={archivedCohorts}
+                    mode="archived"
+                    unreadMap={unreadMap}
+                    pendingMap={pendingMap}
+                  />
+                </section>
+              </TabsContent>
+            ) : null}
+          </Tabs>
         </main>
       </div>
     </>

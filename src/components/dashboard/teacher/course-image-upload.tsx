@@ -5,6 +5,8 @@ import { ImageIcon, Loader2Icon, UploadIcon } from "lucide-react";
 
 import imageCompression from "browser-image-compression";
 
+import { toast } from "sonner";
+
 import { updateCourseImage } from "@/app/actions/course-actions";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -97,13 +99,14 @@ export function CourseImageUpload({
         data: { publicUrl },
       } = supabase.storage.from(BUCKET).getPublicUrl(path);
 
-      const res = await updateCourseImage(courseId, publicUrl);
-      if (res.error) {
-        setError(res.error);
+      const result = await updateCourseImage(courseId, publicUrl);
+      if (!result.ok) {
+        toast.error(result.error);
         return;
       }
 
       setPreviewUrl(publicUrl);
+      toast.success("Обложка обновлена.");
     } catch {
       setError("Не удалось сжать изображение. Попробуйте другой файл.");
     } finally {
@@ -116,12 +119,13 @@ export function CourseImageUpload({
     setBusy(true);
     setError(null);
     try {
-      const res = await updateCourseImage(courseId, "");
-      if (res.error) {
-        setError(res.error);
+      const result = await updateCourseImage(courseId, "");
+      if (!result.ok) {
+        toast.error(result.error);
         return;
       }
       setPreviewUrl(null);
+      toast.success("Обложка удалена.");
     } finally {
       setBusy(false);
     }

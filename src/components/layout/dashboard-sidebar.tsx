@@ -204,6 +204,10 @@ export type DashboardSidebarProps = {
   isCollapsed: boolean;
   navBadges?: Record<string, number>;
   navPendingBadges?: Record<string, number>;
+  /** URL логотипа из platform_settings.logo_url. */
+  logoUrl?: string | null;
+  /** Название организации из platform_settings.organization_name. */
+  orgName?: string | null;
   /** Доп. классы обёртки (desktop: `hidden lg:flex`). */
   className?: string;
   /** Внутри Sheet на мобильных — без `<aside>`. */
@@ -225,6 +229,8 @@ function DashboardSidebarPanel({
   isCollapsed,
   navBadges = {},
   navPendingBadges = {},
+  logoUrl,
+  orgName,
   onNavigate,
 }: DashboardSidebarProps) {
   const pathname = usePathname();
@@ -256,9 +262,11 @@ function DashboardSidebarPanel({
           "mb-8 flex shrink-0 items-center transition-all",
           isCollapsed ? "justify-center overflow-hidden px-0" : "px-3",
         )}
-        title="New Education"
+        title={orgName || "Главная"}
       >
         <Logo
+          src={logoUrl}
+          alt={orgName}
           className={cn(
             "max-w-full object-contain",
             isCollapsed ? "h-14 max-w-[4.5rem]" : "h-[4.5rem]",
@@ -380,6 +388,8 @@ export function DashboardSidebar({
   isCollapsed,
   navBadges = {},
   navPendingBadges = {},
+  logoUrl,
+  orgName,
   className,
   embedded = false,
   onNavigate,
@@ -391,6 +401,8 @@ export function DashboardSidebar({
       isCollapsed={isCollapsed}
       navBadges={navBadges}
       navPendingBadges={navPendingBadges}
+      logoUrl={logoUrl}
+      orgName={orgName}
       onNavigate={onNavigate}
     />
   );

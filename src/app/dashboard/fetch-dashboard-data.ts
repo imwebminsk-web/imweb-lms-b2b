@@ -7,11 +7,7 @@ import type {
   DashboardSectionCard,
   TeacherDashboardMetrics,
 } from "@/lib/dashboard/section-card";
-import {
-  type DashboardTableRow,
-  dashboardTableRowSchema,
-} from "@/lib/dashboard-table-schema";
-import { formatCoursePriceDecimal } from "@/lib/format-course-price";
+import { type DashboardTableRow } from "@/lib/dashboard-table-schema";
 import type { Database } from "@/types/database.types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -37,61 +33,6 @@ type AssignmentBlockContext = {
   lessonTitle: string;
   courseSlug: string;
 };
-
-function uuidToStableNumber(id: string): number {
-  const hex = id.replace(/-/g, "").slice(0, 8);
-  return parseInt(hex, 16) % 2147483647;
-}
-
-function courseStatusLabel(
-  status: Database["public"]["Enums"]["course_status"],
-): "Опубликован" | "Черновик" {
-  return status === "published" ? "Опубликован" : "Черновик";
-}
-
-function mapCourseRow(
-  row: {
-    id: string;
-    title: string;
-    status: Database["public"]["Enums"]["course_status"];
-    price: string | number | null;
-    slug: string;
-    teacher: { full_name: string | null } | { full_name: string | null }[] | null;
-    course_taxonomies?: Array<{
-      taxonomies: {
-        label: string;
-        taxonomy_groups: { slug: string } | null;
-      } | null;
-    }>;
-  },
-): DashboardTableRow {
-  let languageLabel: string | null = null;
-  let levelLabel: string | null = null;
-
-  for (const link of row.course_taxonomies ?? []) {
-    const slug = link.taxonomies?.taxonomy_groups?.slug;
-    const label = link.taxonomies?.label?.trim();
-    if (!slug || !label) continue;
-    if (slug === "language" && !languageLabel) languageLabel = label;
-    if (slug === "cefr_level" && !levelLabel) levelLabel = label;
-  }
-
-  const typeLabel = languageLabel || levelLabel || "—";
-  const teacherRel = row.teacher;
-  const teacherName = Array.isArray(teacherRel)
-    ? teacherRel[0]?.full_name
-    : teacherRel?.full_name;
-  return dashboardTableRowSchema.parse({
-    id: uuidToStableNumber(row.id),
-    header: row.title,
-    type: typeLabel,
-    status: courseStatusLabel(row.status),
-    target: formatCoursePriceDecimal(row.price),
-    limit: row.slug,
-    slug: row.slug,
-    reviewer: teacherName?.trim() || "—",
-  });
-}
 
 export type { PendingReviewItem };
 
@@ -492,62 +433,10 @@ export async function fetchDashboardData(
     };
   }
 
-  const { data: courses, error } = await supabase
-    .from("courses")
-    .select(
-      `id, title, status, price, slug,
-      teacher:profiles!courses_teacher_id_fkey ( full_name ),
-      course_taxonomies (
-        taxonomies (
-          label,
-          taxonomy_groups ( slug )
-        )
-      )`,
-    )
-    .eq("status", "published")
-    .order("title")
-    .limit(40);
-
-  if (error) {
-    console.error("[fetchDashboardData] student catalog", error.message);
-  }
-
-  const tableRows = (courses ?? []).map((c) => mapCourseRow(c));
-
-  const sectionCards: DashboardSectionCard[] = [
-    {
-      label: "Каталог",
-      value: String((courses ?? []).length),
-      trendPercent: "live",
-      trendUp: true,
-      footerTitle: "Опубликованные курсы",
-      footerHint: "Просмотр и запись — по мере развития продукта",
-    },
-    {
-      label: "Моё обучение",
-      value: "0",
-      trendPercent: "0%",
-      trendUp: true,
-      footerTitle: "Прогресс",
-      footerHint: "Запись на курсы появится в следующих версиях",
-    },
-    {
-      label: "Уровень",
-      value: "—",
-      trendPercent: "—",
-      trendUp: true,
-      footerTitle: "Персональные цели",
-      footerHint: "Выберите курс из каталога",
-    },
-    {
-      label: "Поддержка",
-      value: "24/7",
-      trendPercent: "FAQ",
-      trendUp: true,
-      footerTitle: "Нужна помощь?",
-      footerHint: "Раздел Support в меню",
-    },
-  ];
-
-  return { tableRows, sectionCards };
+  // head_teacher и прочие staff-роли без отдельной ветки:
+  // каталог опубликованных курсов сюда больше не подмешиваем.
+  return {
+    tableRows: [],
+    sectionCards: [],
+  };
 }

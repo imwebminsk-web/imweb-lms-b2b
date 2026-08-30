@@ -235,6 +235,7 @@ export function TeacherStudentProgressTable({
           lessonBlockId={selectedAssignment.lessonBlockId}
           studentId={viewedStudentId}
           studentName={viewedStudentName}
+          studentAvatarUrl={viewedStudentAvatarUrl}
           isTeacher
         />
       ) : null}

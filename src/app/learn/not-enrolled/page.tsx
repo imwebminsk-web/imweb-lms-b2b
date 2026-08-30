@@ -37,6 +37,13 @@ function accessCopy(reason: string | undefined): {
         "Доступ к курсу приостановлен. Обратитесь к преподавателю.",
     };
   }
+  if (reason === "archived") {
+    return {
+      title: "Нет доступа к курсу",
+      description:
+        "Курс или группа находятся в архиве. Доступ к материалам закрыт.",
+    };
+  }
   return {
     title: "Нет доступа к курсу",
     description: "У вас нет доступа к этому курсу.",

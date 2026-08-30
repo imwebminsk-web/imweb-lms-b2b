@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Accordion as AccordionPrimitive } from "radix-ui";
 import {
@@ -27,7 +27,6 @@ import {
   reorderLesson,
   reorderModule,
   updateModule,
-  type CurriculumActionState,
 } from "@/app/actions/curriculum-actions";
 import {
   Accordion,
@@ -46,8 +45,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Form } from "@/components/ui/form";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -64,8 +62,6 @@ export type CurriculumModuleRow = Pick<
 > & { lessons: CurriculumLessonRow[] };
 
 type LessonType = Database["public"]["Enums"]["lesson_type"];
-
-const initialCurriculumState: CurriculumActionState = {};
 
 function LessonTypeIcon({ type, className }: { type: LessonType; className?: string }) {
   const iconClass = cn("size-4 shrink-0 text-muted-foreground", className);
@@ -84,101 +80,94 @@ function LessonTypeIcon({ type, className }: { type: LessonType; className?: str
 }
 
 function AddModuleForm({ courseId }: { courseId: string }) {
-  const [state, formAction, isPending] = useActionState(
-    createModule,
-    initialCurriculumState,
-  );
-  const [formKey, setFormKey] = useState(0);
+  const router = useRouter();
+  const [title, setTitle] = useState("");
+  const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    if (state.success) {
-      setFormKey((k) => k + 1);
-    }
-  }, [state.success]);
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startTransition(async () => {
+      const result = await createModule({ courseId, title });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Модуль создан.");
+      setTitle("");
+      router.refresh();
+    });
+  }
 
   return (
-    <Card className="border-dashed">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Добавить модуль</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <Form key={formKey} action={formAction} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <input type="hidden" name="course_id" value={courseId} />
-          <div className="grid min-w-0 flex-1 gap-2">
-            <Label htmlFor={`new-module-title-${courseId}`}>Название модуля</Label>
-            <Input
-              id={`new-module-title-${courseId}`}
-              name="title"
-              placeholder="Например, Введение"
-              required
-              maxLength={200}
-              disabled={isPending}
-            />
+    <form onSubmit={onSubmit} className="space-y-3">
+      <div className="grid gap-1.5">
+        <Label htmlFor={`new-module-title-${courseId}`}>Название модуля</Label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input
+            id={`new-module-title-${courseId}`}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Название модуля"
+            required
+            maxLength={200}
+            disabled={isPending}
+            className="min-w-0 flex-1"
+          />
+          <div className="flex justify-end sm:shrink-0">
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Создание…" : "Добавить модуль"}
+            </Button>
           </div>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Создание…" : "Добавить модуль"}
-          </Button>
-        </Form>
-        {state.error ? (
-          <p className="text-destructive mt-2 text-sm" role="alert">
-            {state.error}
-          </p>
-        ) : null}
-        {state.success ? (
-          <p className="text-muted-foreground mt-2 text-sm">Модуль создан.</p>
-        ) : null}
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </form>
   );
 }
 
-function AddLessonForm({
-  courseId,
-  moduleId,
-}: {
-  courseId: string;
-  moduleId: string;
-}) {
-  const [state, formAction, isPending] = useActionState(
-    createLesson,
-    initialCurriculumState,
-  );
-  const [formKey, setFormKey] = useState(0);
+function AddLessonForm({ moduleId }: { moduleId: string }) {
+  const router = useRouter();
+  const [title, setTitle] = useState("");
+  const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    if (state.success) {
-      setFormKey((k) => k + 1);
-    }
-  }, [state.success]);
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startTransition(async () => {
+      const result = await createLesson({ moduleId, title });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Урок создан.");
+      setTitle("");
+      router.refresh();
+    });
+  }
 
   return (
     <div className="bg-muted/40 mt-3 rounded-lg border p-3">
       <p className="text-muted-foreground mb-2 text-xs font-medium">
         Новый урок в этом модуле
       </p>
-      <Form key={formKey} action={formAction} className="flex flex-col gap-3">
-        <input type="hidden" name="module_id" value={moduleId} />
-        <input type="hidden" name="course_id" value={courseId} />
-        <div className="grid gap-2">
-          <Label htmlFor={`lesson-title-${moduleId}`}>Название урока</Label>
+      <form onSubmit={onSubmit} className="space-y-2">
+        <Label htmlFor={`lesson-title-${moduleId}`}>Название урока</Label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <Input
             id={`lesson-title-${moduleId}`}
-            name="title"
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
             placeholder="Урок"
             required
             maxLength={200}
             disabled={isPending}
+            className="min-w-0 flex-1"
           />
+          <div className="flex justify-end sm:shrink-0">
+            <Button type="submit" size="sm" disabled={isPending}>
+              {isPending ? "Добавление…" : "Добавить урок"}
+            </Button>
+          </div>
         </div>
-        <Button type="submit" size="sm" disabled={isPending}>
-          {isPending ? "Добавление…" : "Добавить урок"}
-        </Button>
-        {state.error ? (
-          <p className="text-destructive text-sm" role="alert">
-            {state.error}
-          </p>
-        ) : null}
-      </Form>
+      </form>
     </div>
   );
 }
@@ -208,7 +197,7 @@ export function CurriculumTab({
     if (!deleteModuleId) return;
     startDeleteTransition(async () => {
       const res = await deleteModule(deleteModuleId);
-      if (res.error) {
+      if (!res.ok) {
         toast.error(res.error);
         return;
       }
@@ -222,7 +211,7 @@ export function CurriculumTab({
     if (!deleteLessonId) return;
     startDeleteTransition(async () => {
       const res = await deleteLesson(deleteLessonId);
-      if (res.error) {
+      if (!res.ok) {
         toast.error(res.error);
         return;
       }
@@ -238,8 +227,11 @@ export function CurriculumTab({
       return;
     }
     startEditTransition(async () => {
-      const res = await updateModule(moduleId, editModuleTitle);
-      if (res.error) {
+      const res = await updateModule({
+        moduleId,
+        title: editModuleTitle,
+      });
+      if (!res.ok) {
         toast.error(res.error);
         return;
       }
@@ -251,8 +243,8 @@ export function CurriculumTab({
   }
 
   async function handleReorderModule(moduleId: string, direction: "up" | "down") {
-    const res = await reorderModule(courseId, moduleId, direction);
-    if (res.error) {
+    const res = await reorderModule({ courseId, moduleId, direction });
+    if (!res.ok) {
       toast.error(res.error);
       return;
     }
@@ -264,8 +256,8 @@ export function CurriculumTab({
     lessonId: string,
     direction: "up" | "down",
   ) {
-    const res = await reorderLesson(moduleId, lessonId, direction);
-    if (res.error) {
+    const res = await reorderLesson({ moduleId, lessonId, direction });
+    if (!res.ok) {
       toast.error(res.error);
       return;
     }
@@ -273,183 +265,81 @@ export function CurriculumTab({
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-medium tracking-tight">Программа курса</h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Модули и уроки в порядке отображения. Стрелки вверх/вниз меняют порядок
-          в пределах курса или модуля.
-        </p>
-      </div>
+    <>
+      <Card className="rounded-xl border bg-card text-card-foreground shadow-sm">
+        <CardHeader className="space-y-1 border-b px-6 pb-6 pt-6">
+          <CardTitle className="text-base font-semibold">Программа курса</CardTitle>
+          <CardDescription>
+            Модули и уроки в порядке отображения. Стрелки вверх/вниз меняют порядок
+            в пределах курса или модуля.
+          </CardDescription>
+        </CardHeader>
 
-      {modules.length === 0 ? (
-        <p className="text-muted-foreground rounded-lg border border-dashed px-4 py-8 text-center text-sm">
-          Пока нет модулей. Создайте первый модуль в форме ниже.
-        </p>
-      ) : (
-        <Accordion
-          type="multiple"
-          defaultValue={defaultOpen}
-          className="border-border rounded-lg border px-2"
-        >
-          {modules.map((module, moduleIndex) => (
-            <AccordionItem key={module.id} value={module.id} className="group">
-              {editingModuleId === module.id ? (
-                <div className="flex items-center gap-2 p-4">
-                  <Input
-                    value={editModuleTitle}
-                    onChange={(e) => setEditModuleTitle(e.target.value)}
-                    className="h-8 min-w-0 flex-1"
-                    disabled={isEditPending}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleSaveModuleTitle(module.id);
-                      } else if (e.key === "Escape") {
-                        setEditingModuleId(null);
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    disabled={isEditPending}
-                    onClick={() => handleSaveModuleTitle(module.id)}
-                  >
-                    <CheckIcon className="size-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    disabled={isEditPending}
-                    onClick={() => setEditingModuleId(null)}
-                  >
-                    <XIcon className="size-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex w-full flex-wrap items-center gap-2 pr-4">
-                  <AccordionPrimitive.Trigger className="min-w-0 flex-1 text-left text-sm font-medium hover:underline truncate py-2">
-                    {module.title}
-                  </AccordionPrimitive.Trigger>
-                  <div className="ml-auto flex items-center gap-2">
-                    <div className="flex shrink-0 items-center gap-0.5">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon-xs"
-                        className="shrink-0"
-                        title="Модуль выше"
-                        aria-label="Модуль выше"
-                        disabled={moduleIndex === 0}
-                        onClick={() => void handleReorderModule(module.id, "up")}
-                      >
-                        <ArrowUpIcon className="size-3.5" aria-hidden />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon-xs"
-                        className="shrink-0"
-                        title="Модуль ниже"
-                        aria-label="Модуль ниже"
-                        disabled={moduleIndex === modules.length - 1}
-                        onClick={() =>
-                          void handleReorderModule(module.id, "down")
-                        }
-                      >
-                        <ArrowDownIcon className="size-3.5" aria-hidden />
-                      </Button>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="shrink-0"
-                      title="Редактировать название"
-                      aria-label="Редактировать название"
-                      onClick={() => {
-                        setEditModuleTitle(module.title);
-                        setEditingModuleId(module.id);
-                      }}
-                    >
-                      <PencilIcon className="size-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="shrink-0"
-                      title="Удалить модуль"
-                      aria-label="Удалить модуль"
-                      onClick={() => setDeleteModuleId(module.id)}
-                    >
-                      <Trash2Icon className="size-3.5" />
-                    </Button>
-                    <AccordionPrimitive.Trigger asChild>
+        <CardContent className="space-y-6 px-6 pb-6 pt-6">
+          {modules.length === 0 ? (
+            <p className="text-muted-foreground rounded-lg border border-dashed px-4 py-8 text-center text-sm">
+              Пока нет модулей. Создайте первый модуль с помощью формы ниже.
+            </p>
+          ) : (
+            <Accordion
+              type="multiple"
+              defaultValue={defaultOpen}
+              className="border-border rounded-lg border px-2"
+            >
+              {modules.map((module, moduleIndex) => (
+                <AccordionItem key={module.id} value={module.id} className="group">
+                  {editingModuleId === module.id ? (
+                    <div className="flex items-center gap-2 p-4">
+                      <Input
+                        value={editModuleTitle}
+                        onChange={(e) => setEditModuleTitle(e.target.value)}
+                        className="h-8 min-w-0 flex-1"
+                        disabled={isEditPending}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleSaveModuleTitle(module.id);
+                          } else if (e.key === "Escape") {
+                            setEditingModuleId(null);
+                          }
+                        }}
+                      />
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-xs"
-                        className="shrink-0"
-                        aria-label="Развернуть или свернуть модуль"
+                        disabled={isEditPending}
+                        onClick={() => handleSaveModuleTitle(module.id)}
                       >
-                        <ChevronDownIcon className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                        <CheckIcon className="size-4" />
                       </Button>
-                    </AccordionPrimitive.Trigger>
-                  </div>
-                </div>
-              )}
-              <AccordionContent className="px-2 pb-3">
-                {module.lessons.length === 0 ? (
-                  <p className="text-muted-foreground mb-2 text-sm">
-                    В модуле пока нет уроков.
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {module.lessons.map((lesson, lessonIndex) => (
-                      <li
-                        key={lesson.id}
-                        className="flex flex-wrap items-center gap-2 rounded-md border bg-card/50 px-3 py-2"
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled={isEditPending}
+                        onClick={() => setEditingModuleId(null)}
                       >
-                        <LessonTypeIcon type={lesson.type} />
-                        <Link
-                          href={`${lessonBasePath}/${lesson.id}`}
-                          className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
-                        >
-                          {lesson.title}
-                        </Link>
-                        {lesson.is_published ? (
-                          <Badge
-                            variant="outline"
-                            className="shrink-0 border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200"
-                          >
-                            Опубликован
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="shrink-0 text-xs">
-                            Черновик
-                          </Badge>
-                        )}
+                        <XIcon className="size-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex w-full flex-wrap items-center gap-2 pr-4">
+                      <AccordionPrimitive.Trigger className="min-w-0 flex-1 truncate py-2 text-left text-sm font-medium hover:underline">
+                        {module.title}
+                      </AccordionPrimitive.Trigger>
+                      <div className="ml-auto flex items-center gap-2">
                         <div className="flex shrink-0 items-center gap-0.5">
                           <Button
                             type="button"
                             variant="outline"
                             size="icon-xs"
                             className="shrink-0"
-                            title="Урок выше"
-                            aria-label="Урок выше"
-                            disabled={lessonIndex === 0}
-                            onClick={() =>
-                              void handleReorderLesson(
-                                module.id,
-                                lesson.id,
-                                "up",
-                              )
-                            }
+                            title="Модуль выше"
+                            aria-label="Модуль выше"
+                            disabled={moduleIndex === 0}
+                            onClick={() => void handleReorderModule(module.id, "up")}
                           >
                             <ArrowUpIcon className="size-3.5" aria-hidden />
                           </Button>
@@ -458,57 +348,165 @@ export function CurriculumTab({
                             variant="outline"
                             size="icon-xs"
                             className="shrink-0"
-                            title="Урок ниже"
-                            aria-label="Урок ниже"
-                            disabled={
-                              lessonIndex === module.lessons.length - 1
-                            }
+                            title="Модуль ниже"
+                            aria-label="Модуль ниже"
+                            disabled={moduleIndex === modules.length - 1}
                             onClick={() =>
-                              void handleReorderLesson(
-                                module.id,
-                                lesson.id,
-                                "down",
-                              )
+                              void handleReorderModule(module.id, "down")
                             }
                           >
                             <ArrowDownIcon className="size-3.5" aria-hidden />
                           </Button>
                         </div>
-                        <Link
-                          href={`${lessonBasePath}/${lesson.id}`}
-                          className={buttonVariants({
-                            variant: "outline",
-                            size: "icon-xs",
-                            className: "shrink-0",
-                          })}
-                          title="Редактировать урок"
-                          aria-label="Редактировать урок"
-                        >
-                          <PencilIcon className="size-3.5" />
-                        </Link>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon-xs"
                           className="shrink-0"
-                          title="Удалить урок"
-                          aria-label="Удалить урок"
-                          onClick={() => setDeleteLessonId(lesson.id)}
+                          title="Редактировать название"
+                          aria-label="Редактировать название"
+                          onClick={() => {
+                            setEditModuleTitle(module.title);
+                            setEditingModuleId(module.id);
+                          }}
+                        >
+                          <PencilIcon className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          className="shrink-0"
+                          title="Удалить модуль"
+                          aria-label="Удалить модуль"
+                          onClick={() => setDeleteModuleId(module.id)}
                         >
                           <Trash2Icon className="size-3.5" />
                         </Button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <AddLessonForm courseId={courseId} moduleId={module.id} />
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-      )}
+                        <AccordionPrimitive.Trigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="shrink-0"
+                            aria-label="Развернуть или свернуть модуль"
+                          >
+                            <ChevronDownIcon className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                          </Button>
+                        </AccordionPrimitive.Trigger>
+                      </div>
+                    </div>
+                  )}
+                  <AccordionContent className="px-2 pb-3">
+                    {module.lessons.length === 0 ? (
+                      <p className="text-muted-foreground mb-2 text-sm">
+                        В модуле пока нет уроков.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {module.lessons.map((lesson, lessonIndex) => (
+                          <li
+                            key={lesson.id}
+                            className="flex flex-wrap items-center gap-2 rounded-md border bg-card/50 px-3 py-2"
+                          >
+                            <LessonTypeIcon type={lesson.type} />
+                            <Link
+                              href={`${lessonBasePath}/${lesson.id}`}
+                              className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+                            >
+                              {lesson.title}
+                            </Link>
+                            {lesson.is_published ? (
+                              <Badge
+                                variant="outline"
+                                className="shrink-0 border-emerald-500/40 bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200"
+                              >
+                                Опубликован
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="shrink-0 text-xs">
+                                Черновик
+                              </Badge>
+                            )}
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon-xs"
+                                className="shrink-0"
+                                title="Урок выше"
+                                aria-label="Урок выше"
+                                disabled={lessonIndex === 0}
+                                onClick={() =>
+                                  void handleReorderLesson(
+                                    module.id,
+                                    lesson.id,
+                                    "up",
+                                  )
+                                }
+                              >
+                                <ArrowUpIcon className="size-3.5" aria-hidden />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon-xs"
+                                className="shrink-0"
+                                title="Урок ниже"
+                                aria-label="Урок ниже"
+                                disabled={
+                                  lessonIndex === module.lessons.length - 1
+                                }
+                                onClick={() =>
+                                  void handleReorderLesson(
+                                    module.id,
+                                    lesson.id,
+                                    "down",
+                                  )
+                                }
+                              >
+                                <ArrowDownIcon className="size-3.5" aria-hidden />
+                              </Button>
+                            </div>
+                            <Link
+                              href={`${lessonBasePath}/${lesson.id}`}
+                              className={buttonVariants({
+                                variant: "outline",
+                                size: "icon-xs",
+                                className: "shrink-0",
+                              })}
+                              title="Редактировать урок"
+                              aria-label="Редактировать урок"
+                            >
+                              <PencilIcon className="size-3.5" />
+                            </Link>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-xs"
+                              className="shrink-0"
+                              title="Удалить урок"
+                              aria-label="Удалить урок"
+                              onClick={() => setDeleteLessonId(lesson.id)}
+                            >
+                              <Trash2Icon className="size-3.5" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <AddLessonForm moduleId={module.id} />
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          )}
 
-      <AddModuleForm courseId={courseId} />
+          <div className="mt-6 border-t pt-6">
+            <AddModuleForm courseId={courseId} />
+          </div>
+        </CardContent>
+      </Card>
 
       <AlertDialog
         open={deleteModuleId !== null}
@@ -561,6 +559,6 @@ export function CurriculumTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

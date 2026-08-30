@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { getCourseForEditBySlug } from "@/app/actions/courses";
 import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
 import { CourseEditorTabs } from "@/components/dashboard/teacher/course-editor-tabs";
 import type { CurriculumModuleRow } from "@/components/dashboard/teacher/curriculum-tab";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  assertCourseMutationAccess,
-  getCourseOwnerRole,
-} from "@/lib/auth/course-access";
 import { createClient } from "@/lib/supabase/server";
-import { verifyAccess } from "@/lib/auth/rbac";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -40,59 +36,9 @@ export async function generateMetadata({
 export default async function DashboardCourseEditPage({ params }: PageProps) {
   const { slug: slugParam } = await params;
   const decodedSlug = decodeSlugParam(slugParam);
-  const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
-  const supabase = await createClient();
+  const result = await getCourseForEditBySlug(decodedSlug);
 
-  const { data: courseRow, error } = await supabase
-    .from("courses")
-    .select(
-      `
-      id,
-      title,
-      description,
-      detailed_description,
-      price,
-      status,
-      slug,
-      image_url,
-      video_url,
-      youtube_url,
-      vimeo_url,
-      category,
-      has_certificate,
-      is_global,
-      teacher_id,
-      creator:profiles!courses_teacher_id_fkey(role),
-      curators:course_curators(user_id),
-      course_taxonomies (
-        taxonomy_id
-      ),
-      promotional_images,
-      duration_value,
-      duration_unit,
-      start_date,
-      modules (
-        id,
-        title,
-        order_index,
-        lessons (
-          id,
-          title,
-          type,
-          is_published,
-          order_index
-        )
-      )
-    `,
-    )
-    .eq("slug", decodedSlug)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  if (!courseRow) {
+  if (!result.ok && result.reason === "not_found") {
     return (
       <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
         <Button variant="link" size="sm" asChild>
@@ -115,17 +61,7 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
     );
   }
 
-  const accessError = await assertCourseMutationAccess(supabase, {
-    userId: user.id,
-    role: profile.role,
-    courseId: courseRow.id,
-    teacherId: courseRow.teacher_id,
-    courseOwnerRole: getCourseOwnerRole({
-      owner: (courseRow as { creator?: unknown }).creator,
-    }),
-  });
-
-  if (accessError) {
+  if (!result.ok) {
     return (
       <div className="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
         <Button variant="link" size="sm" asChild>
@@ -136,11 +72,14 @@ export default async function DashboardCourseEditPage({ params }: PageProps) {
           role="alert"
         >
           <p className="font-medium">Нет доступа к этому курсу.</p>
-          <p className="mt-2 text-sm opacity-90">{accessError}</p>
+          <p className="mt-2 text-sm opacity-90">{result.error}</p>
         </div>
       </div>
     );
   }
+
+  const courseRow = result.course;
+  const supabase = await createClient();
 
   const taxonomyIds = [
     ...new Set(

@@ -7,14 +7,24 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import type { CourseTableCurrentUser } from "@/app/actions/courses";
-import { deleteCourse } from "@/app/actions/curriculum-actions";
+import { archiveCourse } from "@/app/actions/curriculum-actions";
 import { ChangeOwnerModal } from "@/components/dashboard/courses/change-owner-modal";
 import { ManageCuratorsModal } from "@/components/dashboard/courses/manage-curators-modal";
 import type { Role } from "@/lib/auth/rbac";
 import { cn } from "@/lib/utils";
 import { initialsFromDisplayName } from "@/lib/utils/user-utils";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Avatar,
   AvatarFallback,
@@ -60,11 +70,36 @@ export function canManageCourse(
   currentUser: CourseTableCurrentUser,
   course: Pick<CourseRowAccess, "teacherId" | "creatorRole">,
 ): boolean {
+  if (currentUser.role === "admin") {
+    return true;
+  }
+
+  if (course.teacherId === currentUser.id) {
+    return true;
+  }
+
   return (
-    currentUser.role === "admin" ||
-    course.teacherId === currentUser.id ||
-    (currentUser.role === "head_teacher" && course.creatorRole === "teacher")
+    currentUser.role === "head_teacher" && course.creatorRole !== "admin"
   );
+}
+
+export function canEditCourse(
+  currentUser: CourseTableCurrentUser,
+  course: Pick<CourseRowAccess, "teacherId" | "creatorRole" | "isCurator">,
+): boolean {
+  if (currentUser.role === "admin") {
+    return true;
+  }
+
+  if (course.teacherId === currentUser.id) {
+    return true;
+  }
+
+  if (currentUser.role === "head_teacher" && course.creatorRole !== "admin") {
+    return true;
+  }
+
+  return course.isCurator;
 }
 
 export function CreatorCell({
@@ -152,22 +187,33 @@ export function CourseRowActions({
   const [isPending, startTransition] = useTransition();
   const [isCuratorModalOpen, setIsCuratorModalOpen] = useState(false);
   const [isOwnerModalOpen, setIsOwnerModalOpen] = useState(false);
+  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
+  const [archiveConfirmText, setArchiveConfirmText] = useState("");
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const canManage = canManageCourse(currentUser, course);
+  const canEdit = canEditCourse(currentUser, course);
   const isAdmin = currentUser.role === "admin";
+  // Кураторство временно отключено: пункт меню скрыт, файлы модалки не удаляем.
+  const canAssignCurator = false;
 
-  function handleArchive() {
+  if (!canEdit) {
+    return null;
+  }
+
+  function handleArchiveConfirm() {
     if (isPending) {
       return;
     }
 
     startTransition(async () => {
-      const result = await deleteCourse(course.id);
-      if (result.error) {
+      const result = await archiveCourse(course.id);
+      if (!result.ok) {
         toast.error(result.error);
         return;
       }
       toast.success("Курс перенесен в архив");
+      setIsArchiveDialogOpen(false);
+      setArchiveConfirmText("");
       router.refresh();
     });
   }
@@ -183,15 +229,17 @@ export function CourseRowActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuLabel>Действия</DropdownMenuLabel>
-          <DropdownMenuItem asChild>
-            <Link
-              href={`/dashboard/courses/${encodeURIComponent(course.slug)}`}
-              className="flex items-center gap-2"
-            >
-              <Edit className="mr-2 h-4 w-4" />
-              Редактировать
-            </Link>
-          </DropdownMenuItem>
+          {canEdit ? (
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/dashboard/courses/${encodeURIComponent(course.slug)}`}
+                className="flex items-center gap-2"
+              >
+                <Edit className="mr-2 h-4 w-4" />
+                Редактировать
+              </Link>
+            </DropdownMenuItem>
+          ) : null}
           {isAdmin ? (
             <DropdownMenuItem
               onClick={() => {
@@ -203,24 +251,26 @@ export function CourseRowActions({
               Сменить владельца
             </DropdownMenuItem>
           ) : null}
+          {canAssignCurator ? (
+            <DropdownMenuItem
+              onClick={() => {
+                setSelectedCourseId(course.id);
+                setIsCuratorModalOpen(true);
+              }}
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              Назначить куратора
+            </DropdownMenuItem>
+          ) : null}
           {canManage ? (
             <>
-              <DropdownMenuItem
-                onClick={() => {
-                  setSelectedCourseId(course.id);
-                  setIsCuratorModalOpen(true);
-                }}
-              >
-                <UserPlus className="mr-2 h-4 w-4" />
-                Назначить куратора
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 disabled={isPending}
-                onClick={handleArchive}
+                onClick={() => setIsArchiveDialogOpen(true)}
               >
                 <Archive className="mr-2 h-4 w-4" />
-                {isPending ? "Архивирование..." : "В архив"}
+                В архив
               </DropdownMenuItem>
             </>
           ) : null}
@@ -244,6 +294,48 @@ export function CourseRowActions({
           setSelectedCourseId(null);
         }}
       />
+
+      <AlertDialog
+        open={isArchiveDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && !isPending) {
+            setIsArchiveDialogOpen(false);
+            setArchiveConfirmText("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Перенести курс в архив?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Вы собираетесь перенести курс в архив. Введите слово{" "}
+              <span className="font-bold text-foreground">Архивировать</span>{" "}
+              для подтверждения:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            value={archiveConfirmText}
+            onChange={(event) => setArchiveConfirmText(event.target.value)}
+            autoComplete="off"
+            aria-label="Подтверждение архивирования курса"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button type="button" variant="outline" disabled={isPending}>
+                Отмена
+              </Button>
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive-outline"
+              disabled={isPending || archiveConfirmText.trim() !== "Архивировать"}
+              onClick={handleArchiveConfirm}
+            >
+              {isPending ? "Архивирование…" : "В архив"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

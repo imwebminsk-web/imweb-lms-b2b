@@ -1,5 +1,9 @@
 "use client";
 
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+
 import { updateProfileName } from "@/app/actions/profile-actions";
 import { AvatarUpload } from "@/components/dashboard/settings/avatar-upload";
 import { useLanguage } from "@/components/providers/language-provider";
@@ -14,8 +18,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  updateProfileSchema,
+  type UpdateProfilePayload,
+} from "@/lib/validations/profile-schema";
+import { getRoleTranslation } from "@/lib/utils/role-utils";
 import type { Database } from "@/types/database.types";
-import type { TranslationKey } from "@/lib/i18n/dict";
 
 type ProfileRole = Database["public"]["Enums"]["profile_role"];
 
@@ -26,21 +34,7 @@ type SettingsPageContentProps = {
   defaultFullName: string;
   avatarUrl: string | null;
   displayName: string;
-  feedbackKey: "saved" | "empty_name" | "update_failed" | null;
 };
-
-function roleLabel(role: ProfileRole, t: (key: TranslationKey) => string): string {
-  switch (role) {
-    case "teacher":
-      return t("settings.roleTeacher");
-    case "admin":
-      return t("settings.roleAdmin");
-    case "student":
-      return t("settings.roleStudent");
-    default:
-      return role;
-  }
-}
 
 export function SettingsPageContent({
   userId,
@@ -49,18 +43,25 @@ export function SettingsPageContent({
   defaultFullName,
   avatarUrl,
   displayName,
-  feedbackKey,
 }: SettingsPageContentProps) {
   const { t } = useLanguage();
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<UpdateProfilePayload>({
+    resolver: zodResolver(updateProfileSchema),
+    defaultValues: { fullName: defaultFullName },
+  });
 
-  const feedbackMessage =
-    feedbackKey === "saved"
-      ? t("settings.savedSuccess")
-      : feedbackKey === "empty_name"
-        ? t("settings.errorEmptyName")
-        : feedbackKey === "update_failed"
-          ? t("settings.errorUpdateFailed")
-          : null;
+  async function onSubmit(values: UpdateProfilePayload) {
+    const result = await updateProfileName(values);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(t("settings.savedSuccess"));
+  }
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -101,35 +102,31 @@ export function SettingsPageContent({
             <div className="space-y-2">
               <Label>{t("settings.role")}</Label>
               <div>
-                <Badge variant="secondary">{roleLabel(role, t)}</Badge>
+                <Badge variant="secondary">{getRoleTranslation(role)}</Badge>
               </div>
             </div>
 
-            <form action={updateProfileName} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
               <div className="space-y-2">
                 <Label htmlFor="fullName">{t("settings.fullName")}</Label>
                 <Input
                   id="fullName"
-                  name="fullName"
                   type="text"
-                  defaultValue={defaultFullName}
                   placeholder={t("settings.fullNamePlaceholder")}
                   autoComplete="name"
-                  required
+                  aria-invalid={Boolean(errors.fullName)}
+                  disabled={isSubmitting}
+                  {...register("fullName")}
                 />
+                {errors.fullName?.message ? (
+                  <p className="text-destructive text-sm" role="alert">
+                    {errors.fullName.message}
+                  </p>
+                ) : null}
               </div>
-              {feedbackMessage ? (
-                <p
-                  className={
-                    feedbackKey === "saved"
-                      ? "text-sm text-green-600 dark:text-green-500"
-                      : "text-destructive text-sm"
-                  }
-                >
-                  {feedbackMessage}
-                </p>
-              ) : null}
-              <Button type="submit">{t("settings.save")}</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? t("settings.saving") : t("settings.save")}
+              </Button>
             </form>
           </CardContent>
         </Card>

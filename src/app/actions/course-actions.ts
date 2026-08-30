@@ -5,13 +5,17 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { verifyAccess } from "@/lib/auth/rbac";
+import { verifyAccess, type Role } from "@/lib/auth/rbac";
 import {
   assertCourseMutationAccess,
   COURSE_MUTATION_SELECT,
   getCourseOwnerRole,
 } from "@/lib/auth/course-access";
 import { createClient } from "@/lib/supabase/server";
+import {
+  courseSettingsSchema,
+  type CourseSettingsPayload,
+} from "@/lib/validations/course-schemas";
 import { taxonomyIdsFormSchema } from "@/lib/validations/course-settings-schema";
 import type { Database } from "@/types/database.types";
 import { slugify } from "@/lib/utils/slug";
@@ -21,10 +25,9 @@ export type CreateCourseState = {
   error?: string;
 };
 
-export type UpdateCourseState = {
-  success?: boolean;
-  error?: string;
-};
+export type UpdateCourseResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
 /** Slug курса: транслит названия → латиница, дефисы, fallback «course». */
 function baseSlugFromTitle(title: string): string {
@@ -126,7 +129,7 @@ async function syncCourseTaxonomies(
 
   if (deleteError) {
     console.error("[syncCourseTaxonomies:delete]", deleteError.message);
-    return deleteError.message;
+    return "Не удалось сохранить таксономии курса.";
   }
 
   if (taxonomyIds.length === 0) {
@@ -142,111 +145,93 @@ async function syncCourseTaxonomies(
 
   if (insertError) {
     console.error("[syncCourseTaxonomies:insert]", insertError.message);
-    return insertError.message;
+    return "Не удалось сохранить таксономии курса.";
   }
 
   return null;
 }
 
 export async function updateCourse(
-  _prev: UpdateCourseState,
-  formData: FormData,
-): Promise<UpdateCourseState> {
+  courseId: string,
+  data: CourseSettingsPayload,
+): Promise<UpdateCourseResult> {
   const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
-  const id = String(formData.get("id") ?? "").trim();
-  const title = String(formData.get("title") ?? "").trim();
-  const rawSlug = String(formData.get("slug") ?? "").trim();
-  const descriptionRaw = String(formData.get("description") ?? "").trim();
-  const detailedDescriptionRaw = String(
-    formData.get("detailed_description") ?? "",
-  ).trim();
-  const youtubeRaw = String(formData.get("youtube_url") ?? "").trim();
-  const vimeoRaw = String(formData.get("vimeo_url") ?? "").trim();
-  const priceRaw = String(formData.get("price") ?? "").trim();
-  const statusRaw = String(formData.get("status") ?? "").trim();
-  const durationValueRaw = String(formData.get("duration_value") ?? "").trim();
-  const durationUnitRaw = String(formData.get("duration_unit") ?? "").trim();
-  const startDateRaw = String(formData.get("start_date") ?? "").trim();
-  const hasCertificateRaw = String(formData.get("has_certificate") ?? "").trim();
-  const promotionalImagesRaw = String(
-    formData.get("promotional_images") ?? "",
-  ).trim();
-
-  let teams: string[] = [];
-  try {
-    const parsed = JSON.parse(String(formData.get("teams") ?? "[]").trim());
-    if (Array.isArray(parsed)) teams = parsed.filter(t => typeof t === "string");
-  } catch {
-    // ignore
+  const parsed = courseSettingsSchema.safeParse(data);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Проверьте введённые данные.",
+    };
   }
 
-  let jobTitles: string[] = [];
-  try {
-    const parsed = JSON.parse(String(formData.get("jobTitles") ?? "[]").trim());
-    if (Array.isArray(parsed)) jobTitles = parsed.filter(t => typeof t === "string");
-  } catch {
-    // ignore
-  }
-
-  let tags: string[] = [];
-  try {
-    const parsed = JSON.parse(String(formData.get("tags") ?? "[]").trim());
-    if (Array.isArray(parsed)) tags = parsed.filter(t => typeof t === "string");
-  } catch {
-    // ignore
-  }
-
-  const isGlobalRaw = String(formData.get("isGlobal") ?? "false").trim();
-  const is_global = isGlobalRaw === "true";
-
+  const payload = parsed.data;
+  const id = courseId.trim();
   if (!id) {
-    return { error: "Не указан курс." };
+    return { ok: false, error: "Не указан курс." };
   }
 
-  if (!title) {
-    return { error: "Укажите название курса." };
+  if (payload.status === "archived") {
+    return {
+      ok: false,
+      error: "Чтобы архивировать курс, используйте действие «В архив».",
+    };
   }
 
-  const newSlug = sanitizeSlug(rawSlug);
+  const title = payload.title;
+  const newSlug = sanitizeSlug(payload.slug);
   if (!newSlug) {
-    return { error: "URL курса не может быть пустым." };
+    return { ok: false, error: "URL курса не может быть пустым." };
   }
+
+  const descriptionRaw = (payload.description ?? "").trim();
+  const detailedDescriptionRaw = (payload.landingDescription ?? "").trim();
+  const youtubeRaw = (payload.youtube_url ?? "").trim();
+  const vimeoRaw = (payload.vimeo_url ?? "").trim();
+  const priceRaw = payload.price == null ? "" : String(payload.price).trim();
+  const durationValueRaw =
+    payload.duration == null ? "" : String(payload.duration).trim();
+  const durationUnitRaw = (payload.duration_unit ?? "").trim();
+  const startDateRaw = (payload.start_date ?? "").trim();
+  const hasCertificateRaw = payload.certificateEnabled;
+  const teams = (payload.teams ?? []).filter((t) => typeof t === "string");
+  const jobTitles = (payload.jobTitles ?? []).filter((t) => typeof t === "string");
+  const tags = (payload.tags ?? []).filter((t) => typeof t === "string");
+  const shouldSyncB2b =
+    payload.isGlobal !== undefined ||
+    payload.teams !== undefined ||
+    payload.jobTitles !== undefined ||
+    payload.tags !== undefined;
+  const is_global = payload.isGlobal === true;
 
   const priceNum = Number(priceRaw);
-  if (!Number.isFinite(priceNum) || priceNum < 0) {
-    return { error: "Укажите корректную цену (число ≥ 0)." };
+  if (priceRaw.length > 0 && (!Number.isFinite(priceNum) || priceNum < 0)) {
+    return { ok: false, error: "Укажите корректную цену (число ≥ 0)." };
   }
 
-  if (statusRaw !== "draft" && statusRaw !== "published") {
-    return { error: "Некорректный статус курса." };
-  }
-
-  let taxonomyIds: string[] = [];
-  try {
-    const parsed = JSON.parse(
-      String(formData.get("taxonomy_ids") ?? "[]").trim(),
-    );
-    const result = taxonomyIdsFormSchema.safeParse(parsed);
-    if (!result.success) {
-      return { error: "Некорректные фильтры каталога." };
+  let taxonomyIds: string[] | undefined;
+  if (payload.taxonomy_ids !== undefined) {
+    const taxonomyParse = taxonomyIdsFormSchema.safeParse(payload.taxonomy_ids);
+    if (!taxonomyParse.success) {
+      return { ok: false, error: "Некорректные фильтры каталога." };
     }
-    taxonomyIds = [...new Set(result.data)];
-  } catch {
-    return { error: "Некорректные фильтры каталога." };
+    taxonomyIds = [...new Set(taxonomyParse.data)];
   }
 
-  const supabase = await createClient();
+  const userClient = await createClient();
+  // `as any`: `course_tags` нет в generated types.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const writer = userClient as any;
 
   if (durationUnitRaw.length > 0 && !DURATION_UNIT.has(durationUnitRaw)) {
-    return { error: "Некорректная единица длительности." };
+    return { ok: false, error: "Некорректная единица длительности." };
   }
 
   let durationValue: number | null = null;
   if (durationValueRaw.length > 0) {
     const n = Number(durationValueRaw);
     if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-      return { error: "Длительность: укажите целое число ≥ 0." };
+      return { ok: false, error: "Длительность: укажите целое число ≥ 0." };
     }
     durationValue = n;
   }
@@ -255,46 +240,45 @@ export async function updateCourse(
   if (startDateRaw.length > 0) {
     const d = new Date(`${startDateRaw}T00:00:00.000Z`);
     if (Number.isNaN(d.getTime())) {
-      return { error: "Некорректная дата старта." };
+      return { ok: false, error: "Некорректная дата старта." };
     }
     start_date = d.toISOString();
   }
 
-  const status = statusRaw as CourseStatus;
+  const status = payload.status as CourseStatus;
 
-  const { data: existing, error: fetchError } = await supabase
+  const { data: existing, error: fetchError } = await writer
     .from("courses")
-    // @ts-expect-error owner alias is not in generated Database types yet
     .select(COURSE_MUTATION_SELECT)
     .eq("id", id)
     .maybeSingle();
 
   if (fetchError || !existing) {
-    return { error: "Курс не найден." };
+    return { ok: false, error: "Курс не найден." };
   }
 
-  const accessError = await assertCourseMutationAccess(supabase, {
+  const accessError = await assertCourseMutationAccess(userClient, {
     userId: user.id,
-    role: profile.role,
+    role: (profile as unknown as { role: Role }).role,
     courseId: existing.id,
     teacherId: existing.teacher_id,
     courseOwnerRole: getCourseOwnerRole(existing),
   });
   if (accessError) {
-    return { error: accessError };
+    return { ok: false, error: accessError };
   }
 
   const slugChanged = newSlug !== existing.slug;
 
   if (slugChanged) {
-    const { data: taken } = await supabase
+    const { data: taken } = await writer
       .from("courses")
       .select("id")
       .eq("slug", newSlug)
       .maybeSingle();
 
     if (taken) {
-      return { error: "Этот URL уже занят другим курсом." };
+      return { ok: false, error: "Этот URL уже занят другим курсом." };
     }
   }
 
@@ -303,119 +287,127 @@ export async function updateCourse(
     detailedDescriptionRaw.length > 0 ? detailedDescriptionRaw : null;
   const youtube_url = youtubeRaw.length > 0 ? youtubeRaw : null;
   const vimeo_url = vimeoRaw.length > 0 ? vimeoRaw : null;
-  const duration_unit =
-    durationUnitRaw.length > 0 ? durationUnitRaw : null;
-  const has_certificate = hasCertificateRaw === "true";
-  const price = priceNum.toFixed(2);
+  const duration_unit = durationUnitRaw.length > 0 ? durationUnitRaw : null;
+  const has_certificate = hasCertificateRaw === true;
 
-  let promotional_images: string[] = [];
-  if (promotionalImagesRaw.length > 0) {
-    try {
-      const parsed = JSON.parse(promotionalImagesRaw) as unknown;
-      if (!Array.isArray(parsed)) {
-        return { error: "Некорректный формат галереи (ожидается массив URL)." };
-      }
-      const urls = parsed.filter(
-        (x): x is string =>
-          typeof x === "string" &&
-          x.trim().length > 0 &&
-          /^https?:\/\//i.test(x.trim()),
-      );
-      if (urls.length > 24) {
-        return { error: "В галерее не более 24 изображений." };
-      }
-      promotional_images = [...new Set(urls.map((u) => u.trim()))];
-    } catch {
-      return { error: "Некорректный JSON галереи изображений." };
+  const existingGallery = Array.isArray(existing.promotional_images)
+    ? existing.promotional_images.filter(
+        (x: unknown): x is string => typeof x === "string" && x.trim().length > 0,
+      )
+    : [];
+  let promotional_images = existingGallery;
+  if (payload.promotional_images !== undefined) {
+    const urls = payload.promotional_images.filter(
+      (x) =>
+        typeof x === "string" &&
+        x.trim().length > 0 &&
+        /^https?:\/\//i.test(x.trim()),
+    );
+    if (urls.length > 24) {
+      return { ok: false, error: "В галерее не более 24 изображений." };
     }
+    promotional_images = [...new Set(urls.map((u) => u.trim()))];
   }
 
-  let query = supabase
-    .from("courses")
-    .update({
-      title,
-      slug: newSlug,
-      description,
-      detailed_description,
-      youtube_url,
-      vimeo_url,
-      price,
-      status,
-      promotional_images,
-      duration_value: durationValue,
-      duration_unit,
-      start_date,
-      has_certificate,
-      is_global,
-    })
-    .eq("id", id);
+  const coursePatch: Database["public"]["Tables"]["courses"]["Update"] = {
+    title,
+    slug: newSlug,
+    description,
+    status,
+  };
 
-  const { error: updateError } = await query;
+  if (payload.price !== undefined && priceRaw.length > 0 && Number.isFinite(priceNum)) {
+    coursePatch.price = priceNum.toFixed(2);
+  }
+  if (payload.landingDescription !== undefined) {
+    coursePatch.detailed_description = detailed_description;
+  }
+  if (payload.youtube_url !== undefined) {
+    coursePatch.youtube_url = youtube_url;
+  }
+  if (payload.vimeo_url !== undefined) {
+    coursePatch.vimeo_url = vimeo_url;
+  }
+  if (payload.promotional_images !== undefined) {
+    coursePatch.promotional_images = promotional_images;
+  }
+  if (payload.duration !== undefined || payload.duration_unit !== undefined) {
+    coursePatch.duration_value = durationValue;
+    coursePatch.duration_unit = duration_unit;
+  }
+  if (payload.start_date !== undefined) {
+    coursePatch.start_date = start_date;
+  }
+  if (payload.certificateEnabled !== undefined) {
+    coursePatch.has_certificate = has_certificate;
+  }
+
+  const { error: updateError } = await writer
+    .from("courses")
+    .update(
+      shouldSyncB2b
+        ? ({ ...coursePatch, is_global } as typeof coursePatch)
+        : coursePatch,
+    )
+    .eq("id", id);
 
   if (updateError) {
     console.error("[updateCourse]", updateError.message);
-    return {
-      error: updateError.message || "Не удалось сохранить изменения.",
-    };
+    return { ok: false, error: "Не удалось сохранить изменения." };
   }
 
-  if (taxonomyIds.length > 0) {
-    const { data: existingTaxonomies, error: taxonomyLookupError } =
-      await supabase.from("taxonomies").select("id").in("id", taxonomyIds);
+  if (taxonomyIds !== undefined) {
+    if (taxonomyIds.length > 0) {
+      const { data: existingTaxonomies, error: taxonomyLookupError } =
+        await writer.from("taxonomies").select("id").in("id", taxonomyIds);
 
-    if (taxonomyLookupError) {
-      console.error("[updateCourse:taxonomies]", taxonomyLookupError.message);
-      return { error: "Не удалось проверить фильтры каталога." };
+      if (taxonomyLookupError) {
+        console.error("[updateCourse:taxonomies]", taxonomyLookupError.message);
+        return { ok: false, error: "Не удалось проверить фильтры каталога." };
+      }
+
+      if ((existingTaxonomies ?? []).length !== taxonomyIds.length) {
+        return { ok: false, error: "Некорректные фильтры каталога." };
+      }
     }
 
-    if ((existingTaxonomies ?? []).length !== taxonomyIds.length) {
-      return { error: "Некорректные фильтры каталога." };
+    const taxonomySyncError = await syncCourseTaxonomies(writer, id, taxonomyIds);
+
+    if (taxonomySyncError) {
+      return { ok: false, error: "Не удалось сохранить таксономии курса." };
     }
   }
 
-  const taxonomySyncError = await syncCourseTaxonomies(supabase, id, taxonomyIds);
-
-  if (taxonomySyncError) {
-    return {
-      error: taxonomySyncError || "Не удалось сохранить таксономии курса.",
-    };
-  }
-
-  // Sync B2B Matrix
   try {
-    if (is_global) {
-      // If global, clear all specific assignments
-      await supabase.from("team_courses").delete().eq("course_id", id);
-      await supabase.from("job_title_courses").delete().eq("course_id", id);
-      await supabase.from("course_tags").delete().eq("course_id", id);
-    } else {
-      // Sync Teams
-      await supabase.from("team_courses").delete().eq("course_id", id);
+    if (shouldSyncB2b && is_global) {
+      await writer.from("team_courses").delete().eq("course_id", id);
+      await writer.from("job_title_courses").delete().eq("course_id", id);
+      await writer.from("course_tags").delete().eq("course_id", id);
+    } else if (shouldSyncB2b) {
+      await writer.from("team_courses").delete().eq("course_id", id);
       if (teams.length > 0) {
-        const { error: teamInsertError } = await supabase.from("team_courses").insert(
-          teams.map((team_id) => ({ course_id: id, team_id }))
+        const { error: teamInsertError } = await writer.from("team_courses").insert(
+          teams.map((team_id) => ({ course_id: id, team_id })),
         );
         if (teamInsertError) {
           console.error("[updateCourse] team_courses insert error:", teamInsertError.message);
         }
       }
 
-      // Sync Job Titles
-      await supabase.from("job_title_courses").delete().eq("course_id", id);
+      await writer.from("job_title_courses").delete().eq("course_id", id);
       if (jobTitles.length > 0) {
-        const { error: jobInsertError } = await supabase.from("job_title_courses").insert(
-          jobTitles.map((job_title_id) => ({ course_id: id, job_title_id }))
+        const { error: jobInsertError } = await writer.from("job_title_courses").insert(
+          jobTitles.map((job_title_id) => ({ course_id: id, job_title_id })),
         );
         if (jobInsertError) {
           console.error("[updateCourse] job_title_courses insert error:", jobInsertError.message);
         }
       }
 
-      // Sync Tags
-      await supabase.from("course_tags").delete().eq("course_id", id);
+      await writer.from("course_tags").delete().eq("course_id", id);
       if (tags.length > 0) {
-        const { error: tagsInsertError } = await supabase.from("course_tags").insert(
-          tags.map((tag_id) => ({ course_id: id, tag_id }))
+        const { error: tagsInsertError } = await writer.from("course_tags").insert(
+          tags.map((tag_id) => ({ course_id: id, tag_id })),
         );
         if (tagsInsertError) {
           console.error("[updateCourse] course_tags insert error:", tagsInsertError.message);
@@ -424,8 +416,6 @@ export async function updateCourse(
     }
   } catch (err) {
     console.error("[updateCourse] B2B matrix sync error:", err);
-    // We don't return an error here to prevent blocking the main course update, 
-    // but in a production app we might want to handle it more strictly.
   }
 
   revalidatePath("/dashboard/courses");
@@ -437,10 +427,9 @@ export async function updateCourse(
   if (slugChanged) {
     revalidatePath(`/dashboard/courses/${newSlug}`);
     revalidatePath(`/courses/${encodeURIComponent(newSlug)}`);
-    redirect(`/dashboard/courses/${newSlug}`);
   }
 
-  return { success: true };
+  return { ok: true };
 }
 
 /** Серверный потолок после клиентского сжатия (цель 1 МБ); допускаем запас. */
@@ -536,62 +525,64 @@ export async function uploadCourseGalleryImage(
   return { url: publicUrl };
 }
 
-export type UpdateCourseImageState = {
-  success?: boolean;
-  error?: string;
-};
-
 /** Обновляет только `image_url` (обложка из Storage). */
 export async function updateCourseImage(
   courseId: string,
-  imageUrl: string,
-): Promise<UpdateCourseImageState> {
+  publicUrl: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const { user, profile } = await verifyAccess(["admin", "head_teacher", "teacher"]);
 
   const id = courseId.trim();
-  const url = imageUrl.trim();
+  const url = publicUrl.trim();
 
   if (!id) {
-    return { error: "Не указан курс." };
+    return { ok: false, error: "Не указан курс." };
   }
 
-  const supabase = await createClient();
+  const userClient = await createClient();
 
-  const { data: course, error: fetchError } = await supabase
-    .from("courses")
-    // @ts-expect-error owner alias is not in generated Database types yet
-    .select(COURSE_MUTATION_SELECT)
-    .eq("id", id)
-    .maybeSingle();
+  try {
+    const { data: course, error: fetchError } = await userClient
+      .from("courses")
+      .select(COURSE_MUTATION_SELECT)
+      .eq("id", id)
+      .maybeSingle();
 
-  if (fetchError || !course) {
-    return { error: "Курс не найден." };
-  }
+    if (fetchError || !course) {
+      if (fetchError) {
+        console.error("[updateCourseImage]", fetchError.message);
+      }
+      return { ok: false, error: "Курс не найден." };
+    }
 
-  const accessError = await assertCourseMutationAccess(supabase, {
-    userId: user.id,
-    role: profile.role,
-    courseId: course.id,
-    teacherId: course.teacher_id,
-    courseOwnerRole: getCourseOwnerRole(course),
-  });
-  if (accessError) {
-    return { error: accessError };
-  }
+    const accessError = await assertCourseMutationAccess(userClient, {
+      userId: user.id,
+      role: (profile as unknown as { role: Role }).role,
+      courseId: (course as { id: string }).id,
+      teacherId: (course as { teacher_id: string }).teacher_id,
+      courseOwnerRole: getCourseOwnerRole(course),
+    });
+    if (accessError) {
+      return { ok: false, error: accessError };
+    }
 
-  const { error: updateError } = await supabase
-    .from("courses")
-    .update({ image_url: url.length > 0 ? url : null })
-    .eq("id", id);
+    const { error: updateError } = await userClient
+      .from("courses")
+      .update({ image_url: url.length > 0 ? url : null })
+      .eq("id", id);
 
-  if (updateError) {
-    console.error("[updateCourseImage]", updateError.message);
-    return { error: updateError.message || "Не удалось сохранить обложку." };
+    if (updateError) {
+      console.error("[updateCourseImage]", updateError.message);
+      return { ok: false, error: "Не удалось обновить обложку." };
+    }
+  } catch (err) {
+    console.error("[updateCourseImage]", err);
+    return { ok: false, error: "Не удалось обновить обложку." };
   }
 
   revalidatePath("/dashboard/courses");
   revalidatePath("/dashboard");
-  return { success: true };
+  return { ok: true };
 }
 
 export type UpdateCourseVideoState = {

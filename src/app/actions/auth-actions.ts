@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 
@@ -12,6 +13,9 @@ export type SignUpState = {
 export type AuthActionResult =
   | { ok: true }
   | { ok: false; error: string };
+
+const emailSchema = z.string().trim().email("Укажите корректный email.");
+const passwordSchema = z.string().min(6, "Пароль не короче 6 символов.");
 
 async function getRequestOrigin(): Promise<string> {
   const headersList = await headers();
@@ -55,7 +59,8 @@ export async function signUp(
   });
 
   if (error) {
-    return { ...initial, error: error.message };
+    console.error("[signUp]", error.message);
+    return { ...initial, error: "Не удалось создать аккаунт. Попробуйте снова." };
   }
 
   if (data.session) {
@@ -85,40 +90,69 @@ export async function signOut() {
 export async function requestPasswordReset(
   email: string,
 ): Promise<AuthActionResult> {
-  const normalizedEmail = email.trim();
-
-  if (!normalizedEmail) {
-    return { ok: false, error: "Укажите email." };
+  const parsed = emailSchema.safeParse(email);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Укажите email.",
+    };
   }
 
-  const origin = await getRequestOrigin();
-  const supabase = await createClient();
+  try {
+    const origin = await getRequestOrigin();
+    const supabase = await createClient();
 
-  const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-    redirectTo: `${origin}/auth/callback?next=/update-password`,
-  });
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
+      redirectTo: `${origin}/auth/callback?next=/update-password`,
+    });
 
-  if (error) {
-    return { ok: false, error: error.message };
+    if (error) {
+      console.error("[requestPasswordReset]", error.message);
+    }
+
+    // Не раскрываем, существует ли аккаунт с этим email.
+    return { ok: true };
+  } catch (err) {
+    console.error("[requestPasswordReset]", err);
+    return {
+      ok: false,
+      error: "Не удалось отправить ссылку. Попробуйте снова.",
+    };
   }
-
-  return { ok: true };
 }
 
 /** Устанавливает новый пароль для текущей recovery-сессии. */
 export async function updatePassword(
   newPassword: string,
 ): Promise<AuthActionResult> {
-  if (newPassword.length < 6) {
-    return { ok: false, error: "Пароль не короче 6 символов." };
+  const parsed = passwordSchema.safeParse(newPassword);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Пароль не короче 6 символов.",
+    };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.updateUser({
+      password: parsed.data,
+    });
 
-  if (error) {
-    return { ok: false, error: error.message };
+    if (error) {
+      console.error("[updatePassword]", error.message);
+      return {
+        ok: false,
+        error: "Не удалось обновить пароль. Попробуйте ещё раз.",
+      };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    console.error("[updatePassword]", err);
+    return {
+      ok: false,
+      error: "Не удалось обновить пароль. Попробуйте ещё раз.",
+    };
   }
-
-  return { ok: true };
 }

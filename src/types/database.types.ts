@@ -55,6 +55,7 @@ export type Database = {
           has_certificate: boolean
           id: string
           image_url: string | null
+          is_archived: boolean
           price: string
           promotional_images: string[] | null
           slug: string
@@ -77,6 +78,7 @@ export type Database = {
           has_certificate?: boolean
           id?: string
           image_url?: string | null
+          is_archived?: boolean
           price?: string
           promotional_images?: string[]
           slug: string
@@ -99,6 +101,7 @@ export type Database = {
           has_certificate?: boolean
           id?: string
           image_url?: string | null
+          is_archived?: boolean
           price?: string
           promotional_images?: string[]
           slug?: string
@@ -127,6 +130,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_archived: boolean
           is_chat_enabled: boolean
           name: string
           pin_code: string
@@ -137,6 +141,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           is_chat_enabled?: boolean
           name: string
           pin_code: string
@@ -147,6 +152,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           is_chat_enabled?: boolean
           name?: string
           pin_code?: string

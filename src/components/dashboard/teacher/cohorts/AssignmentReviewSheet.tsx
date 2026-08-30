@@ -16,18 +16,28 @@ import {
   type AssignmentSheetDisplayStatus,
 } from "@/components/dashboard/assignment-sheet-layout";
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { normalizeStoredAssignmentPoints } from "@/lib/learn/assignment-grade-display";
+import { initialsFromDisplayName } from "@/lib/utils/user-utils";
 
 export type AssignmentReviewSheetProps = {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   studentName: string;
+  studentAvatarUrl?: string | null;
   isTeacher: boolean;
 } & (
   | { fetchMode: "submissionId"; submissionId: string }
@@ -76,7 +86,13 @@ function submissionStatusToDisplay(
 }
 
 export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
-  const { isOpen, onOpenChange, studentName, isTeacher } = props;
+  const {
+    isOpen,
+    onOpenChange,
+    studentName,
+    studentAvatarUrl = null,
+    isTeacher,
+  } = props;
 
   const submissionIdArg =
     props.fetchMode === "submissionId" ? props.submissionId : null;
@@ -225,20 +241,36 @@ export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
     submission?.content?.trim() ? submission.content : "—";
   const allowReview = submission != null && isTeacher;
 
+  const sheetTitle = payload?.lessonTitle?.trim() || "Задание";
+
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-full flex-col gap-0 overflow-y-auto sm:max-w-lg"
+        className="flex h-full flex-col gap-0 p-0 !w-[95vw] !max-w-full sm:!w-[80vw] sm:!max-w-[800px]"
       >
-        <SheetHeader className="border-border shrink-0 border-b pb-4 text-left">
-          <SheetTitle className="pr-8">Задание</SheetTitle>
-          <SheetDescription>
-            Ученик: <span className="text-foreground font-medium">{studentName}</span>
+        <SheetHeader className="shrink-0 border-b p-6 text-left">
+          <SheetTitle className="pr-8">{sheetTitle}</SheetTitle>
+          <SheetDescription asChild>
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Avatar className="h-10 w-10 shrink-0">
+                <AvatarImage
+                  src={studentAvatarUrl ?? undefined}
+                  alt={studentName}
+                />
+                <AvatarFallback>
+                  {initialsFromDisplayName(studentName)}
+                </AvatarFallback>
+              </Avatar>
+              <span>Ученик: {studentName}</span>
+              {payload ? (
+                <AssignmentHeaderStatusBadge status={displayStatus} />
+              ) : null}
+            </div>
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-6 p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
           {loadPending ? (
             <div className="text-muted-foreground flex items-center gap-2 py-6">
               <Loader2Icon className="size-5 animate-spin" aria-hidden />
@@ -254,6 +286,8 @@ export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
             isTeacher ? (
               <AssignmentSheetLayout
                 isTeacher
+                hideTitle
+                hideActions
                 lessonTitle={payload.lessonTitle}
                 assignmentText={payload.assignmentText}
                 studentAnswer={studentAnswer}
@@ -270,6 +304,7 @@ export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
             ) : (
               <AssignmentSheetLayout
                 isTeacher={false}
+                hideTitle
                 lessonTitle={payload.lessonTitle}
                 assignmentText={payload.assignmentText}
                 studentAnswer={studentAnswer}
@@ -280,7 +315,72 @@ export function AssignmentReviewSheet(props: AssignmentReviewSheetProps) {
             )
           ) : null}
         </div>
+
+        {allowReview && payload && !loadPending && !loadError ? (
+          <SheetFooter className="mt-auto flex shrink-0 flex-col gap-4 border-t bg-background p-6 sm:flex-col sm:space-x-0">
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={isPending}
+                onClick={() => runReview("rejected")}
+              >
+                Вернуть на доработку
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                disabled={isPending}
+                onClick={() => runReview("approved")}
+              >
+                {isPending ? "Сохранение…" : "Принять"}
+              </Button>
+            </div>
+          </SheetFooter>
+        ) : null}
       </SheetContent>
     </Sheet>
+  );
+}
+
+function AssignmentHeaderStatusBadge({
+  status,
+}: {
+  status: AssignmentSheetDisplayStatus;
+}) {
+  if (status === "pending") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+      >
+        На проверке
+      </Badge>
+    );
+  }
+  if (status === "approved") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200"
+      >
+        Принято
+      </Badge>
+    );
+  }
+  if (status === "rejected") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-red-200 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200"
+      >
+        На доработке
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-muted-foreground">
+      Не начато
+    </Badge>
   );
 }

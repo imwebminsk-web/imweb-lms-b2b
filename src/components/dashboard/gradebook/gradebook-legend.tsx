@@ -31,7 +31,7 @@ export function GradebookLegend() {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-4">
-        <div className="space-y-4 text-sm">
+        <div className="space-y-4 text-xs">
           <section className="space-y-2">
             <h3 className="font-medium">Статусы</h3>
             <ul className="space-y-1.5">

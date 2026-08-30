@@ -22,6 +22,7 @@ import {
   Sheet,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -45,6 +46,8 @@ type TestResultSheetProps = {
   lessonId?: string;
   /** Показать блок ручной корректировки балла (только для преподавателя). */
   isTeacher?: boolean;
+  /** Открыть проверку развёрнутых ответов в шторке, без перехода на отдельную страницу. */
+  onOpenGrading?: (attemptId: string) => void;
 };
 
 export function TestResultSheet({
@@ -57,6 +60,7 @@ export function TestResultSheet({
   testTitle,
   lessonId,
   isTeacher = false,
+  onOpenGrading,
 }: TestResultSheetProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -141,39 +145,46 @@ export function TestResultSheet({
 
   const displayTitle = details?.testTitle?.trim() || testTitle;
 
-  const retakeDialog =
+  const retakeButton =
     isTeacher && details?.attemptId ? (
-      <section className="border-destructive/30 space-y-3 rounded-xl border p-4">
-        <h3 className="text-sm font-semibold">Пересдача</h3>
-        <p className="text-muted-foreground text-sm">
-          Сбросить попытку и отметку о прохождении урока, чтобы ученик прошёл
-          тест заново.
-        </p>
-        <SendToRetakeDialog
-          attemptId={details.attemptId}
-          testId={testId}
-          studentId={studentId}
-          lessonId={lessonId}
-          disabled={isPending}
-          onSuccess={() => {
-            router.refresh();
-            onOpenChange(false);
-          }}
-        />
-      </section>
+      <SendToRetakeDialog
+        attemptId={details.attemptId}
+        testId={testId}
+        studentId={studentId}
+        lessonId={lessonId}
+        disabled={isPending}
+        onSuccess={() => {
+          router.refresh();
+          onOpenChange(false);
+        }}
+      />
     ) : null;
+
+  const showOverride =
+    Boolean(
+      isTeacher &&
+        details?.attemptId &&
+        details.resultSummary &&
+        !details.resultSummary.requiresManualReview,
+    );
+  const showManualReviewCta =
+    Boolean(
+      details?.attemptId &&
+        details.resultSummary?.requiresManualReview &&
+        isTeacher,
+    );
+  const showFooter = showOverride || showManualReviewCta || Boolean(retakeButton);
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full max-w-none overflow-y-auto sm:gap-0"
-        style={{ minWidth: "min(92vw, 1280px)" }}
+        className="flex h-full flex-col gap-0 p-0 !w-[95vw] !max-w-full sm:!w-[90vw] sm:!max-w-[1100px]"
       >
-        <SheetHeader className="border-border shrink-0 border-b px-1 pb-4 text-left sm:px-2">
+        <SheetHeader className="shrink-0 border-b p-6 text-left">
           <SheetTitle className="pr-8">{displayTitle}</SheetTitle>
           <SheetDescription asChild>
-            <div className="flex items-center gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-3 pt-1">
               <Avatar className="h-10 w-10 shrink-0">
                 <AvatarImage
                   src={studentAvatarUrl ?? undefined}
@@ -184,11 +195,27 @@ export function TestResultSheet({
                 </AvatarFallback>
               </Avatar>
               <span>Ученик: {studentName}</span>
+              {showManualReviewCta ? (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                >
+                  На проверке
+                </Badge>
+              ) : null}
+              {details?.points != null ? (
+                <Badge
+                  variant="outline"
+                  className="border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200"
+                >
+                  Баллы: {details.points}
+                </Badge>
+              ) : null}
             </div>
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-4 p-4 sm:gap-6 sm:p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
           {isPending && !error && details === null ? (
             <div className="text-muted-foreground flex items-center gap-2 py-8">
               <Loader2Icon className="size-5 animate-spin" aria-hidden />
@@ -212,117 +239,106 @@ export function TestResultSheet({
             </Alert>
           ) : null}
 
-          {details?.attemptId &&
-          details.resultSummary?.requiresManualReview &&
-          isTeacher ? (
-            <section className="border-amber-500/40 bg-amber-500/5 space-y-3 rounded-xl border-2 p-4">
+          {showManualReviewCta ? (
+            <section className="mb-6 space-y-1">
               <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
                 Требуется ручная проверка развёрнутых ответов
               </p>
               <p className="text-muted-foreground text-sm">
-                Откройте отдельную страницу проверки, чтобы выставить баллы и
-                завершить оценку.
+                Нажмите «Выставить баллы» внизу, чтобы открыть панель проверки.
               </p>
-              <Button asChild>
-                <Link
-                  href={`/dashboard/gradebook/attempts/${details.attemptId}/grade`}
-                  onClick={() => onOpenChange(false)}
-                >
-                  Выставить баллы
-                </Link>
-              </Button>
             </section>
           ) : null}
 
-          {details?.attemptId &&
-          details.resultSummary?.requiresManualReview &&
-          isTeacher
-            ? retakeDialog
-            : null}
-
           {details?.attemptId && details.resultSummary && reviewMaps != null ? (
-            <>
-              {details.gradingVisuals ? (
-                <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
-                  {details.points !== null ? (
-                    <Badge variant="outline">
-                      Баллы: {details.points}
-                    </Badge>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {isTeacher &&
-              !details.resultSummary.requiresManualReview ? (
-                <section className="border-border space-y-3 rounded-xl border p-4">
-                  <h3 className="text-sm font-semibold">
-                    Скорректировать баллы (0–100)
-                  </h3>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="override-grade-100">Баллы</Label>
-                      <Input
-                        id="override-grade-100"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={1}
-                        inputMode="numeric"
-                        className="w-24"
-                        value={overrideGrade}
-                        onChange={(e) => setOverrideGrade(e.target.value)}
-                        disabled={isPending}
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleSaveOverride}
-                      disabled={isPending}
-                    >
-                      Сохранить
-                    </Button>
-                  </div>
-                </section>
-              ) : null}
-
-              {isTeacher && !details.resultSummary.requiresManualReview
-                ? retakeDialog
-                : null}
-
-              <QuizResultView
-                showTestMeta
-                testTitle={displayTitle}
-                testDescription={details.testDescription}
-                questions={details.questions}
-                result={details.resultSummary}
-                reviewRowsByQuestionId={reviewMaps.reviewRowsByQuestionId}
-                reviewCorrectIdsByQuestionId={
-                  reviewMaps.reviewCorrectIdsByQuestionId
-                }
-                reviewFillByQuestionId={reviewMaps.reviewFillByQuestionId}
-                reviewAnswersByQuestionId={
-                  reviewMaps.reviewAnswersByQuestionId
-                }
-                reviewGroupedSelectionsByQuestionId={
-                  reviewMaps.reviewGroupedSelectionsByQuestionId
-                }
-                reviewGroupedCorrectByQuestionId={
-                  reviewMaps.reviewGroupedCorrectByQuestionId
-                }
-                reviewGroupedFillTypingByQuestionId={
-                  reviewMaps.reviewGroupedFillTypingByQuestionId
-                }
-                reviewGroupedFillAssignmentsByQuestionId={
-                  reviewMaps.reviewGroupedFillAssignmentsByQuestionId
-                }
-                reviewOrderingAssignmentsByQuestionId={
-                  reviewMaps.reviewOrderingAssignmentsByQuestionId
-                }
-              />
-            </>
+            <QuizResultView
+              showTestMeta
+              testTitle={displayTitle}
+              testDescription={details.testDescription}
+              questions={details.questions}
+              result={details.resultSummary}
+              reviewRowsByQuestionId={reviewMaps.reviewRowsByQuestionId}
+              reviewCorrectIdsByQuestionId={
+                reviewMaps.reviewCorrectIdsByQuestionId
+              }
+              reviewFillByQuestionId={reviewMaps.reviewFillByQuestionId}
+              reviewAnswersByQuestionId={reviewMaps.reviewAnswersByQuestionId}
+              reviewGroupedSelectionsByQuestionId={
+                reviewMaps.reviewGroupedSelectionsByQuestionId
+              }
+              reviewGroupedCorrectByQuestionId={
+                reviewMaps.reviewGroupedCorrectByQuestionId
+              }
+              reviewGroupedFillTypingByQuestionId={
+                reviewMaps.reviewGroupedFillTypingByQuestionId
+              }
+              reviewGroupedFillAssignmentsByQuestionId={
+                reviewMaps.reviewGroupedFillAssignmentsByQuestionId
+              }
+              reviewOrderingAssignmentsByQuestionId={
+                reviewMaps.reviewOrderingAssignmentsByQuestionId
+              }
+            />
           ) : null}
         </div>
+
+        {showFooter ? (
+          <SheetFooter className="mt-auto flex shrink-0 flex-col gap-4 border-t bg-background p-6 sm:flex-col sm:space-x-0">
+            {showOverride ? (
+              <div className="w-full space-y-2">
+                <Label htmlFor="override-grade-100">Баллы:</Label>
+                <Input
+                  id="override-grade-100"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  inputMode="numeric"
+                  className="w-24"
+                  value={overrideGrade}
+                  onChange={(e) => setOverrideGrade(e.target.value)}
+                  disabled={isPending}
+                />
+              </div>
+            ) : null}
+            <div className="flex w-full justify-end gap-2">
+              {retakeButton}
+              {showOverride ? (
+                <Button
+                  type="button"
+                  onClick={handleSaveOverride}
+                  disabled={isPending}
+                >
+                  Сохранить
+                </Button>
+              ) : null}
+              {showManualReviewCta && details?.attemptId ? (
+                onOpenGrading ? (
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const id = details.attemptId;
+                      if (!id) return;
+                      onOpenChange(false);
+                      onOpenGrading(id);
+                    }}
+                  >
+                    Выставить баллы
+                  </Button>
+                ) : (
+                  <Button asChild>
+                    <Link
+                      href={`/dashboard/gradebook/attempts/${details.attemptId}/grade`}
+                      onClick={() => onOpenChange(false)}
+                    >
+                      Выставить баллы
+                    </Link>
+                  </Button>
+                )
+              ) : null}
+            </div>
+          </SheetFooter>
+        ) : null}
       </SheetContent>
     </Sheet>
   );

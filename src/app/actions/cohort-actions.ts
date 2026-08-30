@@ -6,7 +6,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { verifyAccess, type Role } from "@/lib/auth/rbac";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
@@ -27,6 +26,10 @@ export type UpdateCohortSettingsResult =
   | { success: false; error: string };
 
 export type DeleteCohortResult = { success: false; error: string };
+
+export type CohortMutationResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
 export type AssignContentToCohortResult =
   | { success: true }
@@ -52,30 +55,13 @@ type CohortManageAccess =
   | { ok: true; userId: string; courseId: string }
   | { ok: false; error: string };
 
-/** User-клиент не проходит RLS для admin/куратора на чужих cohorts. */
+/** User-клиент (cookies + RLS). Имя историческое: раньше здесь был service role. */
 async function getActionDb() {
-  return createAdminClient() ?? (await createClient());
+  return await createClient();
 }
 
 export async function getStaffDb() {
   return getActionDb();
-}
-
-async function isCourseCurator(
-  courseId: string,
-  userId: string,
-): Promise<boolean> {
-  const db = await getActionDb();
-  // course_curators ещё нет в generated Database types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = await (db as any)
-    .from("course_curators")
-    .select("user_id")
-    .eq("course_id", courseId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  return Boolean(data?.user_id);
 }
 
 function canManageCourse(
@@ -103,10 +89,6 @@ async function assertCanManageCourse(
   }
 
   if (canManageCourse(profile.role, user.id, course.teacher_id)) {
-    return { ok: true, userId: user.id, courseId: course.id };
-  }
-
-  if (await isCourseCurator(course.id, user.id)) {
     return { ok: true, userId: user.id, courseId: course.id };
   }
 
@@ -143,10 +125,6 @@ export async function assertCanManageCohort(
     return { ok: true, userId: user.id, courseId: course.id };
   }
 
-  if (await isCourseCurator(course.id, user.id)) {
-    return { ok: true, userId: user.id, courseId: course.id };
-  }
-
   return { ok: false, error: COHORT_FORBIDDEN };
 }
 
@@ -160,83 +138,51 @@ export type StaffCohortListItem = {
   name: string;
   pin_code: string;
   is_active: boolean;
+  is_archived: boolean;
   created_at: string;
-  courses: { title: string } | { title: string }[] | null;
+  courses:
+    | { title: string; is_archived: boolean }
+    | { title: string; is_archived: boolean }[]
+    | null;
 };
 
-async function getCuratedCourseIdsForUser(userId: string): Promise<string[]> {
-  const db = await getActionDb();
-  // course_curators ещё нет в generated Database types.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (db as any)
-    .from("course_curators")
-    .select("course_id")
-    .eq("user_id", userId);
-
-  if (error) {
-    console.error("[getCuratedCourseIdsForUser]", error.message);
-    return [];
-  }
-
-  return ((data as Array<{ course_id: string }> | null) ?? [])
-    .map((row) => row.course_id)
-    .filter(Boolean);
-}
-
 /**
- * Курсы и группы, которыми сотрудник может управлять:
- * admin/завуч — все; teacher — свои курсы + курсы, где он куратор.
+ * Курсы и группы, видимые текущему сотруднику.
+ * Видимость строк задаёт RLS (админ/завуч — все группы, преподаватель — свои).
  */
-export async function getStaffCohortsDashboard(): Promise<{
+export async function getStaffCohortsDashboard(options?: {
+  archived?: boolean;
+}): Promise<{
   courses: StaffCourseOption[];
   cohorts: StaffCohortListItem[];
 }> {
-  const { user, profile } = await verifyAccess(STAFF_ROLES);
-  const db = await getActionDb();
-  const privileged = profile.role === "admin" || profile.role === "head_teacher";
+  const archived = options?.archived === true;
+  await verifyAccess(STAFF_ROLES);
+  const supabase = await createClient();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let coursesQuery: any = db.from("courses").select("id, title").order("title");
+  const { data: myCourses, error: coursesError } = await supabase
+    .from("courses")
+    .select("id, title")
+    .eq("is_archived", false)
+    .order("title");
 
-  if (!privileged) {
-    const curatedIds = await getCuratedCourseIdsForUser(user.id);
-    if (curatedIds.length > 0) {
-      coursesQuery = coursesQuery.or(
-        `teacher_id.eq.${user.id},id.in.(${curatedIds.join(",")})`,
-      );
-    } else {
-      coursesQuery = coursesQuery.eq("teacher_id", user.id);
-    }
-  }
-
-  const { data: myCourses, error: coursesError } = await coursesQuery;
   if (coursesError) {
     console.error("[getStaffCohortsDashboard] courses", coursesError.message);
   }
 
-  const courses: StaffCourseOption[] = (myCourses ?? []).map(
-    (c: { id: string; title: string }) => ({
-      id: c.id,
-      title: c.title,
-    }),
-  );
-  const courseIds = courses.map((c) => c.id);
+  const courses: StaffCourseOption[] = (myCourses ?? []).map((c) => ({
+    id: c.id,
+    title: c.title,
+  }));
 
-  if (!privileged && courseIds.length === 0) {
-    return { courses, cohorts: [] };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let cohortsQuery: any = db
+  const { data: cohortsData, error: cohortsError } = await supabase
     .from("cohorts")
-    .select("id, name, pin_code, is_active, created_at, courses(title)")
+    .select(
+      "id, name, pin_code, is_active, is_archived, created_at, courses(title, is_archived)",
+    )
+    .eq("is_archived", archived)
     .order("created_at", { ascending: false });
 
-  if (!privileged) {
-    cohortsQuery = cohortsQuery.in("course_id", courseIds);
-  }
-
-  const { data: cohortsData, error: cohortsError } = await cohortsQuery;
   if (cohortsError) {
     console.error("[getStaffCohortsDashboard] cohorts", cohortsError.message);
   }
@@ -245,6 +191,107 @@ export async function getStaffCohortsDashboard(): Promise<{
     courses,
     cohorts: (cohortsData ?? []) as StaffCohortListItem[],
   };
+}
+
+export async function archiveCohort(
+  cohortId: string,
+): Promise<CohortMutationResult> {
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { ok: false, error: "Не выбрана группа." };
+  }
+
+  const ownership = await assertCanManageCohort(cid);
+  if (!ownership.ok) {
+    return { ok: false, error: ownership.error };
+  }
+
+  const supabase = await createClient();
+
+  const { error: updateError } = await supabase
+    .from("cohorts")
+    .update({ is_archived: true, is_active: false })
+    .eq("id", cid);
+
+  if (updateError) {
+    console.error("[archiveCohort]", updateError.message);
+    return {
+      ok: false,
+      error: updateError.message || "Не удалось архивировать группу.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cid}`);
+  return { ok: true };
+}
+
+export async function restoreCohort(
+  cohortId: string,
+): Promise<CohortMutationResult> {
+  await verifyAccess(["admin"]);
+
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { ok: false, error: "Не выбрана группа." };
+  }
+
+  const supabase = await createClient();
+
+  const { error: updateError } = await supabase
+    .from("cohorts")
+    .update({ is_archived: false })
+    .eq("id", cid);
+
+  if (updateError) {
+    console.error("[restoreCohort]", updateError.message);
+    return {
+      ok: false,
+      error: updateError.message || "Не удалось восстановить группу.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  revalidatePath(`/dashboard/cohorts/${cid}`);
+  return { ok: true };
+}
+
+export async function hardDeleteCohort(
+  cohortId: string,
+): Promise<CohortMutationResult> {
+  await verifyAccess(["admin"]);
+
+  const cid = cohortId.trim();
+  if (!cid) {
+    return { ok: false, error: "Не выбрана группа." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: deleted, error: deleteError } = await supabase
+    .from("cohorts")
+    .delete()
+    .eq("id", cid)
+    .eq("is_archived", true)
+    .select("id");
+
+  if (deleteError) {
+    console.error("[hardDeleteCohort]", deleteError.message);
+    return {
+      ok: false,
+      error: deleteError.message || "Не удалось удалить группу.",
+    };
+  }
+
+  if (!deleted?.length) {
+    return {
+      ok: false,
+      error: "Группа не найдена в архиве или уже удалена.",
+    };
+  }
+
+  revalidatePath("/dashboard/cohorts");
+  return { ok: true };
 }
 
 /**
@@ -686,7 +733,7 @@ function normalizeEnrollmentStatus(value: string | null | undefined): Enrollment
 
 /**
  * Ученики группы с корректными именами (profiles + email fallback).
- * Доступно админу, завучу, владельцу курса и куратору курса.
+ * Доступно админу, завучу и владельцу курса.
  */
 export async function getCohortStudents(
   cohortId: string,

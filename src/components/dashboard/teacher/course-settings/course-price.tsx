@@ -1,20 +1,25 @@
 "use client";
 
+import { Controller, useFormContext } from "react-hook-form";
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { CourseSettingsFormCourse } from "../course-settings-form";
+import type { CourseSettingsPayload } from "@/lib/validations/course-schemas";
 
 export function CoursePrice({
-  course,
   isPending,
   isB2B,
 }: {
-  course: CourseSettingsFormCourse;
   isPending: boolean;
   isB2B: boolean;
 }) {
+  const {
+    control,
+    formState: { errors },
+  } = useFormContext<CourseSettingsPayload>();
+
   if (isB2B) {
-    return <input type="hidden" name="price" value={course.price} />;
+    return null;
   }
 
   return (
@@ -24,16 +29,32 @@ export function CoursePrice({
       </div>
       <div className="grid gap-2">
         <Label htmlFor="course-edit-price">Цена</Label>
-        <Input
-          id="course-edit-price"
+        <Controller
           name="price"
-          type="number"
-          min={0}
-          step="0.01"
-          required
-          defaultValue={Number(course.price)}
-          disabled={isPending}
+          control={control}
+          render={({ field }) => (
+            <Input
+              id="course-edit-price"
+              type="number"
+              min={0}
+              step="0.01"
+              value={field.value ?? ""}
+              onChange={(event) => {
+                const raw = event.target.value;
+                field.onChange(raw === "" ? undefined : Number(raw));
+              }}
+              onBlur={field.onBlur}
+              ref={field.ref}
+              disabled={isPending}
+              aria-invalid={Boolean(errors.price)}
+            />
+          )}
         />
+        {errors.price ? (
+          <p className="text-destructive text-sm" role="alert">
+            {errors.price.message}
+          </p>
+        ) : null}
       </div>
     </div>
   );

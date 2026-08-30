@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { reassignCourseOwner } from "@/app/actions/curriculum-actions";
@@ -9,7 +11,6 @@ import {
   getAvailableCurators,
   type CuratorCandidate,
 } from "@/app/actions/curator-actions";
-import type { Role } from "@/lib/auth/rbac";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -26,12 +28,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-function roleLabel(role: Role | null): string {
-  if (role === "head_teacher") return "Завуч";
-  if (role === "teacher") return "Преподаватель";
-  return role ?? "—";
-}
+import { getRoleTranslation } from "@/lib/utils/role-utils";
+import {
+  changeOwnerSchema,
+  type ChangeOwnerPayload,
+} from "@/lib/validations/course-schemas";
 
 export function ChangeOwnerModal({
   courseId,
@@ -46,13 +47,26 @@ export function ChangeOwnerModal({
 }) {
   const router = useRouter();
   const [isLoading, startLoadTransition] = useTransition();
-  const [isPending, startReassignTransition] = useTransition();
   const [candidates, setCandidates] = useState<CuratorCandidate[]>([]);
-  const [selectedTeacherId, setSelectedTeacherId] = useState("");
+
+  const {
+    control,
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<ChangeOwnerPayload>({
+    resolver: zodResolver(changeOwnerSchema),
+    defaultValues: {
+      courseId,
+      newOwnerId: "",
+    },
+  });
 
   useEffect(() => {
+    reset({ courseId, newOwnerId: "" });
+
     if (!isOpen) {
-      setSelectedTeacherId("");
       return;
     }
 
@@ -65,31 +79,25 @@ export function ChangeOwnerModal({
       }
       setCandidates(result.data ?? []);
     });
-  }, [isOpen]);
+  }, [isOpen, courseId, reset]);
 
   const assignable = useMemo(
     () => candidates.filter((c) => c.id !== currentOwnerId),
     [candidates, currentOwnerId],
   );
 
-  function handleSubmit() {
-    if (!selectedTeacherId || isPending) {
+  async function onSubmit(values: ChangeOwnerPayload) {
+    const result = await reassignCourseOwner(values);
+    if (!result.ok) {
+      toast.error(result.error);
       return;
     }
-
-    startReassignTransition(async () => {
-      const result = await reassignCourseOwner(courseId, selectedTeacherId);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("Владелец курса изменён");
-      onClose();
-      router.refresh();
-    });
+    toast.success("Владелец курса изменён");
+    onClose();
+    router.refresh();
   }
 
-  const busy = isLoading || isPending;
+  const busy = isLoading || isSubmitting;
 
   return (
     <Dialog
@@ -101,48 +109,70 @@ export function ChangeOwnerModal({
       }}
     >
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Сменить владельца</DialogTitle>
-          <DialogDescription>
-            Курс останется активным. Новый владелец получит полные права на него.
-          </DialogDescription>
-        </DialogHeader>
+        <form onSubmit={handleSubmit(onSubmit)} noValidate>
+          <DialogHeader>
+            <DialogTitle>Сменить владельца</DialogTitle>
+            <DialogDescription>
+              Курс останется активным. Новый владелец получит полные права на него.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium">Новый владелец</p>
-          <Select
-            value={selectedTeacherId || undefined}
-            onValueChange={setSelectedTeacherId}
-            disabled={busy || assignable.length === 0}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue
-                placeholder={isLoading ? "Загрузка…" : "Выберите преподавателя"}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {assignable.map((candidate) => (
-                <SelectItem key={candidate.id} value={candidate.id}>
-                  {(candidate.fullName?.trim() || "Без имени") +
-                    ` · ${roleLabel(candidate.role)}`}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+          <input type="hidden" {...register("courseId")} />
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
-            Отмена
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            disabled={busy || !selectedTeacherId}
-          >
-            {isPending ? "Сохранение…" : "Сменить владельца"}
-          </Button>
-        </DialogFooter>
+          <div className="space-y-2 py-4">
+            <Label htmlFor="change-owner-select">Новый владелец</Label>
+            <Controller
+              name="newOwnerId"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={field.value || undefined}
+                  onValueChange={field.onChange}
+                  disabled={busy || assignable.length === 0}
+                >
+                  <SelectTrigger
+                    id="change-owner-select"
+                    className="w-full"
+                    aria-invalid={Boolean(errors.newOwnerId)}
+                  >
+                    <SelectValue
+                      placeholder={
+                        isLoading ? "Загрузка…" : "Выберите преподавателя"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignable.map((candidate) => (
+                      <SelectItem key={candidate.id} value={candidate.id}>
+                        {(candidate.fullName?.trim() || "Без имени") +
+                          ` · ${getRoleTranslation(candidate.role)}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            {errors.newOwnerId?.message ? (
+              <p className="text-destructive text-sm" role="alert">
+                {errors.newOwnerId.message}
+              </p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isSubmitting}
+            >
+              Отмена
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {isSubmitting ? "Сохранение…" : "Сменить владельца"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

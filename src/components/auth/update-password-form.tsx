@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 
 import { updatePassword } from "@/app/actions/auth-actions";
 import { Button } from "@/components/ui/button";
@@ -40,10 +41,12 @@ export function UpdatePasswordForm() {
     setIsPending(false);
 
     if (!result.ok) {
+      toast.error(result.error);
       setError(result.error);
       return;
     }
 
+    toast.success("Пароль обновлён");
     router.refresh();
     router.push("/dashboard");
   }

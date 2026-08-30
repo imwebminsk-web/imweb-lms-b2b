@@ -10,6 +10,7 @@ import {
 } from "@/app/actions/cohort-actions";
 import { getMatrixGradebookData } from "@/app/actions/gradebook-actions";
 import { CohortChat } from "@/components/dashboard/chat/cohort-chat";
+import { CohortStatusBadge } from "@/components/dashboard/cohorts/cohort-status-badge";
 import { TeacherCohortTabs } from "@/components/dashboard/cohorts/teacher-cohort-tabs";
 import { CopyPinButton } from "@/components/dashboard/teacher/cohorts/copy-pin-button";
 import { CohortAssignmentManager } from "@/components/dashboard/teacher/cohorts/cohort-assignment-manager";
@@ -81,7 +82,7 @@ export default async function CohortDetailsPage({ params, searchParams }: Cohort
   const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
     .select(
-      "id, name, pin_code, is_active, is_chat_enabled, requires_approval, created_at, course_id, courses(id, title, teacher_id)",
+      "id, name, pin_code, is_active, is_archived, is_chat_enabled, requires_approval, created_at, course_id, courses(id, title, teacher_id, is_archived)",
     )
     .eq("id", cohortId)
     .maybeSingle();
@@ -196,16 +197,11 @@ export default async function CohortDetailsPage({ params, searchParams }: Cohort
                 </Badge>
                 <CopyPinButton pinCode={cohort.pin_code} />
               </div>
-              {cohort.is_active ? (
-                <Badge
-                  variant="outline"
-                  className="border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-                >
-                  Набор открыт
-                </Badge>
-              ) : (
-                <Badge variant="secondary">Набор приостановлен</Badge>
-              )}
+              <CohortStatusBadge
+                cohortIsArchived={cohort.is_archived}
+                courseIsArchived={courseRel.is_archived}
+                cohortIsActive={cohort.is_active}
+              />
             </div>
           </div>
 

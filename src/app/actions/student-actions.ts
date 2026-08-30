@@ -1,8 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-
-import { verifyAccess } from "@/lib/auth/rbac";
 import { createClient } from "@/lib/supabase/server";
 import { resolveStudentDisplayName } from "@/lib/utils/user-utils";
 
@@ -239,45 +236,4 @@ export async function getGlobalTeacherStudents(
   );
 
   return { success: true, students };
-}
-
-/**
- * Отчисляет ученика из выбранных групп. Только admin.
- */
-export async function unenrollStudentFromCohorts(
-  studentId: string,
-  cohortIds: string[],
-): Promise<{ success: true } | { success: false; error: string }> {
-  await verifyAccess(["admin"]);
-
-  const sid = studentId.trim();
-  const normalizedCohortIds = [
-    ...new Set(cohortIds.map((id) => id.trim()).filter(Boolean)),
-  ];
-
-  if (!sid) {
-    return { success: false, error: "Не указан ученик." };
-  }
-
-  if (normalizedCohortIds.length === 0) {
-    return { success: false, error: "Выберите хотя бы одну группу." };
-  }
-
-  const supabase = await createClient();
-
-  const { error: deleteError } = await supabase
-    .from("enrollments")
-    .delete()
-    .eq("user_id", sid)
-    .in("cohort_id", normalizedCohortIds);
-
-  if (deleteError) {
-    console.error("[unenrollStudentFromCohorts]", deleteError.message);
-    return { success: false, error: deleteError.message };
-  }
-
-  revalidatePath("/dashboard/students");
-  revalidatePath("/dashboard");
-
-  return { success: true };
 }

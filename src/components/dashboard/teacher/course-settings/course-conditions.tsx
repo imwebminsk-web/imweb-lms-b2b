@@ -1,5 +1,7 @@
 "use client";
 
+import { Controller, useFormContext } from "react-hook-form";
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,108 +12,132 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { CourseSettingsFormCourse } from "../course-settings-form";
-
-function dateInputValue(iso: string | null): string {
-  if (!iso) return "";
-  return iso.slice(0, 10);
-}
+import type { CourseSettingsPayload } from "@/lib/validations/course-schemas";
 
 export function CourseConditions({
-  course,
-  durationUnit,
-  setDurationUnit,
-  hasCertificate,
-  setHasCertificate,
   isPending,
   isB2B,
 }: {
-  course: CourseSettingsFormCourse;
-  durationUnit: string;
-  setDurationUnit: (v: string) => void;
-  hasCertificate: boolean;
-  setHasCertificate: (v: boolean) => void;
   isPending: boolean;
   isB2B: boolean;
 }) {
+  const {
+    control,
+    formState: { errors },
+  } = useFormContext<CourseSettingsPayload>();
+
   return (
     <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
       <div className="space-y-1">
         <h3 className="text-base font-semibold">Условия и длительность</h3>
       </div>
-      
-      <input type="hidden" name="duration_unit" value={durationUnit} />
-      <input type="hidden" name="has_certificate" value={hasCertificate ? "true" : "false"} />
 
       <div className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="course-duration-value">Длительность (число)</Label>
-            <Input
-              id="course-duration-value"
-              name="duration_value"
-              type="number"
-              min={0}
-              step={1}
-              placeholder="Например, 8"
-              defaultValue={
-                course.duration_value != null
-                  ? String(course.duration_value)
-                  : ""
-              }
-              disabled={isPending}
+            <Controller
+              name="duration"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="course-duration-value"
+                  type="number"
+                  min={0}
+                  step={1}
+                  placeholder="Например, 8"
+                  value={field.value ?? ""}
+                  onChange={(event) =>
+                    field.onChange(
+                      event.target.value === "" ? "" : event.target.value,
+                    )
+                  }
+                  onBlur={field.onBlur}
+                  ref={field.ref}
+                  disabled={isPending}
+                  aria-invalid={Boolean(errors.duration)}
+                />
+              )}
             />
+            {errors.duration ? (
+              <p className="text-destructive text-sm" role="alert">
+                {errors.duration.message}
+              </p>
+            ) : null}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="course-duration-unit">Единица</Label>
-            <Select
-              value={durationUnit || "__empty__"}
-              onValueChange={(v) =>
-                setDurationUnit(v === "__empty__" ? "" : v)
-              }
-              disabled={isPending}
-            >
-              <SelectTrigger
-                id="course-duration-unit"
-                className="w-full"
-              >
-                <SelectValue placeholder="Не выбрано" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__empty__">Не выбрано</SelectItem>
-                <SelectItem value="hours">Часов</SelectItem>
-                <SelectItem value="weeks">Недель</SelectItem>
-                <SelectItem value="months">Месяцев</SelectItem>
-              </SelectContent>
-            </Select>
+            <Controller
+              name="duration_unit"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  value={field.value || "__empty__"}
+                  onValueChange={(value) =>
+                    field.onChange(value === "__empty__" ? "" : value)
+                  }
+                  disabled={isPending}
+                >
+                  <SelectTrigger id="course-duration-unit" className="w-full">
+                    <SelectValue placeholder="Не выбрано" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__empty__">Не выбрано</SelectItem>
+                    <SelectItem value="hours">Часов</SelectItem>
+                    <SelectItem value="weeks">Недель</SelectItem>
+                    <SelectItem value="months">Месяцев</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
         </div>
-        
+
         <div className={`grid gap-2 ${isB2B ? "hidden" : ""}`}>
           <Label htmlFor="course-start-date">Дата старта</Label>
-          <Input
-            id="course-start-date"
+          <Controller
             name="start_date"
-            type="date"
-            defaultValue={dateInputValue(course.start_date)}
-            disabled={isPending}
+            control={control}
+            render={({ field }) => (
+              <Input
+                id="course-start-date"
+                type="date"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                ref={field.ref}
+                disabled={isPending}
+                aria-invalid={Boolean(errors.start_date)}
+              />
+            )}
           />
+          {errors.start_date ? (
+            <p className="text-destructive text-sm" role="alert">
+              {errors.start_date.message}
+            </p>
+          ) : null}
           <p className="text-muted-foreground text-xs">
             Оставьте пустым, если дата не фиксирована.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="course-certificate"
-            checked={hasCertificate}
-            onCheckedChange={(v) => setHasCertificate(v === true)}
-            disabled={isPending}
-          />
-          <Label htmlFor="course-certificate" className="cursor-pointer font-normal">
-            Выдаётся сертификат
-          </Label>
-        </div>
+        <Controller
+          name="certificateEnabled"
+          control={control}
+          render={({ field }) => (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="course-certificate"
+                checked={field.value === true}
+                onCheckedChange={(checked) => field.onChange(checked === true)}
+                disabled={isPending}
+              />
+              <Label htmlFor="course-certificate" className="cursor-pointer font-normal">
+                Выдаётся сертификат
+              </Label>
+            </div>
+          )}
+        />
       </div>
     </div>
   );

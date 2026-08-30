@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useFormContext } from "react-hook-form";
 
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
+import type { CourseSettingsPayload } from "@/lib/validations/course-schemas";
 import type {
   CourseSettingsFormCourse,
   CourseTaxonomyGroupOption,
@@ -77,6 +79,7 @@ export function CourseAccess({
   setIsGlobal,
   isPending,
 }: CourseAccessProps) {
+  const { setValue } = useFormContext<CourseSettingsPayload>();
   const [selectedByGroup, setSelectedByGroup] = useState<Record<string, string>>(
     () => selectionsByGroup(taxonomies, course.taxonomy_ids),
   );
@@ -99,9 +102,12 @@ export function CourseAccess({
     return [...seen.entries()].map(([slug, name]) => ({ slug, name }));
   }, [taxonomyGroups, taxonomies]);
 
-  const taxonomyIdsJson = JSON.stringify(
-    Object.values(selectedByGroup).filter((id) => id.length > 0),
-  );
+  useEffect(() => {
+    setValue(
+      "taxonomy_ids",
+      Object.values(selectedByGroup).filter((id) => id.length > 0),
+    );
+  }, [selectedByGroup, setValue]);
 
   const catalogFields = (
     <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-4">
@@ -167,12 +173,7 @@ export function CourseAccess({
   );
 
   if (!isB2B) {
-    return (
-      <>
-        <input type="hidden" name="taxonomy_ids" value={taxonomyIdsJson} />
-        {catalogFields}
-      </>
-    );
+    return catalogFields;
   }
 
   const teamsToRender = b2bOptions?.teams ?? [];
@@ -180,9 +181,7 @@ export function CourseAccess({
   const tagsToRender = b2bOptions?.tags ?? [];
 
   return (
-    <>
-      <input type="hidden" name="taxonomy_ids" value={taxonomyIdsJson} />
-      <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-6">
+    <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm space-y-6">
         <div className="space-y-1">
           <h3 className="text-base font-semibold">Корпоративный доступ</h3>
           <p className="text-sm text-muted-foreground">
@@ -309,7 +308,6 @@ export function CourseAccess({
             )}
           </div>
         </div>
-      </div>
-    </>
+    </div>
   );
 }

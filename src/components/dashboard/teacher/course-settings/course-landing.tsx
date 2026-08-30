@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Controller, useFormContext } from "react-hook-form";
 import { ImagePlusIcon, Loader2Icon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -13,38 +14,31 @@ import {
   compressImage,
 } from "@/lib/utils/image-compression";
 import { uploadCourseGalleryImage } from "@/app/actions/course-actions";
+import type { CourseSettingsPayload } from "@/lib/validations/course-schemas";
 import { CourseVideoUpload } from "../course-video-upload";
 import type { CourseSettingsFormCourse } from "../course-settings-form";
 
 export function CourseLanding({
   course,
-  detailedDescriptionHtml,
-  setDetailedDescriptionHtml,
-  promotionalImages,
-  setPromotionalImages,
   isPending,
   isB2B,
 }: {
   course: CourseSettingsFormCourse;
-  detailedDescriptionHtml: string;
-  setDetailedDescriptionHtml: (v: string) => void;
-  promotionalImages: string[];
-  setPromotionalImages: React.Dispatch<React.SetStateAction<string[]>>;
   isPending: boolean;
   isB2B: boolean;
 }) {
+  const {
+    control,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useFormContext<CourseSettingsPayload>();
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [galleryBusy, setGalleryBusy] = useState(false);
+  const promotionalImages = watch("promotional_images") ?? [];
 
   if (isB2B) {
-    return (
-      <>
-        <input type="hidden" name="detailed_description" value={detailedDescriptionHtml} />
-        <input type="hidden" name="promotional_images" value={JSON.stringify(promotionalImages)} />
-        <input type="hidden" name="youtube_url" value={course.youtube_url ?? ""} />
-        <input type="hidden" name="vimeo_url" value={course.vimeo_url ?? ""} />
-      </>
-    );
+    return null;
   }
 
   async function onGalleryFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -55,6 +49,7 @@ export function CourseLanding({
     setGalleryBusy(true);
     try {
       let count = promotionalImages.length;
+      const nextImages = [...promotionalImages];
       for (const raw of files) {
         if (count >= 24) {
           toast.error("В галерее не более 24 изображений.");
@@ -75,7 +70,7 @@ export function CourseLanding({
             toast.error(res.error);
             continue;
           }
-          setPromotionalImages((prev) => [...prev, res.url]);
+          nextImages.push(res.url);
           count += 1;
           toast.success("Изображение добавлено в галерею");
         } catch (err) {
@@ -84,6 +79,7 @@ export function CourseLanding({
           );
         }
       }
+      setValue("promotional_images", nextImages, { shouldDirty: true });
     } finally {
       setGalleryBusy(false);
     }
@@ -98,9 +94,6 @@ export function CourseLanding({
         </p>
       </div>
 
-      <input type="hidden" name="detailed_description" value={detailedDescriptionHtml} />
-      <input type="hidden" name="promotional_images" value={JSON.stringify(promotionalImages)} />
-
       <CourseVideoUpload
         courseId={course.id}
         initialVideoUrl={course.video_url}
@@ -113,24 +106,38 @@ export function CourseLanding({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="course-youtube">Ссылка YouTube</Label>
-            <Input
-              id="course-youtube"
+            <Controller
               name="youtube_url"
-              type="url"
-              placeholder="https://www.youtube.com/…"
-              defaultValue={course.youtube_url ?? ""}
-              disabled={isPending}
+              control={control}
+              render={({ field }) => (
+                <Input
+                  {...field}
+                  id="course-youtube"
+                  type="url"
+                  placeholder="https://www.youtube.com/…"
+                  value={field.value ?? ""}
+                  disabled={isPending}
+                  aria-invalid={Boolean(errors.youtube_url)}
+                />
+              )}
             />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="course-vimeo">Ссылка Vimeo</Label>
-            <Input
-              id="course-vimeo"
+            <Controller
               name="vimeo_url"
-              type="url"
-              placeholder="https://vimeo.com/…"
-              defaultValue={course.vimeo_url ?? ""}
-              disabled={isPending}
+              control={control}
+              render={({ field }) => (
+                <Input
+                  {...field}
+                  id="course-vimeo"
+                  type="url"
+                  placeholder="https://vimeo.com/…"
+                  value={field.value ?? ""}
+                  disabled={isPending}
+                  aria-invalid={Boolean(errors.vimeo_url)}
+                />
+              )}
             />
           </div>
         </div>
@@ -142,11 +149,17 @@ export function CourseLanding({
         </div>
         <div className="grid gap-2">
           <Label htmlFor="course-detailed">Текст для страницы курса</Label>
-          <Editor
-            id="course-detailed"
-            value={detailedDescriptionHtml}
-            onChange={setDetailedDescriptionHtml}
-            disabled={isPending}
+          <Controller
+            name="landingDescription"
+            control={control}
+            render={({ field }) => (
+              <Editor
+                id="course-detailed"
+                value={field.value ?? ""}
+                onChange={field.onChange}
+                disabled={isPending}
+              />
+            )}
           />
           <p className="text-muted-foreground text-xs">
             Заголовки, списки и выделение сохраняются как HTML для
@@ -212,8 +225,10 @@ export function CourseLanding({
                   disabled={isPending || galleryBusy}
                   aria-label="Убрать из галереи"
                   onClick={() =>
-                    setPromotionalImages((prev) =>
-                      prev.filter((u) => u !== url),
+                    setValue(
+                      "promotional_images",
+                      promotionalImages.filter((item) => item !== url),
+                      { shouldDirty: true },
                     )
                   }
                 >

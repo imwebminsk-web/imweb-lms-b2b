@@ -89,7 +89,7 @@ export function SendToRetakeDialog({
               Сброс…
             </>
           ) : (
-            "Отправить на пересдачу"
+            "На пересдачу"
           )}
         </Button>
       </AlertDialogTrigger>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LockIcon } from "lucide-react";
 
 import type {
   StudentDashboardCourseSummary,
@@ -19,6 +20,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { COHORT_STATUS_DICT } from "@/lib/cohort-status";
+import { cn } from "@/lib/utils";
 
 type StudentDashboardHomeProps = {
   needsAttention: StudentProgressItem[];
@@ -101,13 +104,23 @@ export function StudentDashboardHome({
               const cohortId = cohortIdByCourseId[course.id] ?? null;
               const unreadCount =
                 cohortId != null ? (unreadMap[cohortId] ?? 0) : 0;
+              const isArchived =
+                course.courseIsArchived || course.cohortIsArchived;
+              const archiveBadgeConfig = course.courseIsArchived
+                ? COHORT_STATUS_DICT.archived_course
+                : COHORT_STATUS_DICT.archived_cohort;
 
               return (
                 <Card
                   key={course.id}
-                  className="relative flex flex-col overflow-hidden border-border/80 shadow-sm transition-shadow hover:shadow-md"
+                  className={cn(
+                    "relative flex flex-col overflow-hidden border-border/80 shadow-sm transition-shadow",
+                    isArchived
+                      ? "opacity-75 grayscale-[30%]"
+                      : "hover:shadow-md",
+                  )}
                 >
-                  {unreadCount > 0 ? (
+                  {!isArchived && unreadCount > 0 ? (
                     <Badge
                       variant="destructive"
                       className="absolute top-2 right-2 min-w-5 justify-center px-1.5 tabular-nums"
@@ -116,6 +129,14 @@ export function StudentDashboardHome({
                     </Badge>
                   ) : null}
                   <CardHeader className="pb-2">
+                    {isArchived ? (
+                      <Badge
+                        variant={archiveBadgeConfig.variant}
+                        className={cn("mb-2 w-fit", archiveBadgeConfig.className)}
+                      >
+                        {archiveBadgeConfig.label}
+                      </Badge>
+                    ) : null}
                     <CardTitle className="line-clamp-2 text-lg leading-snug">
                       {course.title}
                     </CardTitle>
@@ -129,9 +150,18 @@ export function StudentDashboardHome({
                     </p>
                   </CardContent>
                   <CardFooter className="border-border/60 border-t pt-4">
-                    <Button asChild className="w-full" variant="default">
-                      <Link href={learnHref}>{t("dashboard.goToCourse")}</Link>
-                    </Button>
+                    {isArchived ? (
+                      <Button disabled variant="secondary" className="w-full">
+                        <LockIcon className="mr-2 size-4" />
+                        В архиве
+                      </Button>
+                    ) : (
+                      <Button asChild className="w-full" variant="default">
+                        <Link href={learnHref}>
+                          {t("dashboard.goToCourse")}
+                        </Link>
+                      </Button>
+                    )}
                   </CardFooter>
                 </Card>
               );

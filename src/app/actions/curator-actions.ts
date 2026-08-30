@@ -8,7 +8,12 @@ import {
   getCourseOwnerRole,
 } from "@/lib/auth/course-access";
 import { verifyAccess, type Role } from "@/lib/auth/rbac";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import {
+  manageCuratorSchema,
+  type ManageCuratorPayload,
+} from "@/lib/validations/course-schemas";
 
 export type CuratorCandidate = {
   id: string;
@@ -22,12 +27,12 @@ export type CourseCurator = {
   role: Role | null;
 };
 
-export type CuratorActionState = {
-  success?: boolean;
-  error?: string;
-};
+export type CuratorMutationResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
 const ASSIGNABLE_ROLES: Role[] = ["teacher", "head_teacher"];
+const RESTORE_OWNER_ROLES: Role[] = ["teacher", "head_teacher", "admin"];
 
 function unwrapRel<T>(rel: T | T[] | null | undefined): T | null {
   if (!rel) return null;
@@ -107,6 +112,50 @@ export async function getAvailableCurators(): Promise<{
   }
 }
 
+export async function getRestoreOwnerCandidates(): Promise<{
+  data: CuratorCandidate[] | null;
+  error: string | null;
+}> {
+  await verifyAccess(["admin"]);
+
+  try {
+    const admin = createAdminClient();
+    if (!admin) {
+      console.error("[getRestoreOwnerCandidates] admin client is not configured");
+      return { data: null, error: "Не удалось загрузить список владельцев." };
+    }
+
+    // is_active ещё может отсутствовать в generated Database types.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (admin as any)
+      .from("profiles")
+      .select("id, full_name, role")
+      .in("role", RESTORE_OWNER_ROLES)
+      .eq("is_active", true)
+      .order("full_name", { ascending: true });
+
+    if (error) {
+      console.error("[getRestoreOwnerCandidates]", error.message);
+      return { data: null, error: "Не удалось загрузить список владельцев." };
+    }
+
+    const mapped: CuratorCandidate[] = (data ?? []).map((row: {
+      id: string;
+      full_name: string | null;
+      role: Role;
+    }) => ({
+      id: row.id,
+      fullName: row.full_name,
+      role: row.role,
+    }));
+
+    return { data: mapped, error: null };
+  } catch (err) {
+    console.error("[getRestoreOwnerCandidates] Unexpected error:", err);
+    return { data: null, error: "Внутренняя ошибка сервера" };
+  }
+}
+
 export async function getCourseCurators(courseId: string): Promise<{
   data: CourseCurator[] | null;
   error: string | null;
@@ -163,86 +212,114 @@ export async function getCourseCurators(courseId: string): Promise<{
 }
 
 export async function addCourseCurator(
-  courseId: string,
-  targetUserId: string,
-): Promise<CuratorActionState> {
+  data: ManageCuratorPayload,
+): Promise<CuratorMutationResult> {
+  return {
+    ok: false,
+    error: "Функция кураторства временно отключена",
+  };
+
+  const parsed = manageCuratorSchema.safeParse(data);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Проверьте введённые данные.",
+    };
+  }
+
+  const { courseId, userId: uid } = parsed.data;
+
   const access = await requireCuratorManagementAccess(courseId);
   if ("error" in access && access.error) {
-    return { error: access.error };
+    return { ok: false, error: access.error };
   }
 
-  const uid = targetUserId.trim();
-  if (!uid) {
-    return { error: "Не указан пользователь." };
-  }
-
-  if (uid === access.course.teacher_id) {
-    return { error: "Владелец курса уже имеет полный доступ." };
-  }
-
-  const { data: target, error: targetErr } = await access.supabase
-    .from("profiles")
-    .select("id, role")
-    .eq("id", uid)
-    .maybeSingle();
-
-  if (targetErr || !target) {
-    return { error: "Пользователь не найден." };
-  }
-
-  if (!ASSIGNABLE_ROLES.includes(target.role)) {
-    return { error: "Куратором может быть только преподаватель или завуч." };
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: insertErr } = await (access.supabase as any)
-    .from("course_curators")
-    .insert({
-      course_id: access.course.id,
-      user_id: uid,
-      assigned_by: access.user.id,
-    });
-
-  if (insertErr) {
-    if (insertErr.code === "23505") {
-      return { error: "Этот пользователь уже назначен куратором." };
+  try {
+    if (uid === access.course.teacher_id) {
+      return { ok: false, error: "Владелец курса уже имеет полный доступ." };
     }
-    console.error("[addCourseCurator]", insertErr.message);
-    return { error: insertErr.message || "Не удалось назначить куратора." };
-  }
 
-  revalidatePath("/dashboard/courses");
-  revalidatePath(`/dashboard/courses/${access.course.slug}`);
-  return { success: true };
+    const { data: target, error: targetErr } = await access.supabase
+      .from("profiles")
+      .select("id, role")
+      .eq("id", uid)
+      .maybeSingle();
+
+    if (targetErr || !target) {
+      return { ok: false, error: "Пользователь не найден." };
+    }
+
+    if (!ASSIGNABLE_ROLES.includes(target.role)) {
+      return { ok: false, error: "Куратором может быть только преподаватель или завуч." };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: insertErr } = await (access.supabase as any)
+      .from("course_curators")
+      .insert({
+        course_id: access.course.id,
+        user_id: uid,
+        assigned_by: access.user.id,
+      });
+
+    if (insertErr) {
+      if (insertErr.code === "23505") {
+        return { ok: false, error: "Этот пользователь уже назначен куратором." };
+      }
+      console.error("[addCourseCurator]", insertErr.message);
+      return { ok: false, error: "Не удалось добавить куратора" };
+    }
+
+    revalidatePath("/dashboard/courses");
+    revalidatePath(`/dashboard/courses/${access.course.slug}`);
+    return { ok: true };
+  } catch (err) {
+    console.error("[addCourseCurator] Unexpected error:", err);
+    return { ok: false, error: "Не удалось добавить куратора" };
+  }
 }
 
 export async function removeCourseCurator(
-  courseId: string,
-  targetUserId: string,
-): Promise<CuratorActionState> {
+  data: ManageCuratorPayload,
+): Promise<CuratorMutationResult> {
+  return {
+    ok: false,
+    error: "Функция кураторства временно отключена",
+  };
+
+  const parsed = manageCuratorSchema.safeParse(data);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Проверьте введённые данные.",
+    };
+  }
+
+  const { courseId, userId: uid } = parsed.data;
+
   const access = await requireCuratorManagementAccess(courseId);
   if ("error" in access && access.error) {
-    return { error: access.error };
+    return { ok: false, error: access.error };
   }
 
-  const uid = targetUserId.trim();
-  if (!uid) {
-    return { error: "Не указан пользователь." };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: deleteErr } = await (access.supabase as any)
+      .from("course_curators")
+      .delete()
+      .eq("course_id", access.course.id)
+      .eq("user_id", uid);
+
+    if (deleteErr) {
+      console.error("[removeCourseCurator]", deleteErr.message);
+      return { ok: false, error: "Не удалось удалить куратора" };
+    }
+
+    revalidatePath("/dashboard/courses");
+    revalidatePath(`/dashboard/courses/${access.course.slug}`);
+    return { ok: true };
+  } catch (err) {
+    console.error("[removeCourseCurator] Unexpected error:", err);
+    return { ok: false, error: "Не удалось удалить куратора" };
   }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error: deleteErr } = await (access.supabase as any)
-    .from("course_curators")
-    .delete()
-    .eq("course_id", access.course.id)
-    .eq("user_id", uid);
-
-  if (deleteErr) {
-    console.error("[removeCourseCurator]", deleteErr.message);
-    return { error: deleteErr.message || "Не удалось снять куратора." };
-  }
-
-  revalidatePath("/dashboard/courses");
-  revalidatePath(`/dashboard/courses/${access.course.slug}`);
-  return { success: true };
 }

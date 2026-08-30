@@ -38,7 +38,14 @@ function statusBadge(
         </Badge>
       );
     case "rejected":
-      return <Badge variant="destructive">{t("lesson_view.statusRejected")}</Badge>;
+      return (
+        <Badge
+          variant="outline"
+          className="border-red-200 bg-red-50 text-red-700 hover:bg-red-50 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200"
+        >
+          {t("lesson_view.statusRejected")}
+        </Badge>
+      );
     case "not_started":
       return <Badge variant="secondary">{t("lesson_view.statusNotStarted")}</Badge>;
     default:
@@ -51,6 +58,10 @@ type AssignmentSheetLayoutBase = {
   assignmentText: string;
   studentAnswer: string;
   status: AssignmentSheetDisplayStatus;
+  /** Заголовок урока уже в шапке шторки — не дублировать в теле. */
+  hideTitle?: boolean;
+  /** Кнопки «Принять / Вернуть» уже в футере шторки. */
+  hideActions?: boolean;
 };
 
 type AssignmentSheetLayoutTeacher = AssignmentSheetLayoutBase & {
@@ -82,8 +93,15 @@ export type AssignmentSheetLayoutProps =
  */
 export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
   const { t } = useLanguage();
-  const { lessonTitle, assignmentText, studentAnswer, status, isTeacher } =
-    props;
+  const {
+    lessonTitle,
+    assignmentText,
+    studentAnswer,
+    status,
+    isTeacher,
+    hideTitle = false,
+    hideActions = false,
+  } = props;
 
   const pointsDisplay = isTeacher
     ? null
@@ -91,9 +109,11 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold tracking-tight">{lessonTitle}</h3>
-      </div>
+      {hideTitle ? null : (
+        <div>
+          <h3 className="text-lg font-semibold tracking-tight">{lessonTitle}</h3>
+        </div>
+      )}
 
       <section className="space-y-2">
         <p className="text-sm font-semibold">
@@ -116,7 +136,7 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
         <p className="text-sm font-semibold">
           {isTeacher ? "Ответ ученика" : t("lesson_view.studentAnswer")}
         </p>
-        <div className="rounded-md border border-border bg-card p-4 text-sm leading-relaxed">
+        <div className="rounded-md bg-muted/30 p-4 text-sm leading-relaxed">
           <p className="whitespace-pre-wrap break-words">{studentAnswer}</p>
         </div>
       </section>
@@ -130,7 +150,7 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
 
       {isTeacher ? (
         props.allowReview ? (
-          <section className="border-border space-y-4 rounded-xl border bg-muted/20 p-4">
+          <section className="mt-6 space-y-4 border-t pt-6">
             <p className="text-sm font-semibold">Проверка</p>
             <div className="space-y-2">
               <Label htmlFor="sheet-grade-100" className="font-medium">
@@ -163,33 +183,35 @@ export function AssignmentSheetLayout(props: AssignmentSheetLayoutProps) {
                 disabled={props.isPending}
               />
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-              <Button
-                type="button"
-                variant="default"
-                disabled={props.isPending}
-                onClick={props.onApprove}
-              >
-                {props.isPending ? "Сохранение…" : "Принять"}
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                disabled={props.isPending}
-                onClick={props.onReject}
-              >
-                Вернуть на доработку
-              </Button>
-            </div>
+            {hideActions ? null : (
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button
+                  type="button"
+                  variant="default"
+                  disabled={props.isPending}
+                  onClick={props.onApprove}
+                >
+                  {props.isPending ? "Сохранение…" : "Принять"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={props.isPending}
+                  onClick={props.onReject}
+                >
+                  Вернуть на доработку
+                </Button>
+              </div>
+            )}
           </section>
         ) : (
-          <p className="text-muted-foreground rounded-md border border-dashed bg-muted/20 p-4 text-sm">
+          <p className="text-muted-foreground mt-6 border-t pt-6 text-sm">
             У ученика ещё нет отправленной сдачи по этому заданию. Проверка будет
             доступна после отправки ответа.
           </p>
         )
       ) : (
-        <section className="space-y-3 rounded-md border bg-muted/15 p-4 text-sm">
+        <section className="mt-6 space-y-3 border-t pt-6 text-sm">
           <p>
             <span className="font-semibold">{t("course_view.colPoints")}: </span>
             {pointsDisplay != null ? `${pointsDisplay}` : "—"}

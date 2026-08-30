@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import {
-  updateCourse,
-  type UpdateCourseState,
-} from "@/app/actions/course-actions";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Controller, FormProvider as Form, useForm } from "react-hook-form";
+import { toast } from "sonner";
+
+import { updateCourse } from "@/app/actions/course-actions";
 import { Button } from "@/components/ui/button";
-import { Form } from "@/components/ui/form";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -18,6 +19,10 @@ import {
 import type { TaxonomyWithGroup } from "@/app/actions/taxonomy-actions";
 import type { Database } from "@/types/database.types";
 import { APP_MODE } from "@/lib/config/app-mode";
+import {
+  courseSettingsSchema,
+  type CourseSettingsPayload,
+} from "@/lib/validations/course-schemas";
 
 import { CourseBasicInfo } from "./course-settings/course-basic-info";
 import { CourseConditions } from "./course-settings/course-conditions";
@@ -52,7 +57,10 @@ export type CourseTaxonomyGroupOption = {
   name: string;
 };
 
-const initialState: UpdateCourseState = {};
+function initialPrice(raw: string): number | undefined {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 export function CourseSettingsForm({
   course,
@@ -73,139 +81,152 @@ export function CourseSettingsForm({
     isGlobal: boolean;
   };
 }) {
-  const [status, setStatus] = useState(course.status);
-  const [durationUnit, setDurationUnit] = useState(course.duration_unit ?? "");
-  const [hasCertificate, setHasCertificate] = useState(course.has_certificate);
-  const [detailedDescriptionHtml, setDetailedDescriptionHtml] = useState(
-    course.detailed_description ?? "",
+  const router = useRouter();
+  const [selectedTeams, setSelectedTeams] = useState<string[]>(
+    b2bOptions?.selectedTeams ?? [],
   );
-  const [promotionalImages, setPromotionalImages] = useState<string[]>(() =>
-    [...(course.promotional_images ?? [])].filter(
-      (u) => typeof u === "string" && u.trim().length > 0,
-    ),
+  const [selectedJobTitles, setSelectedJobTitles] = useState<string[]>(
+    b2bOptions?.selectedJobTitles ?? [],
   );
-  
-  const [selectedTeams, setSelectedTeams] = useState<string[]>(b2bOptions?.selectedTeams ?? []);
-  const [selectedJobTitles, setSelectedJobTitles] = useState<string[]>(b2bOptions?.selectedJobTitles ?? []);
-  const [selectedTags, setSelectedTags] = useState<string[]>(b2bOptions?.selectedTags ?? []);
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    b2bOptions?.selectedTags ?? [],
+  );
   const [isGlobal, setIsGlobal] = useState<boolean>(b2bOptions?.isGlobal ?? false);
 
-  const [viewMode, setViewMode] = useState<'b2c' | 'b2b'>('b2c');
-  
-  const [state, formAction, isPending] = useActionState(
-    updateCourse,
-    initialState,
-  );
+  const [viewMode, setViewMode] = useState<"b2c" | "b2b">("b2c");
 
-  const isB2B = APP_MODE === 'corporate' || (APP_MODE === 'all' && viewMode === 'b2b');
+  const form = useForm<CourseSettingsPayload>({
+    resolver: zodResolver(courseSettingsSchema),
+    defaultValues: {
+      title: course.title,
+      slug: course.slug,
+      description: course.description ?? "",
+      status: course.status,
+      price: initialPrice(course.price),
+      duration: course.duration_value,
+      duration_unit: course.duration_unit ?? "",
+      start_date: course.start_date ? course.start_date.slice(0, 10) : "",
+      certificateEnabled: course.has_certificate,
+      landingDescription: course.detailed_description ?? "",
+      youtube_url: course.youtube_url ?? "",
+      vimeo_url: course.vimeo_url ?? "",
+      promotional_images: [...(course.promotional_images ?? [])].filter(
+        (u) => typeof u === "string" && u.trim().length > 0,
+      ),
+      taxonomy_ids: course.taxonomy_ids,
+      teams: b2bOptions?.selectedTeams ?? [],
+      jobTitles: b2bOptions?.selectedJobTitles ?? [],
+      tags: b2bOptions?.selectedTags ?? [],
+      isGlobal: b2bOptions?.isGlobal ?? false,
+    },
+  });
+
+  const isPending = form.formState.isSubmitting;
+  const isB2B = APP_MODE === "corporate" || (APP_MODE === "all" && viewMode === "b2b");
+
+  async function onSubmit(values: CourseSettingsPayload) {
+    const result = await updateCourse(course.id, values);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+
+    toast.success("Изменения успешно сохранены.");
+    router.refresh();
+    if (values.slug.trim() !== course.slug) {
+      router.push(`/dashboard/courses/${encodeURIComponent(values.slug.trim())}`);
+    }
+  }
 
   return (
-    <Form action={formAction} className="space-y-6">
-      <input type="hidden" name="id" value={course.id} />
-      
-      <input type="hidden" name="teams" value={JSON.stringify(selectedTeams)} />
-      <input type="hidden" name="jobTitles" value={JSON.stringify(selectedJobTitles)} />
-      <input type="hidden" name="tags" value={JSON.stringify(selectedTags)} />
-      <input type="hidden" name="isGlobal" value={isGlobal ? "true" : "false"} />
-
-      {APP_MODE === "all" && (
-        <div className="flex justify-center pb-4">
-          <Tabs value={viewMode} onValueChange={(val) => setViewMode(val as 'b2c' | 'b2b')}>
-            <TabsList className="grid w-full grid-cols-2 w-[400px]">
-              <TabsTrigger value="b2c">Для онлайн-школы (B2C)</TabsTrigger>
-              <TabsTrigger value="b2b">Для корпоратива (B2B)</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-      )}
-
-      <CourseBasicInfo
-        course={course}
-        isPending={isPending}
-        isB2B={isB2B}
-      />
-      
-      <CourseConditions
-        course={course}
-        durationUnit={durationUnit}
-        setDurationUnit={setDurationUnit}
-        hasCertificate={hasCertificate}
-        setHasCertificate={setHasCertificate}
-        isPending={isPending}
-        isB2B={isB2B}
-      />
-      
-      <CoursePrice
-        course={course}
-        isPending={isPending}
-        isB2B={isB2B}
-      />
-      
-      {!isB2B && (
-        <CourseLanding
-          course={course}
-          detailedDescriptionHtml={detailedDescriptionHtml}
-          setDetailedDescriptionHtml={setDetailedDescriptionHtml}
-          promotionalImages={promotionalImages}
-          setPromotionalImages={setPromotionalImages}
-          isPending={isPending}
-          isB2B={isB2B}
-        />
-      )}
-      
-      <CourseAccess 
-        course={course}
-        taxonomies={taxonomies}
-        taxonomyGroups={taxonomyGroups}
-        isB2B={isB2B} 
-        b2bOptions={b2bOptions}
-        selectedTeams={selectedTeams}
-        setSelectedTeams={setSelectedTeams}
-        selectedJobTitles={selectedJobTitles}
-        setSelectedJobTitles={setSelectedJobTitles}
-        selectedTags={selectedTags}
-        setSelectedTags={setSelectedTags}
-        isGlobal={isGlobal}
-        setIsGlobal={setIsGlobal}
-        isPending={isPending}
-      />
-
-      {/* Sticky Bottom Save Button & Status */}
-      <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-8 flex items-center justify-between border-t bg-background/80 px-6 py-4 backdrop-blur-md">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium">Статус:</span>
-            <Select
-              value={status}
-              onValueChange={setStatus}
-              disabled={isPending}
+    <Form {...form}>
+      <form
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="space-y-6"
+      >
+        {APP_MODE === "all" && (
+          <div className="flex justify-center pb-4">
+            <Tabs
+              value={viewMode}
+              onValueChange={(val) => setViewMode(val as "b2c" | "b2b")}
             >
-              <SelectTrigger id="course-edit-status" className="w-[160px]">
-                <SelectValue placeholder="Статус" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="draft">Черновик</SelectItem>
-                <SelectItem value="published">Опубликован</SelectItem>
-              </SelectContent>
-            </Select>
-            <input type="hidden" name="status" value={status} />
+              <TabsList className="grid w-full grid-cols-2 w-[400px]">
+                <TabsTrigger value="b2c">Для онлайн-школы (B2C)</TabsTrigger>
+                <TabsTrigger value="b2b">Для корпоратива (B2B)</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
+        )}
 
-          {state.error ? (
-            <p className="text-destructive text-sm font-medium ml-4" role="alert">
-              {state.error}
-            </p>
-          ) : null}
-          {state.success ? (
-            <p className="text-emerald-600 text-sm font-medium ml-4" role="status">
-              Изменения успешно сохранены.
-            </p>
-          ) : null}
+        <CourseBasicInfo course={course} isPending={isPending} isB2B={isB2B} />
+
+        <CourseConditions isPending={isPending} isB2B={isB2B} />
+
+        <CoursePrice isPending={isPending} isB2B={isB2B} />
+
+        {!isB2B && (
+          <CourseLanding course={course} isPending={isPending} isB2B={isB2B} />
+        )}
+
+        <CourseAccess
+          course={course}
+          taxonomies={taxonomies}
+          taxonomyGroups={taxonomyGroups}
+          isB2B={isB2B}
+          b2bOptions={b2bOptions}
+          selectedTeams={selectedTeams}
+          setSelectedTeams={(next) => {
+            setSelectedTeams(next);
+            form.setValue("teams", next);
+          }}
+          selectedJobTitles={selectedJobTitles}
+          setSelectedJobTitles={(next) => {
+            setSelectedJobTitles(next);
+            form.setValue("jobTitles", next);
+          }}
+          selectedTags={selectedTags}
+          setSelectedTags={(next) => {
+            setSelectedTags(next);
+            form.setValue("tags", next);
+          }}
+          isGlobal={isGlobal}
+          setIsGlobal={(next) => {
+            setIsGlobal(next);
+            form.setValue("isGlobal", next);
+          }}
+          isPending={isPending}
+        />
+
+        <div className="sticky bottom-0 z-10 -mx-6 -mb-6 mt-8 flex items-center justify-between border-t bg-background/80 px-6 py-4 backdrop-blur-md">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium">Статус:</span>
+              <Controller
+                control={form.control}
+                name="status"
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    disabled={isPending}
+                  >
+                    <SelectTrigger id="course-edit-status" className="w-[160px]">
+                      <SelectValue placeholder="Статус" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="draft">Черновик</SelectItem>
+                      <SelectItem value="published">Опубликован</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+          </div>
+          <Button type="submit" disabled={isPending} size="lg">
+            {isPending ? "Сохранение…" : "Сохранить изменения"}
+          </Button>
         </div>
-        <Button type="submit" disabled={isPending} size="lg">
-          {isPending ? "Сохранение…" : "Сохранить изменения"}
-        </Button>
-      </div>
+      </form>
     </Form>
   );
 }
