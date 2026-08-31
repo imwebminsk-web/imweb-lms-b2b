@@ -1,0 +1,14 @@
+# Project Tech Stack
+- Next.js (App Router ONLY)
+- React 19 (Server Components by default)
+- TypeScript (Strict mode, NEVER use 'any')
+- Tailwind CSS & Shadcn UI
+- Supabase (PostgreSQL, strict RLS)
+
+# Code Generation Rules (CRITICAL)
+1. NO LEGACY: Do not use class components, `useEffect` for data fetching (use Server Components or SWR/React Query), or Next.js Pages router conventions.
+2. SERVER FIRST: Assume components are React Server Components (RSC) unless interactivity (hooks, events) is required. Use `"use client"` ONLY when absolutely necessary.
+3. SUPABASE SECURITY: Never bypass RLS. Do not use service_role keys in the client. All direct DB mutations must happen via Next.js Server Actions.
+4. DIFFING FORMAT: When modifying a file, DO NOT output the entire file if it's large. Output the exact `import` statements (if changed) and the FULL, complete function/component block being modified. Do not use `// ... rest of function` inside the modified block. Cursor Apply must be able to replace the whole block cleanly.
+5. CLEAN CODE: Keep functions small. Use early returns. Name variables descriptively. Remove console.logs before final output.
+6. CONTEXT AWARENESS: Before writing new utility functions or UI components, check if they already exist in `@/src/lib/` or `@/src/components/ui/` to avoid duplication.
